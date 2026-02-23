@@ -1,0 +1,530 @@
+<?php
+// manage_modules.php - Admin manage modules
+require_once '../includes/auth.php';
+requireLogin();
+requireRole(['staff']);
+
+$conn = getDbConnection();
+
+// Handle template download
+if (isset($_GET['download_template'])) {
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="modules_template.csv"');
+    
+    $output = fopen('php://output', 'w');
+    
+    // Header row
+    fputcsv($output, ['Module Code', 'Module Name', 'Program of Study', 'Year of Study', 'Semester', 'Credits', 'Description']);
+    
+    // Sample rows
+    fputcsv($output, ['CS101', 'Introduction to Computer Science', 'Bachelors of Computer Science', '1', 'One', '3', 'Introduction to programming concepts']);
+    fputcsv($output, ['CS102', 'Programming Fundamentals', 'Bachelors of Computer Science', '1', 'Two', '4', 'Fundamentals of programming']);
+    
+    fclose($output);
+    exit();
+}
+
+// Handle actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['upload_template'])) {
+        if (isset($_FILES['template_file']) && $_FILES['template_file']['error'] === UPLOAD_ERR_OK) {
+            $file_tmp = $_FILES['template_file']['tmp_name'];
+            $file_ext = strtolower(pathinfo($_FILES['template_file']['name'], PATHINFO_EXTENSION));
+            
+            if ($file_ext !== 'csv') {
+                $error = "Only CSV files are allowed.";
+            } else {
+                $uploaded = 0;
+                $skipped = 0;
+                $errors = [];
+                
+                if (($handle = fopen($file_tmp, 'r')) !== false) {
+                    // Skip header row
+                    $header = fgetcsv($handle);
+                    
+                    while (($data = fgetcsv($handle)) !== false) {
+                        if (count($data) < 6) {
+                            $skipped++;
+                            continue;
+                        }
+                        
+                        $module_code = strtoupper(trim($data[0]));
+                        $module_name = trim($data[1]);
+                        $program_of_study = trim($data[2]);
+                        $year_of_study = (int)$data[3];
+                        $semester = trim($data[4]);
+                        $credits = (int)$data[5];
+                        $description = isset($data[6]) ? trim($data[6]) : '';
+                        
+                        // Validate
+                        if (empty($module_code) || empty($module_name) || empty($program_of_study)) {
+                            $skipped++;
+                            continue;
+                        }
+                        
+                        if (!in_array($year_of_study, [1, 2, 3, 4])) {
+                            $errors[] = "Invalid year for module $module_code (must be 1-4)";
+                            $skipped++;
+                            continue;
+                        }
+                        
+                        if (!in_array($semester, ['One', 'Two'])) {
+                            $errors[] = "Invalid semester for module $module_code (must be 'One' or 'Two')";
+                            $skipped++;
+                            continue;
+                        }
+                        
+                        // Insert
+                        $stmt = $conn->prepare("INSERT INTO modules (module_code, module_name, program_of_study, year_of_study, semester, credits, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->bind_param("sssisss", $module_code, $module_name, $program_of_study, $year_of_study, $semester, $credits, $description);
+                        
+                        if ($stmt->execute()) {
+                            $uploaded++;
+                        } else {
+                            $skipped++;
+                            $errors[] = "Failed to add module $module_code (might already exist)";
+                        }
+                    }
+                    
+                    fclose($handle);
+                    
+                    $success = "Upload complete! $uploaded module(s) added, $skipped skipped.";
+                    if (!empty($errors)) {
+                        $error = implode('<br>', array_slice($errors, 0, 5));
+                        if (count($errors) > 5) {
+                            $error .= '<br>... and ' . (count($errors) - 5) . ' more errors.';
+                        }
+                    }
+                } else {
+                    $error = "Failed to read CSV file.";
+                }
+            }
+        } else {
+            $error = "Please select a CSV file to upload.";
+        }
+    } elseif (isset($_POST['add_module'])) {
+        $module_code = strtoupper(trim($_POST['module_code']));
+        $module_name = trim($_POST['module_name']);
+        $program_of_study = trim($_POST['program_of_study']);
+        $year_of_study = (int)$_POST['year_of_study'];
+        $semester = trim($_POST['semester']);
+        $credits = (int)$_POST['credits'];
+        $description = trim($_POST['description'] ?? '');
+
+        try {
+            $stmt = $conn->prepare("INSERT INTO modules (module_code, module_name, program_of_study, year_of_study, semester, credits, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("sssisss", $module_code, $module_name, $program_of_study, $year_of_study, $semester, $credits, $description);
+            $stmt->execute();
+            $success = "Module added successfully!";
+        } catch (mysqli_sql_exception $e) {
+            if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                $error = "Module code '$module_code' already exists. Please use a different code.";
+            } else {
+                $error = "Failed to add module: " . $e->getMessage();
+            }
+        }
+    } elseif (isset($_POST['update_module'])) {
+        $module_id = (int)$_POST['module_id'];
+        $module_code = strtoupper(trim($_POST['module_code']));
+        $module_name = trim($_POST['module_name']);
+        $program_of_study = trim($_POST['program_of_study']);
+        $year_of_study = (int)$_POST['year_of_study'];
+        $semester = trim($_POST['semester']);
+        $credits = (int)$_POST['credits'];
+        $description = trim($_POST['description'] ?? '');
+
+        $stmt = $conn->prepare("UPDATE modules SET module_code = ?, module_name = ?, program_of_study = ?, year_of_study = ?, semester = ?, credits = ?, description = ? WHERE module_id = ?");
+        $stmt->bind_param("sssisssi", $module_code, $module_name, $program_of_study, $year_of_study, $semester, $credits, $description, $module_id);
+        
+        if ($stmt->execute()) {
+            $success = "Module updated successfully!";
+        } else {
+            $error = "Failed to update module.";
+        }
+    } elseif (isset($_POST['delete_module'])) {
+        $module_id = (int)$_POST['module_id'];
+
+        $stmt = $conn->prepare("DELETE FROM modules WHERE module_id = ?");
+        $stmt->bind_param("i", $module_id);
+        
+        if ($stmt->execute()) {
+            $success = "Module deleted successfully!";
+        } else {
+            $error = "Failed to delete module.";
+        }
+    }
+}
+
+// Get filter parameters
+$filter_program = $_GET['program'] ?? '';
+$filter_year = $_GET['year'] ?? '';
+$filter_semester = $_GET['semester'] ?? '';
+
+// Build query with filters
+$query = "SELECT * FROM modules WHERE 1=1";
+$params = [];
+$types = "";
+
+if ($filter_program) {
+    $query .= " AND program_of_study = ?";
+    $params[] = $filter_program;
+    $types .= "s";
+}
+if ($filter_year) {
+    $query .= " AND year_of_study = ?";
+    $params[] = (int)$filter_year;
+    $types .= "i";
+}
+if ($filter_semester) {
+    $query .= " AND semester = ?";
+    $params[] = $filter_semester;
+    $types .= "s";
+}
+
+$query .= " ORDER BY program_of_study, year_of_study, semester, module_code";
+
+$stmt = $conn->prepare($query);
+if (!empty($params)) {
+    $stmt->bind_param($types, ...$params);
+}
+$stmt->execute();
+$result = $stmt->get_result();
+$modules = [];
+while ($row = $result->fetch_assoc()) {
+    $modules[] = $row;
+}
+
+// Get programs from departments table
+$programs = [];
+$result = $conn->query("SELECT department_id, department_name FROM departments ORDER BY department_name");
+while ($row = $result->fetch_assoc()) {
+    $programs[] = $row;
+}
+
+$conn->close();
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Modules - Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="bi bi-journal-code"></i> Manage Modules</h2>
+            <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
+        </div>
+
+        <?php if (isset($success)): ?>
+            <div class="alert alert-success alert-dismissible fade show">
+                <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+
+        <?php if (isset($error)): ?>
+            <div class="alert alert-danger alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+
+        <!-- Upload from Template Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Bulk Upload Modules</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <form method="POST" enctype="multipart/form-data" class="d-flex align-items-end gap-2">
+                            <div class="flex-grow-1">
+                                <label for="template_file" class="form-label">Upload CSV File</label>
+                                <input type="file" class="form-control" id="template_file" name="template_file" 
+                                       accept=".csv" required>
+                                <small class="text-muted">Upload a CSV file with columns: Module Code, Module Name, Program of Study, Year of Study, Semester, Credits, Description</small>
+                            </div>
+                            <div>
+                                <button type="submit" name="upload_template" class="btn btn-success">
+                                    <i class="bi bi-upload"></i> Upload
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <label class="form-label">Need a template?</label>
+                        <div>
+                            <a href="?download_template=1" class="btn btn-outline-success">
+                                <i class="bi bi-download"></i> Download CSV Template
+                            </a>
+                        </div>
+                        <small class="text-muted">Download a sample CSV file with example data</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Module Form -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Module</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label for="module_code" class="form-label">Module Code *</label>
+                            <input type="text" class="form-control" id="module_code" name="module_code" 
+                                   placeholder="e.g., CS101" style="text-transform: uppercase;" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="module_name" class="form-label">Module Name *</label>
+                            <input type="text" class="form-control" id="module_name" name="module_name" 
+                                   placeholder="e.g., Introduction to Programming" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="credits" class="form-label">Credits *</label>
+                            <input type="number" class="form-control" id="credits" name="credits" 
+                                   value="3" min="1" max="10" required>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="program_of_study" class="form-label">Program of Study *</label>
+                            <select class="form-select" id="program_of_study" name="program_of_study" required>
+                                <option value="">Select Program</option>
+                                <?php foreach ($programs as $prog): ?>
+                                    <option value="<?php echo htmlspecialchars($prog['department_name']); ?>">
+                                        <?php echo htmlspecialchars($prog['department_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="year_of_study" class="form-label">Year of Study *</label>
+                            <select class="form-select" id="year_of_study" name="year_of_study" required>
+                                <option value="1">Year 1</option>
+                                <option value="2">Year 2</option>
+                                <option value="3">Year 3</option>
+                                <option value="4">Year 4</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="semester" class="form-label">Semester *</label>
+                            <select class="form-select" id="semester" name="semester" required>
+                                <option value="One">Semester One</option>
+                                <option value="Two">Semester Two</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="2" 
+                                      placeholder="Module description (optional)"></textarea>
+                        </div>
+                        
+                        <div class="col-12">
+                            <button type="submit" name="add_module" class="btn btn-primary">
+                                <i class="bi bi-plus-lg"></i> Add Module
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Filter Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h6 class="mb-0"><i class="bi bi-funnel"></i> Filter Modules</h6>
+            </div>
+            <div class="card-body">
+                <form method="GET" class="row g-3">
+                    <div class="col-md-5">
+                        <label for="filter_program" class="form-label">Program of Study</label>
+                        <select class="form-select" id="filter_program" name="program">
+                            <option value="">All Programs</option>
+                            <?php foreach ($programs as $prog): ?>
+                                <option value="<?php echo htmlspecialchars($prog['department_name']); ?>" 
+                                        <?php echo $filter_program == $prog['department_name'] ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($prog['department_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="filter_year" class="form-label">Year of Study</label>
+                        <select class="form-select" id="filter_year" name="year">
+                            <option value="">All Years</option>
+                            <option value="1" <?php echo $filter_year == '1' ? 'selected' : ''; ?>>Year 1</option>
+                            <option value="2" <?php echo $filter_year == '2' ? 'selected' : ''; ?>>Year 2</option>
+                            <option value="3" <?php echo $filter_year == '3' ? 'selected' : ''; ?>>Year 3</option>
+                            <option value="4" <?php echo $filter_year == '4' ? 'selected' : ''; ?>>Year 4</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="filter_semester" class="form-label">Semester</label>
+                        <select class="form-select" id="filter_semester" name="semester">
+                            <option value="">All Semesters</option>
+                            <option value="One" <?php echo $filter_semester == 'One' ? 'selected' : ''; ?>>Semester One</option>
+                            <option value="Two" <?php echo $filter_semester == 'Two' ? 'selected' : ''; ?>>Semester Two</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">&nbsp;</label>
+                        <button type="submit" class="btn btn-secondary w-100">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modules List -->
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-list-ul"></i> All Modules (<?php echo count($modules); ?>)</h5>
+            </div>
+            <div class="card-body">
+                <?php if (empty($modules)): ?>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> No modules found. Add your first module above.
+                    </div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th width="8%">Code</th>
+                                    <th width="25%">Module Name</th>
+                                    <th width="25%">Program</th>
+                                    <th width="8%">Year</th>
+                                    <th width="10%">Semester</th>
+                                    <th width="8%">Credits</th>
+                                    <th width="16%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($modules as $module): ?>
+                                    <tr>
+                                        <td><span class="badge bg-primary"><?php echo htmlspecialchars($module['module_code']); ?></span></td>
+                                        <td><?php echo htmlspecialchars($module['module_name']); ?></td>
+                                        <td><small><?php echo htmlspecialchars($module['program_of_study'] ?? 'N/A'); ?></small></td>
+                                        <td>Year <?php echo $module['year_of_study']; ?></td>
+                                        <td>Sem <?php echo htmlspecialchars($module['semester']); ?></td>
+                                        <td><?php echo $module['credits']; ?></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-warning" 
+                                                    onclick='editModule(<?php echo json_encode($module); ?>)'>
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <form method="POST" style="display:inline;" 
+                                                  onsubmit="return confirm('Are you sure you want to delete this module?');">
+                                                <input type="hidden" name="module_id" value="<?php echo $module['module_id']; ?>">
+                                                <button type="submit" name="delete_module" class="btn btn-sm btn-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Edit Module</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="module_id" id="edit_module_id">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="edit_module_code" class="form-label">Module Code *</label>
+                                <input type="text" class="form-control" id="edit_module_code" 
+                                       name="module_code" style="text-transform: uppercase;" required>
+                            </div>
+                            <div class="col-md-8">
+                                <label for="edit_module_name" class="form-label">Module Name *</label>
+                                <input type="text" class="form-control" id="edit_module_name" 
+                                       name="module_name" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="edit_program_of_study" class="form-label">Program of Study *</label>
+                                <select class="form-select" id="edit_program_of_study" name="program_of_study" required>
+                                    <option value="">Select Program</option>
+                                    <?php foreach ($programs as $prog): ?>
+                                        <option value="<?php echo htmlspecialchars($prog['department_name']); ?>">
+                                            <?php echo htmlspecialchars($prog['department_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="edit_year_of_study" class="form-label">Year *</label>
+                                <select class="form-select" id="edit_year_of_study" name="year_of_study" required>
+                                    <option value="1">Year 1</option>
+                                    <option value="2">Year 2</option>
+                                    <option value="3">Year 3</option>
+                                    <option value="4">Year 4</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="edit_semester" class="form-label">Semester *</label>
+                                <select class="form-select" id="edit_semester" name="semester" required>
+                                    <option value="One">Semester One</option>
+                                    <option value="Two">Semester Two</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="edit_credits" class="form-label">Credits *</label>
+                                <input type="number" class="form-control" id="edit_credits" 
+                                       name="credits" min="1" max="10" required>
+                            </div>
+                            <div class="col-12">
+                                <label for="edit_description" class="form-label">Description</label>
+                                <textarea class="form-control" id="edit_description" 
+                                          name="description" rows="2"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="update_module" class="btn btn-warning">
+                            <i class="bi bi-save"></i> Update Module
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function editModule(module) {
+            document.getElementById('edit_module_id').value = module.module_id;
+            document.getElementById('edit_module_code').value = module.module_code;
+            document.getElementById('edit_module_name').value = module.module_name;
+            document.getElementById('edit_program_of_study').value = module.program_of_study || '';
+            document.getElementById('edit_year_of_study').value = module.year_of_study;
+            document.getElementById('edit_semester').value = module.semester;
+            document.getElementById('edit_credits').value = module.credits;
+            document.getElementById('edit_description').value = module.description || '';
+            new bootstrap.Modal(document.getElementById('editModal')).show();
+        }
+    </script>
+</body>
+</html>

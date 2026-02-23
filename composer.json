@@ -1,0 +1,7 @@
+{
+    "name": "vle-system/university-portal",
+    "description": "Virtual Learning Environment System",
+    "require": {
+        "phpmailer/phpmailer": "^6.8"
+    }
+}

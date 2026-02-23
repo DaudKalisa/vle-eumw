@@ -1,0 +1,114 @@
+# VLE System - Apache Configuration for InfinityFree/Free Hosting
+
+# Enable Rewrite Engine
+RewriteEngine On
+
+# Set Default Charset
+AddDefaultCharset UTF-8
+
+# Prevent Directory Listing
+Options -Indexes
+
+# Set Default Index Files
+DirectoryIndex index.php index.html
+
+# Error Pages (customize these if you create custom error pages)
+ErrorDocument 404 /index.php
+ErrorDocument 403 /index.php
+ErrorDocument 500 /index.php
+
+# Security Headers
+<IfModule mod_headers.c>
+    # Prevent clickjacking
+    Header set X-Frame-Options "SAMEORIGIN"
+    
+    # XSS Protection
+    Header set X-XSS-Protection "1; mode=block"
+    
+    # Prevent MIME sniffing
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+# Protect Sensitive Files (Apache 2.4+ compatible)
+<FilesMatch "\.(sql|log|md|ini|yml|yaml|json|lock)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Protect Configuration Files
+<Files "config.php">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</Files>
+
+<Files "config.production.php">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</Files>
+
+# Compression for Better Performance
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Browser Caching
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType application/pdf "access plus 1 month"
+    ExpiresByType image/x-icon "access plus 1 year"
+</IfModule>
+
+# PHP Settings (if allowed by host - mod_php only)
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+
+# Prevent Access to Vendor Directory
+RewriteRule ^vendor/ - [F,L]
+
+# Allow specific file types in uploads directory
+# Block all files in uploads except allowed types
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/uploads/ [NC]
+    RewriteCond %{REQUEST_URI} !\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx)$ [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# Allow images in pictures directory
+# Block all files in pictures except images
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/pictures/ [NC]
+    RewriteCond %{REQUEST_URI} !\.(jpg|jpeg|png|gif)$ [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
