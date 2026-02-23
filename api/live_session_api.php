@@ -432,7 +432,7 @@ if ($action === 'delete_recording' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// End a live session
+// End a live session (ends ALL active sessions for this lecturer at once)
 if ($action === 'end_session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $session_id = isset($_POST['session_id']) ? (int)$_POST['session_id'] : 0;
     
@@ -446,14 +446,15 @@ if ($action === 'end_session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
-    // Update session status
-    $stmt = $conn->prepare("UPDATE vle_live_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = ?");
-    $stmt->bind_param("i", $session_id);
+    // End ALL active sessions for this lecturer (not just the one)
+    $stmt = $conn->prepare("UPDATE vle_live_sessions SET status = 'completed', ended_at = NOW() WHERE lecturer_id = ? AND status IN ('active', 'pending')");
+    $stmt->bind_param("s", $user['user_id']);
     
     if ($stmt->execute()) {
-        echo json_encode(['success' => true, 'message' => 'Session ended']);
+        $ended_count = $stmt->affected_rows;
+        echo json_encode(['success' => true, 'message' => "All sessions ended ($ended_count total)"]);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Error ending session']);
+        echo json_encode(['success' => false, 'message' => 'Error ending sessions']);
     }
     exit;
 }
