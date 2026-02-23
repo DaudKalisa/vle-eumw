@@ -145,6 +145,68 @@ $is_host = ($user_role === 'lecturer');
         }
         .video-tile.local-tile { border: 2px solid #667eea; }
         .video-tile.screen-tile { border: 2px solid #2ecc71; grid-column: 1 / -1; }
+
+        /* ── MINIMIZED LOCAL TILE (PiP self-view) ── */
+        .video-tile.local-tile.minimized {
+            position: fixed;
+            bottom: 84px;
+            right: 16px;
+            width: 160px;
+            height: 120px;
+            min-height: 120px;
+            z-index: 500;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            border: 2px solid #667eea;
+            cursor: move;
+            transition: width 0.3s, height 0.3s;
+            resize: both;
+            overflow: hidden;
+        }
+        .video-tile.local-tile.minimized video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .video-tile.local-tile.minimized .tile-label {
+            display: none;
+        }
+        .video-tile.local-tile.minimized .tile-fullscreen-btn {
+            display: none;
+        }
+        .video-tile.local-tile.minimized .tile-indicators {
+            display: none;
+        }
+        /* Minimize/restore button on local tile */
+        .tile-minimize-btn {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            border-radius: 8px;
+            width: 32px; height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background 0.2s;
+            z-index: 11;
+        }
+        .video-tile.local-tile:hover .tile-minimize-btn,
+        .video-tile.local-tile.minimized .tile-minimize-btn {
+            opacity: 1;
+        }
+        .tile-minimize-btn:hover { background: rgba(102,126,234,0.8); }
+        .video-tile.local-tile.minimized .tile-minimize-btn {
+            top: 4px;
+            left: 4px;
+            width: 28px; height: 28px;
+            font-size: 12px;
+        }
         .video-tile .muted-icon {
             position: absolute;
             top: 8px;
@@ -449,6 +511,9 @@ $is_host = ($user_role === 'lecturer');
                 <span><?= $user_name ?></span>
                 <?php if ($is_host): ?><span class="host-badge">HOST</span><?php endif; ?>
             </div>
+            <button class="tile-minimize-btn" id="btnMinimizeSelf" onclick="toggleMinimizeSelf()" title="Minimize your video">
+                <i class="bi bi-dash-lg"></i>
+            </button>
             <button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest('.video-tile'))" title="Fullscreen video">
                 <i class="bi bi-arrows-fullscreen"></i>
             </button>
@@ -488,6 +553,9 @@ $is_host = ($user_role === 'lecturer');
     </button>
     <button class="ctrl-btn chat-toggle" id="btnChat" onclick="toggleSidebar()" title="Toggle Chat">
         <i class="bi bi-chat-dots"></i>
+    </button>
+    <button class="ctrl-btn on" id="btnMinimize" onclick="toggleMinimizeSelf()" title="Minimize/Restore your video">
+        <i class="bi bi-pip"></i>
     </button>
     <button class="ctrl-btn fullscreen" id="btnFullscreen" onclick="toggleFullscreen()" title="Full Screen">
         <i class="bi bi-arrows-fullscreen"></i>
@@ -1069,6 +1137,127 @@ $is_host = ($user_role === 'lecturer');
         e.preventDefault();
         toggleTileFullscreen(localTile);
     });
+
+    // ── Minimize / Restore self-view (Picture-in-Picture style) ──
+    let selfMinimized = false;
+
+    window.toggleMinimizeSelf = function() {
+        const tile = document.getElementById('localTile');
+        const btnBar = document.getElementById('btnMinimize');
+        const btnTile = document.getElementById('btnMinimizeSelf');
+
+        selfMinimized = !selfMinimized;
+
+        if (selfMinimized) {
+            // Remove from grid and make floating PiP
+            tile.classList.add('minimized');
+            // Move tile out of grid to body so it floats
+            document.body.appendChild(tile);
+            if (btnBar) {
+                btnBar.className = 'ctrl-btn off';
+                btnBar.innerHTML = '<i class="bi bi-pip"></i>';
+                btnBar.title = 'Restore your video';
+            }
+            if (btnTile) {
+                btnTile.innerHTML = '<i class="bi bi-arrows-angle-expand"></i>';
+                btnTile.title = 'Restore your video';
+            }
+        } else {
+            // Restore to grid
+            tile.classList.remove('minimized');
+            tile.style.left = '';
+            tile.style.top = '';
+            tile.style.right = '';
+            tile.style.bottom = '';
+            tile.style.width = '';
+            tile.style.height = '';
+            // Put back as first child in grid
+            const grid = document.getElementById('videoGrid');
+            grid.insertBefore(tile, grid.firstChild);
+            if (btnBar) {
+                btnBar.className = 'ctrl-btn on';
+                btnBar.innerHTML = '<i class="bi bi-pip"></i>';
+                btnBar.title = 'Minimize your video';
+            }
+            if (btnTile) {
+                btnTile.innerHTML = '<i class="bi bi-dash-lg"></i>';
+                btnTile.title = 'Minimize your video';
+            }
+        }
+        updateGridLayout();
+    };
+
+    // ── Drag support for minimized self-view ──
+    (function() {
+        let isDragging = false;
+        let dragOffsetX = 0, dragOffsetY = 0;
+
+        document.addEventListener('mousedown', function(e) {
+            const tile = document.getElementById('localTile');
+            if (!tile || !tile.classList.contains('minimized')) return;
+            if (e.target.closest('button')) return; // Don't drag when clicking buttons
+            if (!tile.contains(e.target)) return;
+
+            isDragging = true;
+            const rect = tile.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            tile.style.transition = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            const tile = document.getElementById('localTile');
+            if (!tile) return;
+
+            // Switch from right/bottom to left/top positioning for drag
+            tile.style.right = 'auto';
+            tile.style.bottom = 'auto';
+            tile.style.left = Math.max(0, Math.min(window.innerWidth - tile.offsetWidth, e.clientX - dragOffsetX)) + 'px';
+            tile.style.top = Math.max(0, Math.min(window.innerHeight - tile.offsetHeight, e.clientY - dragOffsetY)) + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            const tile = document.getElementById('localTile');
+            if (tile) tile.style.transition = '';
+        });
+
+        // Touch support for mobile
+        document.addEventListener('touchstart', function(e) {
+            const tile = document.getElementById('localTile');
+            if (!tile || !tile.classList.contains('minimized')) return;
+            if (e.target.closest('button')) return;
+            if (!tile.contains(e.target)) return;
+
+            isDragging = true;
+            const touch = e.touches[0];
+            const rect = tile.getBoundingClientRect();
+            dragOffsetX = touch.clientX - rect.left;
+            dragOffsetY = touch.clientY - rect.top;
+            tile.style.transition = 'none';
+        }, { passive: true });
+
+        document.addEventListener('touchmove', function(e) {
+            if (!isDragging) return;
+            const tile = document.getElementById('localTile');
+            if (!tile) return;
+            const touch = e.touches[0];
+            tile.style.right = 'auto';
+            tile.style.bottom = 'auto';
+            tile.style.left = Math.max(0, Math.min(window.innerWidth - tile.offsetWidth, touch.clientX - dragOffsetX)) + 'px';
+            tile.style.top = Math.max(0, Math.min(window.innerHeight - tile.offsetHeight, touch.clientY - dragOffsetY)) + 'px';
+        }, { passive: true });
+
+        document.addEventListener('touchend', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            const tile = document.getElementById('localTile');
+            if (tile) tile.style.transition = '';
+        });
+    })();
 })();
 </script>
 </body>
