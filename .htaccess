@@ -80,19 +80,14 @@ ErrorDocument 500 /index.php
     ExpiresByType image/x-icon "access plus 1 year"
 </IfModule>
 
-# PHP Settings (if allowed by host - mod_php only)
-<IfModule mod_php7.c>
-    php_value upload_max_filesize 10M
-    php_value post_max_size 10M
-    php_value max_execution_time 300
-    php_value max_input_time 300
-</IfModule>
-<IfModule mod_php.c>
-    php_value upload_max_filesize 10M
-    php_value post_max_size 10M
-    php_value max_execution_time 300
-    php_value max_input_time 300
-</IfModule>
+# PHP Settings via .user.ini (mod_php directives removed for LiteSpeed/CGI compatibility)
+# If your host uses mod_php, uncomment the block below:
+# <IfModule mod_php.c>
+#     php_value upload_max_filesize 10M
+#     php_value post_max_size 10M
+#     php_value max_execution_time 300
+#     php_value max_input_time 300
+# </IfModule>
 
 # Prevent Access to Vendor Directory
 RewriteRule ^vendor/ - [F,L]
