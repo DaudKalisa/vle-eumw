@@ -698,6 +698,33 @@ $is_host = ($user_role === 'lecturer');
                 btn.className = 'ctrl-btn ' + (isMuted ? 'off' : 'on');
                 btn.innerHTML = isMuted ? '<i class="bi bi-camera-video-off-fill"></i>' : '<i class="bi bi-camera-video-fill"></i>';
             }
+        },
+
+        onSessionEnded: function(status) {
+            <?php if (!$is_host): ?>
+            // Student: session was ended by lecturer — show overlay and redirect
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:Inter,sans-serif';
+            overlay.innerHTML = `
+                <i class="bi bi-exclamation-circle" style="font-size:4rem;color:#f39c12;margin-bottom:1rem"></i>
+                <h2 style="margin-bottom:0.5rem">Session Ended</h2>
+                <p style="opacity:0.8;margin-bottom:1.5rem">The lecturer has ended this live session.</p>
+                <p style="opacity:0.6">Redirecting in <span id="endCountdown">5</span> seconds...</p>
+            `;
+            document.body.appendChild(overlay);
+            let countdown = 5;
+            const timer = setInterval(function() {
+                countdown--;
+                const el = document.getElementById('endCountdown');
+                if (el) el.textContent = countdown;
+                if (countdown <= 0) {
+                    clearInterval(timer);
+                    window.location.href = '../student/live_invites.php';
+                }
+            }, 1000);
+            <?php else: ?>
+            // Host: no action needed, they initiated the end
+            <?php endif; ?>
         }
     });
 
