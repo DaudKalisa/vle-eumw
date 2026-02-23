@@ -10,6 +10,117 @@ requireRole(['staff', 'examination_manager']);
 $conn = getDbConnection();
 $user = getCurrentUser();
 
+$success_message = '';
+$error_message = '';
+
+/**
+ * Helper: Force-end a single exam session — grades answers, creates result, marks completed
+ */
+function forceEndSession($conn, $session_id) {
+    $sess_stmt = $conn->prepare("SELECT es.*, ex.passing_marks, ex.exam_id FROM exam_sessions es JOIN exams ex ON es.exam_id = ex.exam_id WHERE es.session_id = ? AND es.status = 'in_progress'");
+    $sess_stmt->bind_param("i", $session_id);
+    $sess_stmt->execute();
+    $sess = $sess_stmt->get_result()->fetch_assoc();
+    if (!$sess) return false;
+
+    $exam_id = $sess['exam_id'];
+    $student_id = $sess['student_id'];
+
+    // Skip if result already exists
+    $chk = $conn->prepare("SELECT result_id FROM exam_results WHERE session_id = ?");
+    $chk->bind_param("i", $session_id);
+    $chk->execute();
+    if ($chk->get_result()->num_rows > 0) {
+        $conn->query("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = $session_id");
+        return true;
+    }
+
+    // Get questions
+    $questions = [];
+    $qr = $conn->query("SELECT * FROM exam_questions WHERE exam_id = $exam_id");
+    while ($q = $qr->fetch_assoc()) $questions[$q['question_id']] = $q;
+
+    // Get answers
+    $answers = [];
+    $ar = $conn->query("SELECT * FROM exam_answers WHERE session_id = $session_id");
+    while ($a = $ar->fetch_assoc()) $answers[$a['question_id']] = $a;
+
+    $total_score = 0;
+    $total_possible = 0;
+    foreach ($questions as $qid => $question) {
+        $total_possible += $question['marks'];
+        $answer_text = $answers[$qid]['answer_text'] ?? '';
+        $correct_answer = $question['correct_answer'] ?? '';
+        $marks_obtained = 0;
+        $is_correct = 0;
+        switch ($question['question_type']) {
+            case 'multiple_choice': case 'true_false':
+                if (strtolower(trim($answer_text)) === strtolower(trim($correct_answer))) { $is_correct = 1; $marks_obtained = $question['marks']; }
+                break;
+            case 'multiple_answer':
+                $sa = json_decode($answer_text, true) ?: []; $ca = json_decode($correct_answer, true) ?: [];
+                sort($sa); sort($ca);
+                if ($sa == $ca) { $is_correct = 1; $marks_obtained = $question['marks']; }
+                elseif (!empty($sa) && !empty($ca)) { $cc = count(array_intersect($sa, $ca)); $wc = count(array_diff($sa, $ca)); $marks_obtained = round(max(0, ($cc-$wc)/count($ca)) * $question['marks'], 2); }
+                break;
+            case 'short_answer':
+                if (strtolower(trim($answer_text)) === strtolower(trim($correct_answer))) { $is_correct = 1; $marks_obtained = $question['marks']; }
+                break;
+            case 'essay': $marks_obtained = 0; break;
+        }
+        $total_score += $marks_obtained;
+        if (isset($answers[$qid])) {
+            $conn->query("UPDATE exam_answers SET is_correct = $is_correct, marks_obtained = $marks_obtained WHERE answer_id = " . $answers[$qid]['answer_id']);
+        }
+    }
+    $percentage = $total_possible > 0 ? ($total_score / $total_possible) * 100 : 0;
+    $is_passed = ($total_score >= $sess['passing_marks']) ? 1 : 0;
+    if ($percentage >= 70) $grade = 'A'; elseif ($percentage >= 60) $grade = 'B'; elseif ($percentage >= 50) $grade = 'C'; elseif ($percentage >= 40) $grade = 'D'; else $grade = 'F';
+
+    $ins = $conn->prepare("INSERT INTO exam_results (exam_id, student_id, session_id, score, percentage, is_passed, grade, submitted_at, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Force-ended by examination officer')");
+    $ins->bind_param("isiddis", $exam_id, $student_id, $session_id, $total_score, $percentage, $is_passed, $grade);
+    $ins->execute();
+    $conn->query("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = $session_id");
+    return true;
+}
+
+// Handle force end single session
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['force_end_session'])) {
+    $sid = (int)$_POST['session_id'];
+    $conn->begin_transaction();
+    try {
+        if (forceEndSession($conn, $sid)) {
+            $conn->commit();
+            $success_message = "Session #$sid forcefully ended and auto-graded.";
+        } else {
+            $conn->rollback();
+            $error_message = "Session not found or already completed.";
+        }
+    } catch (Exception $e) {
+        $conn->rollback();
+        $error_message = "Error: " . $e->getMessage();
+    }
+}
+
+// Handle force end all sessions for an exam
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['force_end_all'])) {
+    $eid = (int)$_POST['exam_id'];
+    $conn->begin_transaction();
+    try {
+        $sessions = $conn->query("SELECT session_id FROM exam_sessions WHERE exam_id = $eid AND status = 'in_progress'");
+        $count = 0;
+        while ($row = $sessions->fetch_assoc()) {
+            if (forceEndSession($conn, $row['session_id'])) $count++;
+        }
+        $conn->query("UPDATE exams SET end_time = NOW(), updated_at = NOW() WHERE exam_id = $eid AND end_time > NOW()");
+        $conn->commit();
+        $success_message = "Force-ended $count session(s) for the exam.";
+    } catch (Exception $e) {
+        $conn->rollback();
+        $error_message = "Error: " . $e->getMessage();
+    }
+}
+
 $filter = $_GET['filter'] ?? '';
 $exam_id = (int)($_GET['exam_id'] ?? 0);
 
@@ -82,14 +193,37 @@ $breadcrumbs = [['title' => 'Monitoring']];
     <?php include 'header_nav.php'; ?>
 
     <div class="vle-content">
+        <?php if ($success_message): ?>
+            <div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle me-2"></i><?= htmlspecialchars($success_message) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+        <?php endif; ?>
+        <?php if ($error_message): ?>
+            <div class="alert alert-danger alert-dismissible fade show"><i class="bi bi-exclamation-triangle me-2"></i><?= htmlspecialchars($error_message) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+        <?php endif; ?>
+
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
             <div>
                 <h2 class="vle-page-title"><i class="bi bi-camera-video me-2"></i>Examination Monitoring</h2>
                 <p class="text-muted mb-0">Live invigilate exams, review camera snapshots and violations</p>
             </div>
-            <?php if (count($active_sessions) > 0): ?>
-                <span class="badge bg-danger fs-6 live-indicator"><i class="bi bi-broadcast me-1"></i><?= count($active_sessions) ?> Live Session(s)</span>
-            <?php endif; ?>
+            <div class="d-flex align-items-center gap-2">
+                <?php if (count($active_sessions) > 0): ?>
+                    <span class="badge bg-danger fs-6 live-indicator"><i class="bi bi-broadcast me-1"></i><?= count($active_sessions) ?> Live Session(s)</span>
+                    <?php
+                    // Group by exam for "End All" buttons
+                    $exams_with_sessions = [];
+                    foreach ($active_sessions as $as) {
+                        $exams_with_sessions[$as['exam_id']] = $as['exam_name'];
+                    }
+                    foreach ($exams_with_sessions as $eid => $ename): ?>
+                        <form method="POST" class="d-inline" onsubmit="return confirm('FORCE END ALL sessions for: <?= htmlspecialchars(addslashes($ename)) ?>?\n\nThis will auto-grade and terminate all in-progress sessions.\nThis action cannot be undone!')">
+                            <input type="hidden" name="exam_id" value="<?= $eid ?>">
+                            <button type="submit" name="force_end_all" class="btn btn-danger btn-sm">
+                                <i class="bi bi-stop-circle-fill me-1"></i>End All: <?= htmlspecialchars($ename) ?>
+                            </button>
+                        </form>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
         </div>
 
         <!-- Filter -->
@@ -154,6 +288,12 @@ $breadcrumbs = [['title' => 'Monitoring']];
                             <div class="progress-bar bg-<?= $pct_elapsed > 80 ? 'danger' : ($pct_elapsed > 60 ? 'warning' : 'success') ?>" style="width: <?= $pct_elapsed ?>%"></div>
                         </div>
                         <small class="text-muted"><?= $s['minutes_elapsed'] ?>m elapsed / <?= $time_remaining ?>m remaining</small>
+                        <form method="POST" class="mt-2" onsubmit="return confirm('Force-end this session for <?= htmlspecialchars(addslashes($s['student_name'])) ?>?\n\nTheir answers will be auto-graded and saved.')">
+                            <input type="hidden" name="session_id" value="<?= $s['session_id'] ?>">
+                            <button type="submit" name="force_end_session" class="btn btn-danger btn-sm w-100">
+                                <i class="bi bi-stop-circle me-1"></i>End Session
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>

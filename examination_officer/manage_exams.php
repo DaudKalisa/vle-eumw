@@ -42,6 +42,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
     $stmt->execute() ? $success_message = "Exam status updated." : $error_message = "Failed to update status.";
 }
 
+// Handle force end exam (terminate all in-progress sessions)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['force_end_exam'])) {
+    $exam_id = (int)$_POST['exam_id'];
+    $conn->begin_transaction();
+    try {
+        // Get exam details
+        $exam_stmt = $conn->prepare("SELECT * FROM exams WHERE exam_id = ?");
+        $exam_stmt->bind_param("i", $exam_id);
+        $exam_stmt->execute();
+        $exam_data = $exam_stmt->get_result()->fetch_assoc();
+
+        if (!$exam_data) throw new Exception("Exam not found.");
+
+        // Get all in-progress sessions
+        $sessions_result = $conn->query("SELECT * FROM exam_sessions WHERE exam_id = $exam_id AND status = 'in_progress'");
+        $ended_count = 0;
+
+        // Get all questions for grading
+        $questions = [];
+        $q_result = $conn->query("SELECT * FROM exam_questions WHERE exam_id = $exam_id");
+        while ($qrow = $q_result->fetch_assoc()) $questions[$qrow['question_id']] = $qrow;
+
+        while ($sess = $sessions_result->fetch_assoc()) {
+            $sid = $sess['session_id'];
+            $student_id = $sess['student_id'];
+
+            // Check if result already exists
+            $check_result = $conn->prepare("SELECT result_id FROM exam_results WHERE session_id = ?");
+            $check_result->bind_param("i", $sid);
+            $check_result->execute();
+            if ($check_result->get_result()->num_rows > 0) {
+                // Already has a result, just mark session as completed
+                $conn->query("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = $sid");
+                $ended_count++;
+                continue;
+            }
+
+            // Get student's answers
+            $answers = [];
+            $a_result = $conn->query("SELECT * FROM exam_answers WHERE session_id = $sid");
+            while ($arow = $a_result->fetch_assoc()) $answers[$arow['question_id']] = $arow;
+
+            $total_score = 0;
+            $total_possible = 0;
+
+            foreach ($questions as $qid => $question) {
+                $total_possible += $question['marks'];
+                $answer_text = $answers[$qid]['answer_text'] ?? '';
+                $correct_answer = $question['correct_answer'] ?? '';
+                $marks_obtained = 0;
+                $is_correct = 0;
+
+                switch ($question['question_type']) {
+                    case 'multiple_choice':
+                    case 'true_false':
+                        if (strtolower(trim($answer_text)) === strtolower(trim($correct_answer))) {
+                            $is_correct = 1;
+                            $marks_obtained = $question['marks'];
+                        }
+                        break;
+                    case 'multiple_answer':
+                        $student_ans = json_decode($answer_text, true) ?: [];
+                        $correct_ans = json_decode($correct_answer, true) ?: [];
+                        sort($student_ans); sort($correct_ans);
+                        if ($student_ans == $correct_ans) {
+                            $is_correct = 1;
+                            $marks_obtained = $question['marks'];
+                        } elseif (!empty($student_ans) && !empty($correct_ans)) {
+                            $cc = count(array_intersect($student_ans, $correct_ans));
+                            $wc = count(array_diff($student_ans, $correct_ans));
+                            $marks_obtained = round(max(0, ($cc - $wc) / count($correct_ans)) * $question['marks'], 2);
+                        }
+                        break;
+                    case 'short_answer':
+                        if (strtolower(trim($answer_text)) === strtolower(trim($correct_answer))) {
+                            $is_correct = 1;
+                            $marks_obtained = $question['marks'];
+                        }
+                        break;
+                    case 'essay':
+                        $marks_obtained = 0;
+                        break;
+                }
+                $total_score += $marks_obtained;
+                if (isset($answers[$qid])) {
+                    $conn->query("UPDATE exam_answers SET is_correct = $is_correct, marks_obtained = $marks_obtained WHERE answer_id = " . $answers[$qid]['answer_id']);
+                }
+            }
+
+            $percentage = $total_possible > 0 ? ($total_score / $total_possible) * 100 : 0;
+            $is_passed = ($total_score >= $exam_data['passing_marks']) ? 1 : 0;
+            if ($percentage >= 70) $grade = 'A';
+            elseif ($percentage >= 60) $grade = 'B';
+            elseif ($percentage >= 50) $grade = 'C';
+            elseif ($percentage >= 40) $grade = 'D';
+            else $grade = 'F';
+
+            $ins = $conn->prepare("INSERT INTO exam_results (exam_id, student_id, session_id, score, percentage, is_passed, grade, submitted_at, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Force-ended by examination officer')");
+            $ins->bind_param("isiddis", $exam_id, $student_id, $sid, $total_score, $percentage, $is_passed, $grade);
+            $ins->execute();
+
+            $conn->query("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = $sid");
+            $ended_count++;
+        }
+
+        // Set exam end_time to now (so it shows as ended)
+        $conn->query("UPDATE exams SET end_time = NOW(), updated_at = NOW() WHERE exam_id = $exam_id AND end_time > NOW()");
+
+        $conn->commit();
+        $success_message = "Exam forcefully ended. $ended_count active session(s) terminated and auto-graded.";
+    } catch (Exception $e) {
+        $conn->rollback();
+        $error_message = "Error force-ending exam: " . $e->getMessage();
+    }
+}
+
 // Get filter values
 $filter_status = $_GET['status'] ?? '';
 $filter_course = $_GET['course'] ?? '';
@@ -293,6 +409,14 @@ $breadcrumbs = [['title' => 'Examinations']];
                                             <a href="exam_view.php?id=<?= $exam['exam_id'] ?>" class="btn btn-outline-primary" title="View"><i class="bi bi-eye"></i></a>
                                             <a href="exam_edit.php?id=<?= $exam['exam_id'] ?>" class="btn btn-outline-warning" title="Edit"><i class="bi bi-pencil"></i></a>
                                             <a href="question_bank.php?exam_id=<?= $exam['exam_id'] ?>" class="btn btn-outline-info" title="Questions"><i class="bi bi-question-circle"></i></a>
+                                            <?php if ($exam['is_active'] && $now >= $start && $now <= $end): ?>
+                                            <form method="POST" class="d-inline" onsubmit="return confirm('FORCE END this exam?\n\nThis will:\n• Terminate ALL in-progress sessions\n• Auto-grade and save all student answers\n• Mark the exam as ended\n\nThis action cannot be undone!')">
+                                                <input type="hidden" name="exam_id" value="<?= $exam['exam_id'] ?>">
+                                                <button type="submit" name="force_end_exam" class="btn btn-danger" title="Force End Exam">
+                                                    <i class="bi bi-stop-circle-fill"></i>
+                                                </button>
+                                            </form>
+                                            <?php endif; ?>
                                             <form method="POST" class="d-inline" onsubmit="return confirm('Toggle exam status?')">
                                                 <input type="hidden" name="exam_id" value="<?= $exam['exam_id'] ?>">
                                                 <button type="submit" name="toggle_status" class="btn btn-outline-<?= $exam['is_active'] ? 'secondary' : 'success' ?>" title="<?= $exam['is_active'] ? 'Deactivate' : 'Activate' ?>">
