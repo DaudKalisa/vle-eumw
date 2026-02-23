@@ -466,6 +466,61 @@ $is_host = ($user_role === 'lecturer');
             from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
             to { transform: translateX(-50%) translateY(0); opacity: 1; }
         }
+
+        /* ── Enable Mic Banner for students ── */
+        .enable-mic-banner {
+            position: fixed;
+            top: 55px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 600;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 20px rgba(102,126,234,0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideDown 0.4s ease;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .enable-mic-banner:hover { transform: translateX(-50%) scale(1.03); }
+        .enable-mic-banner .mic-icon { font-size: 22px; }
+        .enable-mic-banner .dismiss-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: #fff;
+            border-radius: 50%;
+            width: 24px; height: 24px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+
+        /* ── Two-way audio badge ── */
+        .twoway-badge {
+            background: rgba(46,204,113,0.15);
+            border: 1px solid rgba(46,204,113,0.4);
+            color: #2ecc71;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .twoway-badge .tw-dot {
+            width: 6px; height: 6px;
+            background: #2ecc71;
+            border-radius: 50%;
+            animation: livePulse 2s infinite;
+        }
     </style>
 </head>
 <body>
@@ -494,6 +549,7 @@ $is_host = ($user_role === 'lecturer');
         </div>
     </div>
     <div class="d-flex align-items-center gap-3">
+        <span class="twoway-badge" id="twowayBadge" style="display:none;"><span class="tw-dot"></span> 2-Way Audio</span>
         <span class="peer-count" id="peerCount"><i class="bi bi-people me-1"></i> 1</span>
         <span style="font-size:12px;color:#666;" id="connectionStatus">Connecting...</span>
     </div>
@@ -628,6 +684,20 @@ $is_host = ($user_role === 'lecturer');
             console.error(err);
             statusEl.textContent = typeof err === 'string' ? err.substring(0, 60) : 'Error';
             statusEl.style.color = '#e74c3c';
+        },
+
+        onRemoteMuteToggle: function(mediaType, isMuted, fromPeerId) {
+            // Lecturer remotely muted/unmuted our mic or camera — update buttons
+            if (mediaType === 'audio') {
+                const btn = document.getElementById('btnAudio');
+                btn.className = 'ctrl-btn ' + (isMuted ? 'off' : 'on');
+                btn.innerHTML = isMuted ? '<i class="bi bi-mic-mute-fill"></i>' : '<i class="bi bi-mic-fill"></i>';
+                showToast(isMuted ? 'Your microphone was muted by the host' : 'Your microphone was unmuted by the host', isMuted ? 'warning' : 'success');
+            } else if (mediaType === 'video') {
+                const btn = document.getElementById('btnVideo');
+                btn.className = 'ctrl-btn ' + (isMuted ? 'off' : 'on');
+                btn.innerHTML = isMuted ? '<i class="bi bi-camera-video-off-fill"></i>' : '<i class="bi bi-camera-video-fill"></i>';
+            }
         }
     });
 
@@ -642,6 +712,11 @@ $is_host = ($user_role === 'lecturer');
         statusEl.textContent = 'Connected';
         statusEl.style.color = '#2ecc71';
 
+        // Show 2-way audio badge when mic is active
+        if (mode === 'full' || mode === 'audio') {
+            show2WayBadge();
+        }
+
         // Update UI based on media mode
         if (mode === 'audio') {
             // Mic only — no camera, show avatar
@@ -654,9 +729,9 @@ $is_host = ($user_role === 'lecturer');
             const btnVideo = document.getElementById('btnVideo');
             btnVideo.className = 'ctrl-btn off';
             btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
-            showMediaBanner('info', '<i class="bi bi-mic-fill me-2"></i>You joined with microphone only. You can still hear and talk.', false);
+            showMediaBanner('info', '<i class="bi bi-mic-fill me-2"></i>Two-way audio active! You can hear and speak. Camera not available.', false);
         } else if (mode === 'view-only') {
-            // No camera or mic — view-only
+            // No camera or mic — view-only, but prompt to enable mic
             document.getElementById('localTile').innerHTML = `
                 <div class="tile-avatar">${USER_NAME.charAt(0).toUpperCase()}</div>
                 <div class="tile-label"><span>${USER_NAME}</span><span style="background:#ffc107;color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;">LISTENER</span></div>
@@ -664,12 +739,16 @@ $is_host = ($user_role === 'lecturer');
             const btnVideo = document.getElementById('btnVideo');
             btnVideo.className = 'ctrl-btn off';
             btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
-            btnVideo.disabled = true;
             const btnAudio = document.getElementById('btnAudio');
             btnAudio.className = 'ctrl-btn off';
             btnAudio.innerHTML = '<i class="bi bi-mic-mute-fill"></i>';
-            btnAudio.disabled = true;
-            showMediaBanner('warning', '<i class="bi bi-eye-fill me-2"></i>You joined as a listener. To use camera/mic, allow permissions and refresh the page.', true);
+            // DON'T disable buttons — clicking them will request permission
+            showMediaBanner('warning', '<i class="bi bi-mic-mute-fill me-2"></i>Your microphone is not connected. Click the <strong>mic button</strong> or the banner above to enable speaking.', true);
+            // Show enable mic banner after a short delay
+            setTimeout(function() { showEnableMicBanner(); }, 1500);
+        } else {
+            // Full mode — camera + mic
+            showMediaBanner('success', '<i class="bi bi-mic-fill me-2"></i><i class="bi bi-camera-video-fill me-2"></i>Two-way audio &amp; video active! Everyone can see and hear you.', false);
         }
     }).catch(function(err) {
         statusEl.textContent = 'Failed to join session';
@@ -776,18 +855,17 @@ $is_host = ($user_role === 'lecturer');
         if (audioUnblockBannerShown) return;
         audioUnblockBannerShown = true;
 
+        const label = IS_HOST
+            ? 'Click here to enable audio — hear your students'
+            : 'Click here to enable audio — hear the lecturer';
+
         const banner = document.createElement('div');
         banner.id = 'audioUnblockBanner';
         banner.style.cssText = 'position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(135deg,#ff6b35,#e74c3c);color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 15px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;animation:slideDown 0.3s ease;';
-        banner.innerHTML = '<i class=\"bi bi-volume-up-fill\" style=\"font-size:20px;\"></i> Click here to enable audio — hear the lecturer <i class=\"bi bi-arrow-right\"></i>';
+        banner.innerHTML = '<i class=\"bi bi-volume-up-fill\" style=\"font-size:20px;\"></i> ' + label + ' <i class=\"bi bi-arrow-right\"></i>';
 
         banner.onclick = function() {
-            // Unmute and play all remote videos
-            document.querySelectorAll('.video-tile:not(.local-tile) video').forEach(function(v) {
-                v.muted = false;
-                v.volume = 1.0;
-                v.play().catch(function() {});
-            });
+            unblockAllRemoteAudio();
             banner.remove();
             audioUnblockBannerShown = false;
         };
@@ -796,16 +874,63 @@ $is_host = ($user_role === 'lecturer');
 
         // Also handle: user clicking anywhere on the page unmutes
         document.addEventListener('click', function unmuteHandler() {
-            document.querySelectorAll('.video-tile:not(.local-tile) video').forEach(function(v) {
-                v.muted = false;
-                v.volume = 1.0;
-                v.play().catch(function() {});
-            });
+            unblockAllRemoteAudio();
             const b = document.getElementById('audioUnblockBanner');
             if (b) b.remove();
             audioUnblockBannerShown = false;
             document.removeEventListener('click', unmuteHandler);
         }, { once: true });
+    }
+
+    // Unmute and play all remote video/audio elements
+    function unblockAllRemoteAudio() {
+        document.querySelectorAll('.video-tile:not(.local-tile) video').forEach(function(v) {
+            v.muted = false;
+            v.volume = 1.0;
+            v.play().catch(function() {});
+        });
+    }
+
+    // ── Enable Microphone banner for view-only/listener students ──
+    function showEnableMicBanner() {
+        if (document.getElementById('enableMicBanner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'enableMicBanner';
+        banner.className = 'enable-mic-banner';
+        banner.innerHTML = '<i class="bi bi-mic-fill mic-icon"></i>' +
+            '<span>This is a <strong>two-way</strong> class — click here to <strong>enable your microphone</strong> and speak!</span>' +
+            '<button class="dismiss-btn" onclick="event.stopPropagation(); dismissEnableMicBanner();" title="Dismiss">&times;</button>';
+        banner.onclick = async function() {
+            try {
+                showToast('Requesting microphone access...', 'info');
+                const mediaResult = await VLERoom.requestMedia('audio');
+                const localVid = document.getElementById('localVideo');
+                if (localVid && mediaResult.stream) {
+                    localVid.srcObject = mediaResult.stream;
+                }
+                const btnAudio = document.getElementById('btnAudio');
+                btnAudio.className = 'ctrl-btn on';
+                btnAudio.innerHTML = '<i class="bi bi-mic-fill"></i>';
+                btnAudio.disabled = false;
+                showToast('Microphone enabled! You can now speak to the class.', 'success');
+                dismissEnableMicBanner();
+                show2WayBadge();
+            } catch (err) {
+                showToast('Could not access microphone: ' + err.message, 'danger');
+            }
+        };
+        document.body.appendChild(banner);
+    }
+
+    function dismissEnableMicBanner() {
+        const b = document.getElementById('enableMicBanner');
+        if (b) { b.style.opacity = '0'; b.style.transition = 'opacity 0.3s'; setTimeout(function() { b.remove(); }, 300); }
+    }
+
+    // Show 2-way audio badge when mic is active
+    function show2WayBadge() {
+        const badge = document.getElementById('twowayBadge');
+        if (badge) badge.style.display = 'inline-flex';
     }
 
     function removePeerTile(peerId) {
@@ -825,24 +950,82 @@ $is_host = ($user_role === 'lecturer');
     }
 
     // ── Controls ──
-    window.toggleAudio = function() {
+    window.toggleAudio = async function() {
+        const mode = VLERoom.getMediaMode();
         const result = VLERoom.toggleAudio();
-        if (result === false && VLERoom.getMediaMode() === 'view-only') {
-            showToast('Microphone not available. Allow mic access and refresh the page.', 'warning');
-            return;
+
+        // If toggle returned false, mic isn't acquired yet — try requesting it
+        if (result === false && (mode === 'view-only' || mode === 'audio')) {
+            try {
+                showToast('Requesting microphone access...', 'info');
+                const mediaResult = await VLERoom.requestMedia('audio');
+                // Update local video display if stream now exists
+                const localVid = document.getElementById('localVideo');
+                if (localVid && mediaResult.stream) {
+                    localVid.srcObject = mediaResult.stream;
+                }
+                const btn = document.getElementById('btnAudio');
+                btn.className = 'ctrl-btn on';
+                btn.innerHTML = '<i class="bi bi-mic-fill"></i>';
+                btn.disabled = false;
+                showToast('Microphone enabled! You can now speak.', 'success');
+                dismissEnableMicBanner();
+                show2WayBadge();
+                return;
+            } catch (err) {
+                showToast('Microphone access denied: ' + err.message, 'danger');
+                return;
+            }
         }
+
         const on = result;
         const btn = document.getElementById('btnAudio');
         btn.className = 'ctrl-btn ' + (on ? 'on' : 'off');
         btn.innerHTML = on ? '<i class="bi bi-mic-fill"></i>' : '<i class="bi bi-mic-mute-fill"></i>';
     };
 
-    window.toggleVideoCtrl = function() {
+    window.toggleVideoCtrl = async function() {
+        const mode = VLERoom.getMediaMode();
         const result = VLERoom.toggleVideo();
-        if (result === false && (VLERoom.getMediaMode() === 'view-only' || VLERoom.getMediaMode() === 'audio')) {
-            showToast('Camera not available. Allow camera access and refresh the page.', 'warning');
-            return;
+
+        // If toggle returned false, camera isn't acquired — try requesting it
+        if (result === false && (mode === 'view-only' || mode === 'audio')) {
+            try {
+                showToast('Requesting camera access...', 'info');
+                const mediaResult = await VLERoom.requestMedia(mode === 'view-only' ? 'both' : 'video');
+                const localVid = document.getElementById('localVideo');
+                if (localVid && mediaResult.stream) {
+                    localVid.srcObject = mediaResult.stream;
+                    localVid.style.display = '';
+                }
+                // Remove avatar if showing
+                const localTile = document.getElementById('localTile');
+                const av = localTile.querySelector('.tile-avatar');
+                if (av) av.remove();
+                // Remove LISTENER badge
+                const listenerBadge = localTile.querySelector('.tile-label span[style]');
+                if (listenerBadge && listenerBadge.textContent === 'LISTENER') listenerBadge.remove();
+
+                const btn = document.getElementById('btnVideo');
+                btn.className = 'ctrl-btn on';
+                btn.innerHTML = '<i class="bi bi-camera-video-fill"></i>';
+                btn.disabled = false;
+                const btnAudio = document.getElementById('btnAudio');
+                if (mode === 'view-only') {
+                    btnAudio.className = 'ctrl-btn on';
+                    btnAudio.innerHTML = '<i class="bi bi-mic-fill"></i>';
+                    btnAudio.disabled = false;
+                }
+                showToast('Camera enabled!', 'success');
+                dismissEnableMicBanner();
+                show2WayBadge();
+                return;
+            } catch (err) {
+                showToast('Camera access denied: ' + err.message, 'danger');
+                return;
+            }
         }
+
         const on = result;
         const btn = document.getElementById('btnVideo');
         btn.className = 'ctrl-btn ' + (on ? 'on' : 'off');
