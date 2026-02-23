@@ -53,7 +53,6 @@
     let onChatMessage = null;
     let onPeerCountUpdate = null;
     let onPeerMediaStateUpdate = null;
-    let onRemoteMuteToggle = null;
     let onSessionEnded = null;
     let onError = null;
 
@@ -71,7 +70,6 @@
         onChatMessage = config.onChatMessage || function () {};
         onPeerCountUpdate = config.onPeerCountUpdate || function () {};
         onPeerMediaStateUpdate = config.onPeerMediaStateUpdate || function () {};
-        onRemoteMuteToggle = config.onRemoteMuteToggle || function () {};
         onSessionEnded = config.onSessionEnded || function () {};
         onError = config.onError || function (e) { console.error('VLERoom error:', e); };
     }
@@ -348,29 +346,6 @@
                     }
                 }
                 break;
-
-            case 'remote_mute':
-                // A lecturer has requested we mute/unmute our device
-                if (payload.media_type === 'audio') {
-                    if (localStream) {
-                        const audioTracks = localStream.getAudioTracks();
-                        const shouldMute = !!payload.mute;
-                        audioTracks.forEach(t => { t.enabled = !shouldMute; });
-                        isAudioOn = !shouldMute;
-                        notifyMediaState('audio', isAudioOn ? 1 : 0);
-                    }
-                } else if (payload.media_type === 'video') {
-                    if (localStream) {
-                        const videoTracks = localStream.getVideoTracks();
-                        const shouldMute = !!payload.mute;
-                        videoTracks.forEach(t => { t.enabled = !shouldMute; });
-                        isVideoOn = !shouldMute;
-                        notifyMediaState('video', isVideoOn ? 1 : 0);
-                    }
-                }
-                // Notify UI callback so buttons update
-                onRemoteMuteToggle(payload.media_type, !!payload.mute, fromPeer);
-                break;
         }
     }
 
@@ -428,12 +403,12 @@
     // ─── MEDIA CONTROLS ──────────────────────────────────────────
     function toggleAudio() {
         if (!localStream) {
-            // No stream at all — caller should use requestMedia('audio')
+            onError('Microphone is not available. Please allow microphone access and refresh.');
             return false;
         }
         const audioTracks = localStream.getAudioTracks();
         if (audioTracks.length === 0) {
-            // Stream exists but no audio track — caller should use requestMedia('audio')
+            onError('No microphone detected.');
             return false;
         }
         isAudioOn = !isAudioOn;
@@ -444,108 +419,18 @@
 
     function toggleVideo() {
         if (!localStream) {
-            // No stream at all — caller should use requestMedia('video')
+            onError('Camera is not available. Please allow camera access and refresh.');
             return false;
         }
         const videoTracks = localStream.getVideoTracks();
         if (videoTracks.length === 0) {
-            // Stream exists but no video track — caller should use requestMedia('video')
+            onError('No camera detected. You joined with audio only.');
             return false;
         }
         isVideoOn = !isVideoOn;
         videoTracks.forEach(t => { t.enabled = isVideoOn; });
         notifyMediaState('video', isVideoOn ? 1 : 0);
         return isVideoOn;
-    }
-
-    /**
-     * Request browser permission for mic or camera mid-session.
-     * This forcefully triggers the browser permission prompt.
-     * After acquiring the track, it is injected into all existing peer connections.
-     * @param {'audio'|'video'|'both'} type - which device(s) to request
-     * @returns {Promise<{stream: MediaStream, mediaMode: string}>}
-     */
-    async function requestMedia(type) {
-        const constraints = {};
-        if (type === 'audio' || type === 'both') {
-            constraints.audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-        }
-        if (type === 'video' || type === 'both') {
-            constraints.video = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
-        }
-
-        // This triggers the browser permission prompt
-        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        // Create localStream if it didn't exist (was view-only)
-        if (!localStream) {
-            localStream = newStream;
-        } else {
-            // Add newly acquired tracks to existing localStream
-            newStream.getTracks().forEach(track => {
-                // Remove old track of same kind if exists
-                const existing = localStream.getTracks().find(t => t.kind === track.kind);
-                if (existing) {
-                    existing.stop();
-                    localStream.removeTrack(existing);
-                }
-                localStream.addTrack(track);
-            });
-        }
-
-        // Inject new tracks into all existing peer connections
-        for (const peerId in peerConnections) {
-            const pc = peerConnections[peerId];
-            const senders = pc.getSenders();
-            newStream.getTracks().forEach(async (track) => {
-                // Find an existing sender for this track kind
-                const sender = senders.find(s => {
-                    if (s.track && s.track.kind === track.kind) return true;
-                    // For recvonly transceivers that have no track
-                    if (!s.track && s.constructor && pc.getTransceivers) {
-                        const t = pc.getTransceivers().find(tr => tr.sender === s && tr.receiver.track && tr.receiver.track.kind === track.kind);
-                        return !!t;
-                    }
-                    return false;
-                });
-                if (sender) {
-                    try {
-                        await sender.replaceTrack(track);
-                        // Change transceiver direction from recvonly to sendrecv
-                        if (pc.getTransceivers) {
-                            const transceiver = pc.getTransceivers().find(tr => tr.sender === sender);
-                            if (transceiver && transceiver.direction === 'recvonly') {
-                                transceiver.direction = 'sendrecv';
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[VLERoom] replaceTrack failed for', peerId, track.kind, e.message);
-                        pc.addTrack(track, localStream);
-                    }
-                } else {
-                    pc.addTrack(track, localStream);
-                }
-            });
-        }
-
-        // Update state flags
-        if (type === 'audio' || type === 'both') {
-            isAudioOn = true;
-            notifyMediaState('audio', 1);
-        }
-        if (type === 'video' || type === 'both') {
-            isVideoOn = true;
-            notifyMediaState('video', 1);
-        }
-
-        // Upgrade media mode
-        if (localStream.getVideoTracks().length > 0 && localStream.getAudioTracks().length > 0) {
-            mediaMode = 'full';
-        } else if (localStream.getAudioTracks().length > 0) {
-            mediaMode = 'audio';
-        }
-
-        return { stream: localStream, mediaMode: mediaMode };
     }
 
     async function toggleScreenShare() {
@@ -600,31 +485,6 @@
                 onError('Screen sharing failed: ' + err.message);
                 return false;
             }
-        }
-    }
-
-    /**
-     * Remotely mute/unmute a peer's microphone or camera (host only).
-     * Sends a signal through the server to the target peer.
-     * @param {string} targetPeerId - The peer to mute/unmute
-     * @param {'audio'|'video'} mediaType - Which device
-     * @param {boolean} mute - true to mute, false to unmute
-     */
-    async function remoteMutePeer(targetPeerId, mediaType, mute) {
-        const fd = new FormData();
-        fd.append('action', 'remote_mute');
-        fd.append('session_id', sessionId);
-        fd.append('peer_id', myPeerId);
-        fd.append('target_peer', targetPeerId);
-        fd.append('media_type', mediaType);
-        fd.append('mute', mute ? 1 : 0);
-        try {
-            const res = await fetch(SIGNAL_API, { method: 'POST', body: fd });
-            const data = await res.json();
-            return data.success;
-        } catch (e) {
-            console.error('[VLERoom] Remote mute error:', e);
-            return false;
         }
     }
 
@@ -838,8 +698,6 @@
         leaveRoom,
         toggleAudio,
         toggleVideo,
-        requestMedia,
-        remoteMutePeer,
         toggleScreenShare,
         startRecording,
         stopRecording,

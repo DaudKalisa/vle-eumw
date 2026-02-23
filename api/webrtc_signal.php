@@ -220,45 +220,6 @@ switch ($action) {
         echo json_encode(['success' => true]);
         break;
 
-    // ─── REMOTE MUTE (Lecturer mutes/unmutes a student) ────────
-    case 'remote_mute':
-        $from_peer = trim($_POST['peer_id'] ?? '');
-        $target_peer = trim($_POST['target_peer'] ?? '');
-        $media_type = trim($_POST['media_type'] ?? 'audio'); // audio or video
-        $mute = (int)($_POST['mute'] ?? 1); // 1 = mute, 0 = unmute
-
-        if (!$from_peer || !$target_peer) {
-            echo json_encode(['success' => false, 'error' => 'Missing peer IDs']);
-            exit;
-        }
-
-        // Verify the requesting user is a lecturer in this session
-        $stmt = $conn->prepare("SELECT user_role FROM vle_session_peers WHERE peer_id = ? AND session_id = ?");
-        $stmt->bind_param("si", $from_peer, $session_id);
-        $stmt->execute();
-        $requester = $stmt->get_result()->fetch_assoc();
-        if (!$requester || $requester['user_role'] !== 'lecturer') {
-            echo json_encode(['success' => false, 'error' => 'Only the lecturer can remotely mute/unmute participants']);
-            exit;
-        }
-
-        // Send a signal to the target peer
-        $signal_type = 'remote_mute';
-        $signal_data = json_encode(['media_type' => $media_type, 'mute' => $mute]);
-        $stmt = $conn->prepare("INSERT INTO vle_webrtc_signals (session_id, from_peer, to_peer, signal_type, signal_data) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("issss", $session_id, $from_peer, $target_peer, $signal_type, $signal_data);
-        $stmt->execute();
-
-        // Also update the target peer's DB state
-        $col = ($media_type === 'video') ? 'is_video_on' : 'is_audio_on';
-        $new_state = $mute ? 0 : 1;
-        $stmt = $conn->prepare("UPDATE vle_session_peers SET $col = ? WHERE peer_id = ? AND session_id = ?");
-        $stmt->bind_param("isi", $new_state, $target_peer, $session_id);
-        $stmt->execute();
-
-        echo json_encode(['success' => true]);
-        break;
-
     // ─── SEND CHAT MESSAGE ────────────────────────────────────────
     case 'send_chat':
         $message = trim($_POST['message'] ?? '');

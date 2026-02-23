@@ -723,7 +723,7 @@ $is_host = ($user_role === 'lecturer');
                 }
             }, 1000);
             <?php else: ?>
-            // Host: no action needed, they initiated the end
+            // Host: no action needed
             <?php endif; ?>
         }
     });
