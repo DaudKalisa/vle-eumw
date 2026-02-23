@@ -129,17 +129,29 @@ try {
             case 'admin':
                 $redirect_url = 'admin/dashboard.php';
                 break;
+            case 'examination_manager':
+                // User with explicit examination_manager role → examination officer portal
+                $redirect_url = 'examination_officer/dashboard.php';
+                break;
             case 'staff':
             case 'hod':
             case 'dean':
-                // Check if this staff user is an examination officer
+                // Check if this staff user is an examination officer/manager
                 $redirect_url = 'admin/dashboard.php';
                 if (!empty($result['user']['related_staff_id'])) {
-                    $em_check = $conn->prepare("SELECT manager_id FROM examination_managers WHERE manager_id = ? AND is_active = 1");
+                    $em_check = $conn->prepare("SELECT manager_id, position FROM examination_managers WHERE manager_id = ? AND is_active = 1");
                     $em_check->bind_param("i", $result['user']['related_staff_id']);
                     $em_check->execute();
-                    if ($em_check->get_result()->num_rows > 0) {
-                        $redirect_url = 'examination_officer/dashboard.php';
+                    $em_result = $em_check->get_result();
+                    if ($em_result->num_rows > 0) {
+                        $em_data = $em_result->fetch_assoc();
+                        // Check if they are a manager (higher role) or officer
+                        $pos = strtolower($em_data['position'] ?? '');
+                        if (strpos($pos, 'manager') !== false) {
+                            $redirect_url = 'examination_manager/dashboard.php';
+                        } else {
+                            $redirect_url = 'examination_officer/dashboard.php';
+                        }
                     }
                 }
                 break;
