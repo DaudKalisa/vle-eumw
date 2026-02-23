@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['force_end_exam'])) {
             elseif ($percentage >= 40) $grade = 'D';
             else $grade = 'F';
 
-            $ins = $conn->prepare("INSERT INTO exam_results (exam_id, student_id, session_id, score, percentage, is_passed, grade, submitted_at, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Force-ended by examination officer')");
+            $ins = $conn->prepare("INSERT INTO exam_results (exam_id, student_id, session_id, score, percentage, is_passed, grade, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
             $ins->bind_param("isiddis", $exam_id, $student_id, $sid, $total_score, $percentage, $is_passed, $grade);
             $ins->execute();
 

@@ -77,7 +77,7 @@ function forceEndSession($conn, $session_id) {
     $is_passed = ($total_score >= $sess['passing_marks']) ? 1 : 0;
     if ($percentage >= 70) $grade = 'A'; elseif ($percentage >= 60) $grade = 'B'; elseif ($percentage >= 50) $grade = 'C'; elseif ($percentage >= 40) $grade = 'D'; else $grade = 'F';
 
-    $ins = $conn->prepare("INSERT INTO exam_results (exam_id, student_id, session_id, score, percentage, is_passed, grade, submitted_at, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Force-ended by examination officer')");
+    $ins = $conn->prepare("INSERT INTO exam_results (exam_id, student_id, session_id, score, percentage, is_passed, grade, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
     $ins->bind_param("isiddis", $exam_id, $student_id, $session_id, $total_score, $percentage, $is_passed, $grade);
     $ins->execute();
     $conn->query("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = $session_id");
