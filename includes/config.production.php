@@ -12,7 +12,7 @@ define('DB_NAME', 'epizXXXX_vle');            // Your database name from cPanel
 define('DB_CHARSET', 'utf8mb4');
 
 // Site Configuration
-define('SITE_URL', 'https://yoursite.rf.gd'); // Your actual site URL
+define('SITE_URL', 'https://vle.exploitsonline.com'); // Production site URL
 
 // Security Settings for Production
 error_reporting(0);                             // Disable error display
