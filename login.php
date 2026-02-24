@@ -35,7 +35,7 @@ if (isset($_SESSION['login_error'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="pictures/Logo.png">
+    <link rel="icon" type="image/png" href="assets/img/Logo.png">
 
     <style>
         :root {
@@ -331,7 +331,7 @@ if (isset($_SESSION['login_error'])) {
     <nav class="eu-navbar">
         <div class="container d-flex align-items-center justify-content-between">
             <a href="index.php" class="nav-brand">
-                <img src="pictures/Logo.png" alt="Exploits University Logo">
+                <img src="assets/img/Logo.png" alt="Exploits University Logo">
                 <div>
                     <div class="uni-name">Exploits University Malawi</div>
                     <div class="vle-label">Virtual Learning Environment</div>
