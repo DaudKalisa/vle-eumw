@@ -8,8 +8,18 @@ require_once __DIR__ . '/config.php';
 
 /**
  * Create a new notification for a user
+ * Automatically sends an email notification as well
+ * @param int $user_id User ID
+ * @param string $type Notification type
+ * @param string $title Notification title
+ * @param string $message Notification message
+ * @param string|null $link Related link
+ * @param string|null $related_id Related entity ID
+ * @param string|null $related_type Related entity type
+ * @param bool $send_email Whether to also send email (default: true)
+ * @return int|false Notification ID on success, false on failure
  */
-function createNotification($user_id, $type, $title, $message, $link = null, $related_id = null, $related_type = null) {
+function createNotification($user_id, $type, $title, $message, $link = null, $related_id = null, $related_type = null, $send_email = true) {
     $conn = getDbConnection();
     
     // Check if table exists first
@@ -23,7 +33,19 @@ function createNotification($user_id, $type, $title, $message, $link = null, $re
     $stmt->bind_param("issssss", $user_id, $type, $title, $message, $link, $related_id, $related_type);
     
     if ($stmt->execute()) {
-        return $conn->insert_id;
+        $notification_id = $conn->insert_id;
+        
+        // Auto-send email notification
+        if ($send_email && $notification_id) {
+            try {
+                emailNotification($notification_id, $user_id);
+            } catch (Exception $e) {
+                error_log("Email notification failed for notification #$notification_id: " . $e->getMessage());
+                // Don't let email failure block the notification creation
+            }
+        }
+        
+        return $notification_id;
     } else {
         error_log("Failed to create notification: " . $conn->error);
         return false;
@@ -153,7 +175,8 @@ function emailNotification($notification_id, $user_id) {
         if (strpos($full_url, 'http') !== 0) {
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-            $full_url = $protocol . '://' . $host . '/vle-eumw/' . ltrim($full_url, '/');
+            $base = defined('SITE_URL') ? rtrim(SITE_URL, '/') : $protocol . '://' . $host . '/vle-eumw';
+            $full_url = $base . '/' . ltrim($full_url, '/');
         }
         $link_html = "<p><a href='" . htmlspecialchars($full_url) . "' style='display:inline-block;padding:12px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;'>View Details</a></p>";
     }
@@ -282,7 +305,8 @@ function generateLecturerNotifications($lecturer_user_id, $lecturer_id) {
             $row['student_name'] . ' submitted work for "' . $row['assignment_title'] . '" in ' . $row['course_name'],
             'lecturer/gradebook.php?course_id=' . $row['course_id'],
             $row['submission_id'],
-            'submission'
+            'submission',
+            false // Skip individual emails for batch-generated notifications
         );
     }
     
@@ -316,7 +340,8 @@ function generateLecturerNotifications($lecturer_user_id, $lecturer_id) {
             'From: ' . ($row['sender_name'] ?? 'Unknown'),
             'lecturer/messages.php?message_id=' . $row['message_id'],
             $row['message_id'],
-            'message'
+            'message',
+            false // Skip individual emails for batch-generated notifications
         );
     }
     
@@ -347,7 +372,8 @@ function generateLecturerNotifications($lecturer_user_id, $lecturer_id) {
             $row['student_name'] . ' enrolled in ' . $row['course_name'],
             'lecturer/manage_content.php?course_id=' . $row['course_id'],
             $row['enrollment_id'],
-            'enrollment'
+            'enrollment',
+            false // Skip individual emails for batch-generated notifications
         );
     }
 }

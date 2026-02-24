@@ -50,7 +50,7 @@ if (!defined('DB_CHARSET')) {
 }
 
 // System Version
-define('VLE_VERSION', '5.1.10');
+define('VLE_VERSION', '16.0.1');
 
 // Create database connection
 function getDbConnection() {

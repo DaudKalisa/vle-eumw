@@ -804,3 +804,232 @@ body {
         border: 1px solid #ddd;
     }
 }
+
+/* ============================================
+   Dashboard Card Responsive Fixes v16
+   Universal text overflow & sizing fixes
+   ============================================ */
+
+/* -- Text Overflow Protection (all dashboards) -- */
+.stat-card .stat-label,
+.stat-card .stat-value,
+.stat-card .stat-content,
+.vle-stat-card .stat-label,
+.vle-stat-card .stat-value,
+.management-card .card-title,
+.management-card .card-subtitle,
+.finance-card .card-title,
+.admin-stat-card .stat-label,
+.admin-stat-card .stat-value,
+.admin-card .card-title {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+    min-width: 0;
+}
+
+/* Stat labels: ensure single-line with ellipsis where possible */
+.stat-card .stat-label,
+.vle-stat-card .stat-label,
+.admin-stat-card .stat-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+/* Stat values: prevent overflow of large numbers/amounts */
+.stat-card .stat-value,
+.vle-stat-card .stat-value,
+.admin-stat-card .stat-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+/* -- Card content flex fix -- */
+.stat-card .stat-content,
+.vle-stat-card .stat-content {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* -- Stats Grid Responsive -- */
+.stats-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+@media (min-width: 992px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+}
+@media (min-width: 1400px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+}
+
+/* -- Management Grid Responsive -- */
+.management-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 768px) {
+    .management-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+@media (min-width: 992px) {
+    .management-grid {
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+}
+@media (min-width: 1400px) {
+    .management-grid {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+}
+
+/* -- Card min-height for uniform grid -- */
+.stat-card,
+.vle-stat-card,
+.admin-stat-card {
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.management-card,
+.admin-card {
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* -- Stat card font scaling for narrow cards -- */
+@media (max-width: 420px) {
+    .stat-card .stat-value,
+    .vle-stat-card .stat-value,
+    .admin-stat-card .stat-value {
+        font-size: 1.1rem;
+    }
+    .stat-card .stat-label,
+    .vle-stat-card .stat-label,
+    .admin-stat-card .stat-label {
+        font-size: 0.65rem;
+        letter-spacing: 0;
+    }
+    .stat-card .stat-icon,
+    .vle-stat-card .stat-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+    .management-card .card-title,
+    .admin-card .card-title {
+        font-size: 0.8rem;
+    }
+    .management-card .card-subtitle,
+    .admin-card .card-subtitle {
+        font-size: 0.65rem;
+    }
+}
+
+/* -- Welcome card responsive -- */
+.welcome-card {
+    overflow: hidden;
+}
+.welcome-card h2,
+.welcome-card h3,
+.welcome-card h4 {
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+@media (max-width: 768px) {
+    .welcome-card {
+        padding: 1.2rem !important;
+    }
+    .welcome-card h2,
+    .welcome-card h3 {
+        font-size: 1.1rem;
+    }
+}
+
+/* -- Course card responsive (lecturer/student) -- */
+.course-card .card-title,
+.course-card .card-text {
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+.course-card .card-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* -- Finance detail cards -- */
+.finance-card,
+.card[style*="linear-gradient"] {
+    overflow: hidden;
+}
+.finance-card h5,
+.finance-card h3,
+.finance-card .card-title {
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+/* -- Action buttons grid responsive -- */
+.action-grid,
+.quick-actions-grid {
+    display: grid;
+    gap: .75rem;
+    grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 768px) {
+    .action-grid,
+    .quick-actions-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+@media (min-width: 992px) {
+    .action-grid,
+    .quick-actions-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+}
+
+/* -- Activity/Chart card responsive -- */
+.activity-card,
+.chart-card {
+    overflow: hidden;
+}
+.activity-card .card-body,
+.chart-card .card-body {
+    overflow-x: auto;
+}
+
+/* -- Bootstrap card general fixes -- */
+.card {
+    overflow: hidden;
+    word-wrap: break-word;
+}
+.card-title {
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+.card-body {
+    min-width: 0;
+}

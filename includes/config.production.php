@@ -33,7 +33,7 @@ ini_set('post_max_size', '10M');
 date_default_timezone_set('Africa/Blantyre');  // Malawi timezone
 
 // Application Settings
-define('APP_NAME', 'Mzuzu University VLE');
+define('APP_NAME', 'Exploits University Malawi VLE');
 define('APP_ENV', 'production');
 
 ?>

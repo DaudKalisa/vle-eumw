@@ -47,8 +47,8 @@ function getUniversitySettings() {
     
     // Default settings
     $settings = [
-        'university_name' => 'University of Excellence',
-        'email' => 'info@university.edu',
+        'university_name' => 'Exploits University Malawi',
+        'email' => 'noreply@exploitsonline.com',
         'phone' => '',
         'website' => ''
     ];

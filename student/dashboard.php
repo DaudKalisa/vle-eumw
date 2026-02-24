@@ -1158,7 +1158,7 @@ $conn->close();
                             <p class="mb-2">To gain access to course materials and assignments, you must pay your student fees.</p>
                             <p class="mb-3">
                                 <i class="bi bi-person-fill"></i> <strong>Please contact the Finance Office:</strong><br>
-                                <i class="bi bi-envelope-fill"></i> Email: <a href="mailto:finance@university.edu" class="alert-link">finance@university.edu</a><br>
+                                <i class="bi bi-envelope-fill"></i> Email: <a href="mailto:finance@exploitsonline.com" class="alert-link">finance@exploitsonline.com</a><br>
                                 <i class="bi bi-telephone-fill"></i> Contact: Linda Chirwa - Finance Department
                             </p>
                             <hr>
@@ -1179,7 +1179,7 @@ $conn->close();
                             <p class="mb-2">You are currently on <strong>Week <?php echo $current_course['current_week']; ?></strong>. Additional payment is required to access all course content.</p>
                             <p class="mb-0">
                                 <i class="bi bi-person-fill"></i> <strong>Contact Finance:</strong> Linda Chirwa | 
-                                <i class="bi bi-envelope-fill"></i> <a href="mailto:finance@university.edu" class="alert-link">finance@university.edu</a>
+                                <i class="bi bi-envelope-fill"></i> <a href="mailto:finance@exploitsonline.com" class="alert-link">finance@exploitsonline.com</a>
                             </p>
                         </div>
                     <?php endif; ?>

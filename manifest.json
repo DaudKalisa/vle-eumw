@@ -1,6 +1,6 @@
 {
-  "name": "VLE Attendance",
-  "short_name": "VLE QR",
+  "name": "Exploits University Malawi VLE",
+  "short_name": "EU VLE",
   "start_url": "/student/attendance_confirm.php",
   "display": "standalone",
   "background_color": "#ffffff",
