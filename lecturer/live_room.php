@@ -77,42 +77,84 @@ $is_host = ($user_role === 'lecturer');
             font-size: 12px; color: #aaa; 
         }
 
-        /* ── MAIN LAYOUT ── */
+        /* ── MAIN LAYOUT: SPEAKER VIEW ── */
         .room-main {
             display: flex;
-            height: calc(100vh - 50px - 70px); /* topbar + controls */
+            height: calc(100vh - 50px - 70px);
         }
 
-        /* ── VIDEO GRID ── */
-        .video-grid {
+        /* Speaker (main) area — shows the pinned/active speaker big */
+        .speaker-area {
             flex: 1;
-            display: grid;
-            gap: 8px;
-            padding: 8px;
-            grid-template-columns: 1fr;
-            align-content: center;
-            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            position: relative;
+            background: #0a0a1a;
+            min-width: 0;
         }
-        .video-grid.grid-2 { grid-template-columns: 1fr 1fr; }
-        .video-grid.grid-3, .video-grid.grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-        .video-grid.grid-5, .video-grid.grid-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
-        .video-grid.grid-many { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+        .speaker-area .video-tile {
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .speaker-area .video-tile video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 12px;
+            background: #000;
+        }
+        /* empty state */
+        .speaker-area .speaker-placeholder {
+            text-align: center;
+            color: #555;
+            font-size: 18px;
+        }
+        .speaker-area .speaker-placeholder i { font-size: 64px; display: block; margin-bottom: 16px; color: #333; }
 
+        /* ── FILMSTRIP: participants on the right ── */
+        .filmstrip {
+            width: 220px;
+            min-width: 220px;
+            background: #12122a;
+            border-left: 1px solid #2a2a4a;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 6px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        .filmstrip .video-tile {
+            width: 100%;
+            height: 130px;
+            min-height: 110px;
+            flex-shrink: 0;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s, transform 0.15s;
+        }
+        .filmstrip .video-tile:hover { border-color: #667eea; transform: scale(1.02); }
+        .filmstrip .video-tile.active-speaker { border-color: #2ecc71; }
+        .filmstrip .video-tile video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+
+        /* ── SHARED TILE STYLES ── */
         .video-tile {
             position: relative;
             background: #1a1a2e;
             border-radius: 12px;
             overflow: hidden;
-            min-height: 180px;
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-        .video-tile video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            border-radius: 12px;
         }
         .video-tile .tile-label {
             position: absolute;
@@ -142,70 +184,12 @@ $is_host = ($user_role === 'lecturer');
             justify-content: center;
             font-size: 32px;
             font-weight: 700;
-        }
-        .video-tile.local-tile { border: 2px solid #667eea; }
-        .video-tile.screen-tile { border: 2px solid #2ecc71; grid-column: 1 / -1; }
-
-        /* ── MINIMIZED LOCAL TILE (PiP self-view) ── */
-        .video-tile.local-tile.minimized {
-            position: fixed;
-            bottom: 84px;
-            right: 16px;
-            width: 160px;
-            height: 120px;
-            min-height: 120px;
-            z-index: 500;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            border: 2px solid #667eea;
-            cursor: move;
-            transition: width 0.3s, height 0.3s;
-            resize: both;
-            overflow: hidden;
-        }
-        .video-tile.local-tile.minimized video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .video-tile.local-tile.minimized .tile-label {
-            display: none;
-        }
-        .video-tile.local-tile.minimized .tile-fullscreen-btn {
-            display: none;
-        }
-        .video-tile.local-tile.minimized .tile-indicators {
-            display: none;
-        }
-        /* Minimize/restore button on local tile */
-        .tile-minimize-btn {
             position: absolute;
-            top: 8px;
-            left: 8px;
-            background: rgba(0,0,0,0.6);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: #fff;
-            border-radius: 8px;
-            width: 32px; height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.2s, background 0.2s;
-            z-index: 11;
+            z-index: 3;
         }
-        .video-tile.local-tile:hover .tile-minimize-btn,
-        .video-tile.local-tile.minimized .tile-minimize-btn {
-            opacity: 1;
-        }
-        .tile-minimize-btn:hover { background: rgba(102,126,234,0.8); }
-        .video-tile.local-tile.minimized .tile-minimize-btn {
-            top: 4px;
-            left: 4px;
-            width: 28px; height: 28px;
-            font-size: 12px;
+        .filmstrip .video-tile .tile-avatar {
+            width: 48px; height: 48px;
+            font-size: 20px;
         }
         .video-tile .muted-icon {
             position: absolute;
@@ -266,21 +250,6 @@ $is_host = ($user_role === 'lecturer');
         }
         .video-tile:-webkit-full-screen:hover .tile-fullscreen-btn,
         .video-tile:fullscreen:hover .tile-fullscreen-btn { opacity: 1; }
-        .video-tile .tile-hint {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.7);
-            color: #fff;
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 12px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            z-index: 10;
-        }
 
         /* ── Peer media-state indicator badges ── */
         .video-tile .tile-indicators {
@@ -302,26 +271,63 @@ $is_host = ($user_role === 'lecturer');
             backdrop-filter: blur(6px);
             -webkit-backdrop-filter: blur(6px);
         }
-        .indicator-badge.mic-off {
-            background: rgba(231,76,60,0.85);
-            animation: pulse-badge 2s infinite;
-        }
-        .indicator-badge.cam-off {
-            background: rgba(155,89,182,0.8);
-        }
-        .indicator-badge.screen-on {
-            background: rgba(46,204,113,0.85);
-        }
-        @keyframes pulse-badge {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.15); }
-        }
+        .indicator-badge.mic-off { background: rgba(231,76,60,0.85); }
+        .indicator-badge.cam-off { background: rgba(155,89,182,0.8); }
+        .indicator-badge.screen-on { background: rgba(46,204,113,0.85); }
 
-        /* Avatar overlay when remote camera is off */
-        .video-tile .tile-avatar {
-            position: absolute;
-            z-index: 3;
+        /* ── SELF-VIEW PiP (minimized local tile) ── */
+        .self-pip {
+            position: fixed;
+            bottom: 84px;
+            right: 16px;
+            width: 180px;
+            height: 135px;
+            z-index: 500;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            border: 2px solid #667eea;
+            cursor: move;
+            overflow: hidden;
+            background: #1a1a2e;
         }
+        .self-pip video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+        .self-pip .self-pip-label {
+            position: absolute;
+            bottom: 4px;
+            left: 6px;
+            background: rgba(0,0,0,0.6);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+        .self-pip .tile-avatar {
+            width: 48px; height: 48px;
+            font-size: 20px;
+        }
+        .self-pip .self-pip-close {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(0,0,0,0.6);
+            border: none;
+            color: #fff;
+            border-radius: 50%;
+            width: 24px; height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 10;
+        }
+        .self-pip:hover .self-pip-close { opacity: 1; }
 
         /* ── SIDEBAR (CHAT) ── */
         .sidebar {
@@ -347,25 +353,11 @@ $is_host = ($user_role === 'lecturer');
             overflow-y: auto;
             padding: 12px;
         }
-        .chat-msg {
-            margin-bottom: 12px;
-        }
-        .chat-msg .chat-author {
-            font-size: 12px;
-            font-weight: 600;
-            color: #667eea;
-        }
+        .chat-msg { margin-bottom: 12px; }
+        .chat-msg .chat-author { font-size: 12px; font-weight: 600; color: #667eea; }
         .chat-msg .chat-author.host { color: #e74c3c; }
-        .chat-msg .chat-text {
-            font-size: 13px;
-            color: #ccc;
-            margin-top: 2px;
-            word-break: break-word;
-        }
-        .chat-msg .chat-time {
-            font-size: 10px;
-            color: #666;
-        }
+        .chat-msg .chat-text { font-size: 13px; color: #ccc; margin-top: 2px; word-break: break-word; }
+        .chat-msg .chat-time { font-size: 10px; color: #666; }
         .chat-input-area {
             padding: 12px;
             border-top: 1px solid #2a2a4a;
@@ -448,60 +440,6 @@ $is_host = ($user_role === 'lecturer');
         }
         .upload-overlay .spinner-border { width: 48px; height: 48px; }
 
-        /* ── RESPONSIVE ── */
-        @media (max-width: 768px) {
-            .sidebar { width: 260px; }
-            .video-grid.grid-2, .video-grid.grid-3, .video-grid.grid-4 { grid-template-columns: 1fr; }
-            .room-controls { gap: 8px; }
-            .ctrl-btn { width: 42px; height: 42px; font-size: 18px; }
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 3px; }
-
-        /* Media banner animations */
-        @keyframes slideDown {
-            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
-            to { transform: translateX(-50%) translateY(0); opacity: 1; }
-        }
-
-        /* ── Enable Mic Banner for students ── */
-        .enable-mic-banner {
-            position: fixed;
-            top: 55px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 600;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: #fff;
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            box-shadow: 0 4px 20px rgba(102,126,234,0.4);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideDown 0.4s ease;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .enable-mic-banner:hover { transform: translateX(-50%) scale(1.03); }
-        .enable-mic-banner .mic-icon { font-size: 22px; }
-        .enable-mic-banner .dismiss-btn {
-            background: rgba(255,255,255,0.2);
-            border: none;
-            color: #fff;
-            border-radius: 50%;
-            width: 24px; height: 24px;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer;
-            font-size: 12px;
-            margin-left: 8px;
-        }
-
         /* ── Two-way audio badge ── */
         .twoway-badge {
             background: rgba(46,204,113,0.15);
@@ -520,6 +458,31 @@ $is_host = ($user_role === 'lecturer');
             background: #2ecc71;
             border-radius: 50%;
             animation: livePulse 2s infinite;
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 900px) {
+            .filmstrip { width: 140px; min-width: 140px; }
+            .filmstrip .video-tile { height: 100px; min-height: 90px; }
+            .sidebar { width: 260px; }
+        }
+        @media (max-width: 600px) {
+            .filmstrip { width: 0; min-width: 0; display: none; }
+            .room-controls { gap: 8px; }
+            .ctrl-btn { width: 42px; height: 42px; font-size: 18px; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 3px; }
+
+        @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; } to { opacity: 1; }
         }
     </style>
 </head>
@@ -558,23 +521,16 @@ $is_host = ($user_role === 'lecturer');
 <!-- MAIN AREA -->
 <div class="room-main">
 
-    <!-- VIDEO GRID -->
-    <div class="video-grid" id="videoGrid">
-        <!-- Local video tile (always first) -->
-        <div class="video-tile local-tile" id="localTile">
-            <video id="localVideo" autoplay muted playsinline></video>
-            <div class="tile-label">
-                <span><?= $user_name ?></span>
-                <?php if ($is_host): ?><span class="host-badge">HOST</span><?php endif; ?>
-            </div>
-            <button class="tile-minimize-btn" id="btnMinimizeSelf" onclick="toggleMinimizeSelf()" title="Minimize your video">
-                <i class="bi bi-dash-lg"></i>
-            </button>
-            <button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest('.video-tile'))" title="Fullscreen video">
-                <i class="bi bi-arrows-fullscreen"></i>
-            </button>
+    <!-- SPEAKER (large/primary) AREA -->
+    <div class="speaker-area" id="speakerArea">
+        <div class="speaker-placeholder" id="speakerPlaceholder">
+            <i class="bi bi-camera-video"></i>
+            Waiting for video...
         </div>
     </div>
+
+    <!-- FILMSTRIP (participant thumbnails) -->
+    <div class="filmstrip" id="filmstrip"></div>
 
     <!-- CHAT SIDEBAR -->
     <div class="sidebar" id="chatSidebar">
@@ -594,6 +550,14 @@ $is_host = ($user_role === 'lecturer');
             <button onclick="sendChat()"><i class="bi bi-send"></i></button>
         </div>
     </div>
+</div>
+
+<!-- SELF-VIEW PiP (your own camera) -->
+<div class="self-pip" id="selfPip" style="display:none;">
+    <video id="localVideo" autoplay muted playsinline></video>
+    <div class="tile-avatar" id="selfAvatar" style="display:none;"><?= strtoupper(substr($user_name,0,1)) ?></div>
+    <div class="self-pip-label"><?= $user_name ?><?php if ($is_host): ?> <span style="color:#e74c3c;font-weight:700;">HOST</span><?php endif; ?></div>
+    <button class="self-pip-close" onclick="toggleSelfPip()" title="Hide self view"><i class="bi bi-x"></i></button>
 </div>
 
 <!-- BOTTOM CONTROLS -->
@@ -641,10 +605,16 @@ $is_host = ($user_role === 'lecturer');
     const USER_ROLE = <?= json_encode($user_role) ?>;
     const IS_HOST = <?= $is_host ? 'true' : 'false' ?>;
 
-    const videoGrid = document.getElementById('videoGrid');
+    const speakerArea = document.getElementById('speakerArea');
+    const filmstrip = document.getElementById('filmstrip');
+    const selfPip = document.getElementById('selfPip');
     const localVideo = document.getElementById('localVideo');
+    const selfAvatar = document.getElementById('selfAvatar');
     const statusEl = document.getElementById('connectionStatus');
     const chatMessages = document.getElementById('chatMessages');
+
+    // Track which tile is currently pinned as speaker
+    let pinnedSpeakerId = null; // peerId or 'local'
 
     // ── Init WebRTC Engine ──
     VLERoom.init({
@@ -660,12 +630,10 @@ $is_host = ($user_role === 'lecturer');
 
         onPeerLeft: function(peerId, info) {
             removePeerTile(peerId);
-            updateGridLayout();
         },
 
         onRemoteStream: function(peerId, stream, info) {
             addOrUpdatePeerTile(peerId, stream, info);
-            updateGridLayout();
         },
 
         onChatMessage: function(msg) {
@@ -687,7 +655,6 @@ $is_host = ($user_role === 'lecturer');
         },
 
         onRemoteMuteToggle: function(mediaType, isMuted, fromPeerId) {
-            // Lecturer remotely muted/unmuted our mic or camera — update buttons
             if (mediaType === 'audio') {
                 const btn = document.getElementById('btnAudio');
                 btn.className = 'ctrl-btn ' + (isMuted ? 'off' : 'on');
@@ -702,25 +669,19 @@ $is_host = ($user_role === 'lecturer');
 
         onSessionEnded: function(status) {
             <?php if (!$is_host): ?>
-            // Student: session was ended by lecturer — show overlay and redirect
             const overlay = document.createElement('div');
             overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:Inter,sans-serif';
-            overlay.innerHTML = `
-                <i class="bi bi-exclamation-circle" style="font-size:4rem;color:#f39c12;margin-bottom:1rem"></i>
-                <h2 style="margin-bottom:0.5rem">Session Ended</h2>
-                <p style="opacity:0.8;margin-bottom:1.5rem">The lecturer has ended this live session.</p>
-                <p style="opacity:0.6">Redirecting in <span id="endCountdown">5</span> seconds...</p>
-            `;
+            overlay.innerHTML = '<i class="bi bi-exclamation-circle" style="font-size:4rem;color:#f39c12;margin-bottom:1rem"></i>' +
+                '<h2 style="margin-bottom:0.5rem">Session Ended</h2>' +
+                '<p style="opacity:0.8;margin-bottom:1.5rem">The lecturer has ended this live session.</p>' +
+                '<p style="opacity:0.6">Redirecting in <span id="endCountdown">5</span> seconds...</p>';
             document.body.appendChild(overlay);
             let countdown = 5;
             const timer = setInterval(function() {
                 countdown--;
                 const el = document.getElementById('endCountdown');
                 if (el) el.textContent = countdown;
-                if (countdown <= 0) {
-                    clearInterval(timer);
-                    window.location.href = '../student/live_invites.php';
-                }
+                if (countdown <= 0) { clearInterval(timer); window.location.href = '../student/live_invites.php'; }
             }, 1000);
             <?php else: ?>
             // Host: no action needed
@@ -728,102 +689,175 @@ $is_host = ($user_role === 'lecturer');
         }
     });
 
-    // ── Join the room ──
+    // ── Join the room — all users get full audio + video ──
     VLERoom.joinRoom().then(function(result) {
         const localStream = result.stream;
         const mode = result.mediaMode;
 
+        // Show self-view PiP
+        selfPip.style.display = '';
         if (localStream) {
             localVideo.srcObject = localStream;
+            localVideo.style.display = '';
+            selfAvatar.style.display = 'none';
+        } else {
+            localVideo.style.display = 'none';
+            selfAvatar.style.display = 'flex';
         }
+
         statusEl.textContent = 'Connected';
         statusEl.style.color = '#2ecc71';
 
-        // Show 2-way audio badge when mic is active
         if (mode === 'full' || mode === 'audio') {
             show2WayBadge();
         }
 
-        // Update UI based on media mode
+        // Update button states based on mode
         if (mode === 'audio') {
-            // Mic only — no camera, show avatar
-            const localVid = document.getElementById('localVideo');
-            if (localVid) localVid.style.display = 'none';
-            document.getElementById('localTile').innerHTML = `
-                <div class="tile-avatar">${USER_NAME.charAt(0).toUpperCase()}</div>
-                <div class="tile-label"><span>${USER_NAME}</span>${IS_HOST ? '<span class="host-badge">HOST</span>' : ''}</div>
-            `;
             const btnVideo = document.getElementById('btnVideo');
             btnVideo.className = 'ctrl-btn off';
             btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
-            showMediaBanner('info', '<i class="bi bi-mic-fill me-2"></i>Two-way audio active! You can hear and speak. Camera not available.', false);
+            localVideo.style.display = 'none';
+            selfAvatar.style.display = 'flex';
         } else if (mode === 'view-only') {
-            // No camera or mic — view-only, but prompt to enable mic
-            document.getElementById('localTile').innerHTML = `
-                <div class="tile-avatar">${USER_NAME.charAt(0).toUpperCase()}</div>
-                <div class="tile-label"><span>${USER_NAME}</span><span style="background:#ffc107;color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;">LISTENER</span></div>
-            `;
             const btnVideo = document.getElementById('btnVideo');
             btnVideo.className = 'ctrl-btn off';
             btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
             const btnAudio = document.getElementById('btnAudio');
             btnAudio.className = 'ctrl-btn off';
             btnAudio.innerHTML = '<i class="bi bi-mic-mute-fill"></i>';
-            // DON'T disable buttons — clicking them will request permission
-            showMediaBanner('warning', '<i class="bi bi-mic-mute-fill me-2"></i>Your microphone is not connected. Click the <strong>mic button</strong> or the banner above to enable speaking.', true);
-            // Show enable mic banner after a short delay
-            setTimeout(function() { showEnableMicBanner(); }, 1500);
-        } else {
-            // Full mode — camera + mic
-            showMediaBanner('success', '<i class="bi bi-mic-fill me-2"></i><i class="bi bi-camera-video-fill me-2"></i>Two-way audio &amp; video active! Everyone can see and hear you.', false);
+            localVideo.style.display = 'none';
+            selfAvatar.style.display = 'flex';
         }
+
+        // If host (lecturer), auto-pin self as speaker initially
+        if (IS_HOST && !pinnedSpeakerId) {
+            pinSpeaker('local');
+        }
+
     }).catch(function(err) {
         statusEl.textContent = 'Failed to join session';
         statusEl.style.color = '#e74c3c';
-        document.getElementById('localTile').innerHTML = `
-            <div class="tile-avatar">${USER_NAME.charAt(0).toUpperCase()}</div>
-            <div class="tile-label"><span>${USER_NAME}</span>${IS_HOST ? '<span class="host-badge">HOST</span>' : ''}</div>
-        `;
-        showMediaBanner('danger', '<i class="bi bi-exclamation-triangle-fill me-2"></i>Failed to join: ' + err.message, true);
+        selfPip.style.display = '';
+        localVideo.style.display = 'none';
+        selfAvatar.style.display = 'flex';
+        showToast('Failed to join: ' + err.message, 'danger');
     });
 
-    // ── Video Tile Management ──
+    // ── Speaker View: pin a tile into the large speaker area ──
+    function pinSpeaker(id) {
+        // id is 'local' or a peerId
+        pinnedSpeakerId = id;
+
+        // Clear speaker area
+        const placeholder = document.getElementById('speakerPlaceholder');
+
+        if (id === 'local') {
+            // Pin local stream as speaker
+            if (placeholder) placeholder.style.display = 'none';
+            let speakerTile = document.getElementById('speakerTile');
+            if (!speakerTile) {
+                speakerTile = document.createElement('div');
+                speakerTile.id = 'speakerTile';
+                speakerTile.className = 'video-tile';
+                speakerTile.innerHTML = '<video autoplay muted playsinline></video>' +
+                    '<div class="tile-avatar" style="display:none;">' + USER_NAME.charAt(0).toUpperCase() + '</div>' +
+                    '<div class="tile-label"><span>' + escapeHtml(USER_NAME) + '</span>' + (IS_HOST ? '<span class="host-badge">HOST</span>' : '') + '</div>' +
+                    '<button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
+                speakerTile.addEventListener('dblclick', function(e) { e.preventDefault(); toggleTileFullscreen(speakerTile); });
+                speakerArea.appendChild(speakerTile);
+            }
+            const vid = speakerTile.querySelector('video');
+            if (localVideo.srcObject) vid.srcObject = localVideo.srcObject;
+            const av = speakerTile.querySelector('.tile-avatar');
+            if (localVideo.srcObject && localVideo.srcObject.getVideoTracks().length > 0) {
+                av.style.display = 'none';
+                vid.style.display = '';
+            } else {
+                av.style.display = 'flex';
+                vid.style.display = 'none';
+            }
+            // Remove local from filmstrip if present
+            const filmLocal = document.getElementById('film-local');
+            if (filmLocal) filmLocal.remove();
+        } else {
+            // Pin a remote peer as speaker
+            if (placeholder) placeholder.style.display = 'none';
+            const filmTile = document.getElementById('film-' + id);
+            let speakerTile = document.getElementById('speakerTile');
+
+            // Create or reuse speaker tile
+            if (!speakerTile) {
+                speakerTile = document.createElement('div');
+                speakerTile.id = 'speakerTile';
+                speakerTile.className = 'video-tile';
+                speakerArea.appendChild(speakerTile);
+            }
+
+            if (filmTile) {
+                // Copy stream and info from filmstrip tile
+                const srcVid = filmTile.querySelector('video');
+                const srcLabel = filmTile.querySelector('.tile-label');
+                const srcAvatar = filmTile.querySelector('.tile-avatar');
+                const name = srcLabel ? srcLabel.querySelector('span').textContent : 'Participant';
+
+                speakerTile.innerHTML = '<video autoplay playsinline></video>' +
+                    '<div class="tile-avatar" style="display:none;">' + name.charAt(0).toUpperCase() + '</div>' +
+                    (srcLabel ? '<div class="tile-label">' + srcLabel.innerHTML + '</div>' : '') +
+                    '<div class="tile-indicators"></div>' +
+                    '<button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
+
+                const vid = speakerTile.querySelector('video');
+                if (srcVid && srcVid.srcObject) {
+                    vid.srcObject = srcVid.srcObject;
+                    vid.muted = false;
+                    vid.volume = 1.0;
+                    vid.play().catch(function(){});
+                }
+
+                // Copy avatar visibility
+                const speakerAvatar = speakerTile.querySelector('.tile-avatar');
+                if (srcAvatar && srcAvatar.style.display === 'flex') {
+                    speakerAvatar.style.display = 'flex';
+                    vid.style.display = 'none';
+                }
+
+                speakerTile.addEventListener('dblclick', function(e) { e.preventDefault(); toggleTileFullscreen(speakerTile); });
+                // Highlight active filmstrip tile
+                filmstrip.querySelectorAll('.video-tile').forEach(t => t.classList.remove('active-speaker'));
+                filmTile.classList.add('active-speaker');
+            }
+        }
+    }
+
+    // ── Video Tile Management (speaker view) ──
     function addOrUpdatePeerTile(peerId, stream, info) {
-        let tile = document.getElementById('tile-' + peerId);
+        const name = (info && info.user_name) ? info.user_name : 'Participant';
+        const isLecturer = info && info.user_role === 'lecturer';
+        const hostBadge = isLecturer ? '<span class="host-badge">HOST</span>' : '';
+
+        // Create/update filmstrip tile
+        let tile = document.getElementById('film-' + peerId);
         if (!tile) {
             tile = document.createElement('div');
-            tile.id = 'tile-' + peerId;
+            tile.id = 'film-' + peerId;
             tile.className = 'video-tile';
-            videoGrid.appendChild(tile);
+            // Click on filmstrip tile to pin as speaker
+            tile.addEventListener('click', function() { pinSpeaker(peerId); });
+            tile.addEventListener('dblclick', function(e) { e.preventDefault(); toggleTileFullscreen(tile); });
+            filmstrip.appendChild(tile);
         }
 
-        const name = (info && info.user_name) ? info.user_name : 'Participant';
-        const isHost = info && info.user_role === 'lecturer';
-        const hostBadge = isHost ? '<span class="host-badge">HOST</span>' : '';
+        tile.innerHTML = '<video autoplay playsinline></video>' +
+            '<div class="tile-avatar" style="display:none;">' + escapeHtml(name).charAt(0).toUpperCase() + '</div>' +
+            '<div class="tile-label"><span>' + escapeHtml(name) + '</span>' + hostBadge + '</div>' +
+            '<div class="tile-indicators"></div>' +
+            '<button class="tile-fullscreen-btn" onclick="event.stopPropagation();toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
 
-        tile.innerHTML = `
-            <video autoplay playsinline></video>
-            <div class="tile-avatar" style="display:none;">${escapeHtml(name).charAt(0).toUpperCase()}</div>
-            <div class="tile-label"><span>${escapeHtml(name)}</span>${hostBadge}</div>
-            <div class="tile-indicators"></div>
-            <button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest('.video-tile'))" title="Fullscreen video">
-                <i class="bi bi-arrows-fullscreen"></i>
-            </button>
-        `;
-
-        // Double-click on tile to toggle fullscreen
-        tile.addEventListener('dblclick', function(e) {
-            e.preventDefault();
-            toggleTileFullscreen(tile);
-        });
         const video = tile.querySelector('video');
         video.srcObject = stream;
-
-        // Ensure remote audio is NOT muted (critical for hearing the lecturer)
         video.muted = false;
         video.volume = 1.0;
-
-        // Handle autoplay policy — browsers may block unmuted autoplay
         const playPromise = video.play();
         if (playPromise !== undefined) {
             playPromise.catch(function(err) {
@@ -831,47 +865,66 @@ $is_host = ($user_role === 'lecturer');
                 showAudioUnblockBanner(video);
             });
         }
+
+        // Auto-pin lecturer as speaker if no one is pinned, or if this IS the lecturer
+        if (isLecturer) {
+            pinSpeaker(peerId);
+        } else if (!pinnedSpeakerId && !IS_HOST) {
+            // First peer to join for a student — probably the lecturer
+            pinSpeaker(peerId);
+        }
+
+        // Also update speaker tile if this peer is currently pinned
+        if (pinnedSpeakerId === peerId) {
+            pinSpeaker(peerId);
+        }
     }
 
-    // Update muted / video-off indicators on a remote peer's tile
     function updatePeerMediaIndicators(peerId, state) {
-        const tile = document.getElementById('tile-' + peerId);
-        if (!tile) return;
+        // Update filmstrip tile indicators
+        const tile = document.getElementById('film-' + peerId);
+        if (tile) {
+            let indicators = tile.querySelector('.tile-indicators');
+            if (!indicators) { indicators = document.createElement('div'); indicators.className = 'tile-indicators'; tile.appendChild(indicators); }
+            let html = '';
+            if (!state.is_audio_on) html += '<div class="indicator-badge mic-off" title="Mic muted"><i class="bi bi-mic-mute-fill"></i></div>';
+            if (!state.is_video_on) html += '<div class="indicator-badge cam-off" title="Camera off"><i class="bi bi-camera-video-off-fill"></i></div>';
+            if (state.is_screen_sharing) html += '<div class="indicator-badge screen-on" title="Sharing screen"><i class="bi bi-display-fill"></i></div>';
+            indicators.innerHTML = html;
 
-        let indicators = tile.querySelector('.tile-indicators');
-        if (!indicators) {
-            indicators = document.createElement('div');
-            indicators.className = 'tile-indicators';
-            tile.appendChild(indicators);
+            // Show/hide avatar
+            const avatar = tile.querySelector('.tile-avatar');
+            const video = tile.querySelector('video');
+            if (avatar && video) {
+                if (!state.is_video_on && !state.is_screen_sharing) {
+                    avatar.style.display = 'flex'; video.style.opacity = '0'; video.style.position = 'absolute';
+                } else {
+                    avatar.style.display = 'none'; video.style.opacity = '1'; video.style.position = '';
+                }
+            }
         }
 
-        let html = '';
-        // Mic muted indicator
-        if (!state.is_audio_on) {
-            html += '<div class="indicator-badge mic-off" title="Microphone muted"><i class="bi bi-mic-mute-fill"></i></div>';
-        }
-        // Video off indicator
-        if (!state.is_video_on) {
-            html += '<div class="indicator-badge cam-off" title="Camera off"><i class="bi bi-camera-video-off-fill"></i></div>';
-        }
-        // Screen sharing indicator
-        if (state.is_screen_sharing) {
-            html += '<div class="indicator-badge screen-on" title="Sharing screen"><i class="bi bi-display-fill"></i></div>';
-        }
-        indicators.innerHTML = html;
+        // Also update speaker tile if this peer is pinned
+        if (pinnedSpeakerId === peerId) {
+            const speakerTile = document.getElementById('speakerTile');
+            if (speakerTile) {
+                let indicators = speakerTile.querySelector('.tile-indicators');
+                if (!indicators) { indicators = document.createElement('div'); indicators.className = 'tile-indicators'; speakerTile.appendChild(indicators); }
+                let html = '';
+                if (!state.is_audio_on) html += '<div class="indicator-badge mic-off" title="Mic muted"><i class="bi bi-mic-mute-fill"></i></div>';
+                if (!state.is_video_on) html += '<div class="indicator-badge cam-off" title="Camera off"><i class="bi bi-camera-video-off-fill"></i></div>';
+                if (state.is_screen_sharing) html += '<div class="indicator-badge screen-on" title="Sharing screen"><i class="bi bi-display-fill"></i></div>';
+                indicators.innerHTML = html;
 
-        // Show/hide avatar when remote video is off
-        const avatar = tile.querySelector('.tile-avatar');
-        const video = tile.querySelector('video');
-        if (avatar && video) {
-            if (!state.is_video_on && !state.is_screen_sharing) {
-                avatar.style.display = 'flex';
-                video.style.opacity = '0';
-                video.style.position = 'absolute';
-            } else {
-                avatar.style.display = 'none';
-                video.style.opacity = '1';
-                video.style.position = '';
+                const avatar = speakerTile.querySelector('.tile-avatar');
+                const video = speakerTile.querySelector('video');
+                if (avatar && video) {
+                    if (!state.is_video_on && !state.is_screen_sharing) {
+                        avatar.style.display = 'flex'; video.style.display = 'none';
+                    } else {
+                        avatar.style.display = 'none'; video.style.display = '';
+                    }
+                }
             }
         }
     }
@@ -889,17 +942,11 @@ $is_host = ($user_role === 'lecturer');
         const banner = document.createElement('div');
         banner.id = 'audioUnblockBanner';
         banner.style.cssText = 'position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(135deg,#ff6b35,#e74c3c);color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 15px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;animation:slideDown 0.3s ease;';
-        banner.innerHTML = '<i class=\"bi bi-volume-up-fill\" style=\"font-size:20px;\"></i> ' + label + ' <i class=\"bi bi-arrow-right\"></i>';
+        banner.innerHTML = '<i class="bi bi-volume-up-fill" style="font-size:20px;"></i> ' + label + ' <i class="bi bi-arrow-right"></i>';
 
-        banner.onclick = function() {
-            unblockAllRemoteAudio();
-            banner.remove();
-            audioUnblockBannerShown = false;
-        };
-
+        banner.onclick = function() { unblockAllRemoteAudio(); banner.remove(); audioUnblockBannerShown = false; };
         document.body.appendChild(banner);
 
-        // Also handle: user clicking anywhere on the page unmutes
         document.addEventListener('click', function unmuteHandler() {
             unblockAllRemoteAudio();
             const b = document.getElementById('audioUnblockBanner');
@@ -909,71 +956,46 @@ $is_host = ($user_role === 'lecturer');
         }, { once: true });
     }
 
-    // Unmute and play all remote video/audio elements
     function unblockAllRemoteAudio() {
-        document.querySelectorAll('.video-tile:not(.local-tile) video').forEach(function(v) {
+        document.querySelectorAll('.video-tile video').forEach(function(v) {
+            if (v.id === 'localVideo') return;
             v.muted = false;
             v.volume = 1.0;
             v.play().catch(function() {});
         });
+        // Also unmute speaker tile video
+        const speakerTile = document.getElementById('speakerTile');
+        if (speakerTile) {
+            const v = speakerTile.querySelector('video');
+            if (v) { v.muted = false; v.volume = 1.0; v.play().catch(function(){}); }
+        }
     }
 
-    // ── Enable Microphone banner for view-only/listener students ──
-    function showEnableMicBanner() {
-        if (document.getElementById('enableMicBanner')) return;
-        const banner = document.createElement('div');
-        banner.id = 'enableMicBanner';
-        banner.className = 'enable-mic-banner';
-        banner.innerHTML = '<i class="bi bi-mic-fill mic-icon"></i>' +
-            '<span>This is a <strong>two-way</strong> class — click here to <strong>enable your microphone</strong> and speak!</span>' +
-            '<button class="dismiss-btn" onclick="event.stopPropagation(); dismissEnableMicBanner();" title="Dismiss">&times;</button>';
-        banner.onclick = async function() {
-            try {
-                showToast('Requesting microphone access...', 'info');
-                const mediaResult = await VLERoom.requestMedia('audio');
-                const localVid = document.getElementById('localVideo');
-                if (localVid && mediaResult.stream) {
-                    localVid.srcObject = mediaResult.stream;
-                }
-                const btnAudio = document.getElementById('btnAudio');
-                btnAudio.className = 'ctrl-btn on';
-                btnAudio.innerHTML = '<i class="bi bi-mic-fill"></i>';
-                btnAudio.disabled = false;
-                showToast('Microphone enabled! You can now speak to the class.', 'success');
-                dismissEnableMicBanner();
-                show2WayBadge();
-            } catch (err) {
-                showToast('Could not access microphone: ' + err.message, 'danger');
-            }
-        };
-        document.body.appendChild(banner);
-    }
-
-    function dismissEnableMicBanner() {
-        const b = document.getElementById('enableMicBanner');
-        if (b) { b.style.opacity = '0'; b.style.transition = 'opacity 0.3s'; setTimeout(function() { b.remove(); }, 300); }
-    }
-
-    // Show 2-way audio badge when mic is active
     function show2WayBadge() {
         const badge = document.getElementById('twowayBadge');
         if (badge) badge.style.display = 'inline-flex';
     }
 
     function removePeerTile(peerId) {
-        const tile = document.getElementById('tile-' + peerId);
+        const tile = document.getElementById('film-' + peerId);
         if (tile) tile.remove();
-    }
-
-    function updateGridLayout() {
-        const tiles = videoGrid.querySelectorAll('.video-tile');
-        const count = tiles.length;
-        videoGrid.className = 'video-grid';
-        if (count === 1) videoGrid.classList.add('grid-1');
-        else if (count === 2) videoGrid.classList.add('grid-2');
-        else if (count <= 4) videoGrid.classList.add('grid-4');
-        else if (count <= 6) videoGrid.classList.add('grid-6');
-        else videoGrid.classList.add('grid-many');
+        // If this was the pinned speaker, fallback
+        if (pinnedSpeakerId === peerId) {
+            pinnedSpeakerId = null;
+            const speakerTile = document.getElementById('speakerTile');
+            if (speakerTile) speakerTile.remove();
+            // Pin the first remaining filmstrip tile, or self
+            const remaining = filmstrip.querySelector('.video-tile');
+            if (remaining) {
+                const id = remaining.id.replace('film-', '');
+                pinSpeaker(id);
+            } else if (IS_HOST) {
+                pinSpeaker('local');
+            } else {
+                const placeholder = document.getElementById('speakerPlaceholder');
+                if (placeholder) placeholder.style.display = '';
+            }
+        }
     }
 
     // ── Controls ──
@@ -981,22 +1003,21 @@ $is_host = ($user_role === 'lecturer');
         const mode = VLERoom.getMediaMode();
         const result = VLERoom.toggleAudio();
 
-        // If toggle returned false, mic isn't acquired yet — try requesting it
         if (result === false && (mode === 'view-only' || mode === 'audio')) {
             try {
                 showToast('Requesting microphone access...', 'info');
                 const mediaResult = await VLERoom.requestMedia('audio');
-                // Update local video display if stream now exists
-                const localVid = document.getElementById('localVideo');
-                if (localVid && mediaResult.stream) {
-                    localVid.srcObject = mediaResult.stream;
+                if (mediaResult.stream) {
+                    localVideo.srcObject = mediaResult.stream;
+                    localVideo.style.display = '';
+                    selfAvatar.style.display = 'none';
+                    // Update speaker tile if local is pinned
+                    if (pinnedSpeakerId === 'local') pinSpeaker('local');
                 }
                 const btn = document.getElementById('btnAudio');
                 btn.className = 'ctrl-btn on';
                 btn.innerHTML = '<i class="bi bi-mic-fill"></i>';
-                btn.disabled = false;
-                showToast('Microphone enabled! You can now speak.', 'success');
-                dismissEnableMicBanner();
+                showToast('Microphone enabled!', 'success');
                 show2WayBadge();
                 return;
             } catch (err) {
@@ -1015,36 +1036,25 @@ $is_host = ($user_role === 'lecturer');
         const mode = VLERoom.getMediaMode();
         const result = VLERoom.toggleVideo();
 
-        // If toggle returned false, camera isn't acquired — try requesting it
         if (result === false && (mode === 'view-only' || mode === 'audio')) {
             try {
                 showToast('Requesting camera access...', 'info');
                 const mediaResult = await VLERoom.requestMedia(mode === 'view-only' ? 'both' : 'video');
-                const localVid = document.getElementById('localVideo');
-                if (localVid && mediaResult.stream) {
-                    localVid.srcObject = mediaResult.stream;
-                    localVid.style.display = '';
+                if (mediaResult.stream) {
+                    localVideo.srcObject = mediaResult.stream;
+                    localVideo.style.display = '';
+                    selfAvatar.style.display = 'none';
+                    if (pinnedSpeakerId === 'local') pinSpeaker('local');
                 }
-                // Remove avatar if showing
-                const localTile = document.getElementById('localTile');
-                const av = localTile.querySelector('.tile-avatar');
-                if (av) av.remove();
-                // Remove LISTENER badge
-                const listenerBadge = localTile.querySelector('.tile-label span[style]');
-                if (listenerBadge && listenerBadge.textContent === 'LISTENER') listenerBadge.remove();
-
                 const btn = document.getElementById('btnVideo');
                 btn.className = 'ctrl-btn on';
                 btn.innerHTML = '<i class="bi bi-camera-video-fill"></i>';
-                btn.disabled = false;
-                const btnAudio = document.getElementById('btnAudio');
                 if (mode === 'view-only') {
+                    const btnAudio = document.getElementById('btnAudio');
                     btnAudio.className = 'ctrl-btn on';
                     btnAudio.innerHTML = '<i class="bi bi-mic-fill"></i>';
-                    btnAudio.disabled = false;
                 }
                 showToast('Camera enabled!', 'success');
-                dismissEnableMicBanner();
                 show2WayBadge();
                 return;
             } catch (err) {
@@ -1057,22 +1067,24 @@ $is_host = ($user_role === 'lecturer');
         const btn = document.getElementById('btnVideo');
         btn.className = 'ctrl-btn ' + (on ? 'on' : 'off');
         btn.innerHTML = on ? '<i class="bi bi-camera-video-fill"></i>' : '<i class="bi bi-camera-video-off-fill"></i>';
-        
-        // Show/hide local video
-        const localVid = document.getElementById('localVideo');
-        if (localVid) localVid.style.display = on ? '' : 'none';
-        
-        const localTile = document.getElementById('localTile');
-        if (!on) {
-            if (!localTile.querySelector('.tile-avatar')) {
-                const avatar = document.createElement('div');
-                avatar.className = 'tile-avatar';
-                avatar.textContent = USER_NAME.charAt(0).toUpperCase();
-                localTile.insertBefore(avatar, localTile.firstChild);
-            }
+
+        // Update self-view
+        if (on) {
+            localVideo.style.display = '';
+            selfAvatar.style.display = 'none';
         } else {
-            const av = localTile.querySelector('.tile-avatar');
-            if (av) av.remove();
+            localVideo.style.display = 'none';
+            selfAvatar.style.display = 'flex';
+        }
+        // Update speaker tile if local is pinned
+        if (pinnedSpeakerId === 'local') {
+            const speakerTile = document.getElementById('speakerTile');
+            if (speakerTile) {
+                const vid = speakerTile.querySelector('video');
+                const av = speakerTile.querySelector('.tile-avatar');
+                if (on) { vid.style.display = ''; av.style.display = 'none'; }
+                else { vid.style.display = 'none'; av.style.display = 'flex'; }
+            }
         }
     };
 
@@ -1085,7 +1097,6 @@ $is_host = ($user_role === 'lecturer');
 
     window.toggleSidebar = function() {
         document.getElementById('chatSidebar').classList.toggle('collapsed');
-        updateGridLayout();
     };
 
     // ── Fullscreen toggle (whole page) ──
@@ -1093,51 +1104,42 @@ $is_host = ($user_role === 'lecturer');
         const doc = document;
         const elem = doc.documentElement;
         if (!doc.fullscreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-            if (elem.requestFullscreen) { elem.requestFullscreen(); }
-            else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); }
-            else if (elem.msRequestFullscreen) { elem.msRequestFullscreen(); }
+            if (elem.requestFullscreen) elem.requestFullscreen();
+            else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+            else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
         } else {
-            if (doc.exitFullscreen) { doc.exitFullscreen(); }
-            else if (doc.webkitExitFullscreen) { doc.webkitExitFullscreen(); }
-            else if (doc.msExitFullscreen) { doc.msExitFullscreen(); }
+            if (doc.exitFullscreen) doc.exitFullscreen();
+            else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+            else if (doc.msExitFullscreen) doc.msExitFullscreen();
         }
     };
 
-    // ── Per-tile fullscreen (fullscreen a single video) ──
+    // ── Per-tile fullscreen ──
     window.toggleTileFullscreen = function(tile) {
         if (!tile) return;
         const doc = document;
         const fsElement = doc.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement;
-
         if (fsElement === tile) {
-            // Exit tile fullscreen
-            if (doc.exitFullscreen) { doc.exitFullscreen(); }
-            else if (doc.webkitExitFullscreen) { doc.webkitExitFullscreen(); }
-            else if (doc.msExitFullscreen) { doc.msExitFullscreen(); }
+            if (doc.exitFullscreen) doc.exitFullscreen();
+            else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+            else if (doc.msExitFullscreen) doc.msExitFullscreen();
         } else {
-            // Enter tile fullscreen
-            if (tile.requestFullscreen) { tile.requestFullscreen(); }
-            else if (tile.webkitRequestFullscreen) { tile.webkitRequestFullscreen(); }
-            else if (tile.msRequestFullscreen) { tile.msRequestFullscreen(); }
+            if (tile.requestFullscreen) tile.requestFullscreen();
+            else if (tile.webkitRequestFullscreen) tile.webkitRequestFullscreen();
+            else if (tile.msRequestFullscreen) tile.msRequestFullscreen();
         }
     };
 
-    // Update tile fullscreen button icon on state change
     function updateTileFullscreenBtns() {
         const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
         document.querySelectorAll('.video-tile .tile-fullscreen-btn i').forEach(function(icon) {
             const tile = icon.closest('.video-tile');
-            if (fsElement === tile) {
-                icon.className = 'bi bi-fullscreen-exit';
-            } else {
-                icon.className = 'bi bi-arrows-fullscreen';
-            }
+            icon.className = (fsElement === tile) ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
         });
     }
     document.addEventListener('fullscreenchange', updateTileFullscreenBtns);
     document.addEventListener('webkitfullscreenchange', updateTileFullscreenBtns);
 
-    // Listen for fullscreen change to update button icon
     document.addEventListener('fullscreenchange', updateFullscreenBtn);
     document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
     function updateFullscreenBtn() {
@@ -1161,10 +1163,8 @@ $is_host = ($user_role === 'lecturer');
         const div = document.createElement('div');
         div.className = 'chat-msg';
         const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
-        div.innerHTML = `
-            <span class="chat-author ${isMe ? '' : ''}">${escapeHtml(msg.user_name)} <span class="chat-time">${time}</span></span>
-            <div class="chat-text">${escapeHtml(msg.message)}</div>
-        `;
+        div.innerHTML = '<span class="chat-author ' + (isMe ? '' : '') + '">' + escapeHtml(msg.user_name) + ' <span class="chat-time">' + time + '</span></span>' +
+            '<div class="chat-text">' + escapeHtml(msg.message) + '</div>';
         chatMessages.appendChild(div);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
@@ -1185,7 +1185,6 @@ $is_host = ($user_role === 'lecturer');
         const indicator = document.getElementById('recordingIndicator');
 
         if (!VLERoom.getIsRecording()) {
-            // Start recording
             btn.disabled = true;
             btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
             try {
@@ -1198,16 +1197,13 @@ $is_host = ($user_role === 'lecturer');
                     recordingSeconds = 0;
                     recordingTimer = setInterval(updateRecordingTime, 1000);
                     showToast('Recording started', 'success');
-                } else {
-                    throw new Error('Could not start recording');
-                }
+                } else { throw new Error('Could not start recording'); }
             } catch (err) {
                 console.error('[Recording] Start error:', err);
                 showToast('Failed to start recording: ' + err.message, 'danger');
             }
             btn.disabled = false;
         } else {
-            // Stop recording
             btn.disabled = true;
             btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
             clearInterval(recordingTimer);
@@ -1219,15 +1215,9 @@ $is_host = ($user_role === 'lecturer');
                     showUploadOverlay('Uploading recording (' + (blob.size / 1024 / 1024).toFixed(1) + ' MB)...');
                     const result = await VLERoom.uploadRecording(blob);
                     hideUploadOverlay();
-                    if (result && result.success) {
-                        showToast('Recording saved successfully! Students can now watch it.', 'success');
-                    } else {
-                        showToast('Recording upload failed: ' + (result?.message || 'Unknown error'), 'danger');
-                        console.error('[Recording] Upload failed:', result);
-                    }
-                } else {
-                    showToast('Recording produced no data. Try recording for a longer duration.', 'warning');
-                }
+                    if (result && result.success) { showToast('Recording saved successfully!', 'success'); }
+                    else { showToast('Recording upload failed: ' + (result?.message || 'Unknown error'), 'danger'); }
+                } else { showToast('Recording produced no data.', 'warning'); }
             } catch (err) {
                 console.error('[Recording] Stop/upload error:', err);
                 hideUploadOverlay();
@@ -1241,7 +1231,7 @@ $is_host = ($user_role === 'lecturer');
         }
     };
 
-    // Toast notification helper
+    // Toast notification
     function showToast(message, type) {
         type = type || 'info';
         const colors = { success: '#198754', danger: '#dc3545', warning: '#ffc107', info: '#0dcaf0' };
@@ -1250,8 +1240,8 @@ $is_host = ($user_role === 'lecturer');
         toast.style.cssText = 'position:fixed;top:60px;right:20px;z-index:99999;padding:12px 20px;border-radius:8px;color:' + textColor + ';background:' + (colors[type] || colors.info) + ';box-shadow:0 4px 12px rgba(0,0,0,0.3);font-size:14px;max-width:400px;animation:fadeIn 0.3s ease;';
         toast.textContent = message;
         document.body.appendChild(toast);
-        setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; }, 4000);
-        setTimeout(() => { toast.remove(); }, 4500);
+        setTimeout(function() { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; }, 4000);
+        setTimeout(function() { toast.remove(); }, 4500);
     }
 
     function showUploadOverlay(msg) {
@@ -1259,15 +1249,12 @@ $is_host = ($user_role === 'lecturer');
         document.getElementById('uploadStatus').textContent = msg || 'Uploading...';
         ov.style.display = 'flex';
     }
-    function hideUploadOverlay() {
-        document.getElementById('uploadOverlay').style.display = 'none';
-    }
+    function hideUploadOverlay() { document.getElementById('uploadOverlay').style.display = 'none'; }
 
     // ── End/Leave ──
     window.endSession = async function() {
-        if (!confirm('End ALL your active sessions? This will disconnect all students from every session you are hosting.')) return;
+        if (!confirm('End ALL your active sessions? This will disconnect all students.')) return;
 
-        // Auto-stop recording and upload if active
         if (VLERoom.getIsRecording()) {
             clearInterval(recordingTimer);
             const indicator = document.getElementById('recordingIndicator');
@@ -1277,27 +1264,17 @@ $is_host = ($user_role === 'lecturer');
                 const blob = await VLERoom.stopRecording();
                 if (blob && blob.size > 0) {
                     document.getElementById('uploadStatus').textContent = 'Uploading recording (' + (blob.size / 1024 / 1024).toFixed(1) + ' MB)...';
-                    const result = await VLERoom.uploadRecording(blob);
-                    if (result && result.success) {
-                        console.log('[Recording] Auto-saved on session end');
-                    } else {
-                        console.error('[Recording] Auto-save failed:', result);
-                    }
+                    await VLERoom.uploadRecording(blob);
                 }
-            } catch (err) {
-                console.error('[Recording] Auto-save error on end:', err);
-            }
+            } catch (err) { console.error('[Recording] Auto-save error:', err); }
             hideUploadOverlay();
         }
 
         await VLERoom.leaveRoom();
-        // End session via API
         const fd = new FormData();
         fd.append('action', 'end_session');
         fd.append('session_id', SESSION_ID);
-        await fetch('../api/live_session_api.php', { method: 'POST', body: fd,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
+        await fetch('../api/live_session_api.php', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
         window.location.href = 'live_classroom.php';
     };
 
@@ -1307,10 +1284,18 @@ $is_host = ($user_role === 'lecturer');
         window.location.href = '../student/live_invites.php';
     };
 
-    // ── Cleanup on page close ──
-    window.addEventListener('beforeunload', function() {
-        VLERoom.leaveRoom();
-    });
+    // ── Toggle self-view PiP ──
+    window.toggleSelfPip = function() {
+        selfPip.style.display = selfPip.style.display === 'none' ? '' : 'none';
+    };
+
+    window.toggleMinimizeSelf = function() {
+        // Toggle self-view PiP visibility
+        toggleSelfPip();
+    };
+
+    // ── Cleanup ──
+    window.addEventListener('beforeunload', function() { VLERoom.leaveRoom(); });
 
     function escapeHtml(text) {
         const d = document.createElement('div');
@@ -1318,154 +1303,58 @@ $is_host = ($user_role === 'lecturer');
         return d.innerHTML;
     }
 
-    // ── Media permission banner ──
-    function showMediaBanner(type, message, showRefresh) {
-        const colors = { info: '#0d6efd', warning: '#ffc107', danger: '#dc3545', success: '#198754' };
-        const textColors = { info: '#fff', warning: '#000', danger: '#fff', success: '#fff' };
-        const banner = document.createElement('div');
-        banner.className = 'media-banner';
-        banner.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:500;background:' + (colors[type] || colors.info) + ';color:' + (textColors[type] || '#fff') + ';padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:0 4px 15px rgba(0,0,0,0.3);display:flex;align-items:center;gap:8px;max-width:600px;text-align:center;';
-        let html = message;
-        if (showRefresh) {
-            html += ' <button onclick=\"location.reload()\" style=\"background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:inherit;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-left:8px;\"><i class=\"bi bi-arrow-clockwise me-1\"></i>Refresh</button>';
-        }
-        html += '<button onclick=\"this.parentElement.remove()\" style=\"background:none;border:none;color:inherit;cursor:pointer;font-size:16px;margin-left:8px;opacity:0.7;\">&times;</button>';
-        banner.innerHTML = html;
-        document.body.appendChild(banner);
-
-        // Auto-dismiss info banners after 8 seconds
-        if (type === 'info' || type === 'success') {
-            setTimeout(function() { if (banner.parentNode) { banner.style.opacity = '0'; banner.style.transition = 'opacity 0.5s'; setTimeout(function() { banner.remove(); }, 500); } }, 8000);
-        }
-    }
-
-    updateGridLayout();
-
-    // Enable double-click fullscreen on local tile
-    const localTile = document.getElementById('localTile');
-    localTile.addEventListener('dblclick', function(e) {
-        e.preventDefault();
-        toggleTileFullscreen(localTile);
-    });
-
-    // ── Minimize / Restore self-view (Picture-in-Picture style) ──
-    let selfMinimized = false;
-
-    window.toggleMinimizeSelf = function() {
-        const tile = document.getElementById('localTile');
-        const btnBar = document.getElementById('btnMinimize');
-        const btnTile = document.getElementById('btnMinimizeSelf');
-
-        selfMinimized = !selfMinimized;
-
-        if (selfMinimized) {
-            // Remove from grid and make floating PiP
-            tile.classList.add('minimized');
-            // Move tile out of grid to body so it floats
-            document.body.appendChild(tile);
-            if (btnBar) {
-                btnBar.className = 'ctrl-btn off';
-                btnBar.innerHTML = '<i class="bi bi-pip"></i>';
-                btnBar.title = 'Restore your video';
-            }
-            if (btnTile) {
-                btnTile.innerHTML = '<i class="bi bi-arrows-angle-expand"></i>';
-                btnTile.title = 'Restore your video';
-            }
-        } else {
-            // Restore to grid
-            tile.classList.remove('minimized');
-            tile.style.left = '';
-            tile.style.top = '';
-            tile.style.right = '';
-            tile.style.bottom = '';
-            tile.style.width = '';
-            tile.style.height = '';
-            // Put back as first child in grid
-            const grid = document.getElementById('videoGrid');
-            grid.insertBefore(tile, grid.firstChild);
-            if (btnBar) {
-                btnBar.className = 'ctrl-btn on';
-                btnBar.innerHTML = '<i class="bi bi-pip"></i>';
-                btnBar.title = 'Minimize your video';
-            }
-            if (btnTile) {
-                btnTile.innerHTML = '<i class="bi bi-dash-lg"></i>';
-                btnTile.title = 'Minimize your video';
-            }
-        }
-        updateGridLayout();
-    };
-
-    // ── Drag support for minimized self-view ──
+    // ── Drag support for self-view PiP ──
     (function() {
         let isDragging = false;
         let dragOffsetX = 0, dragOffsetY = 0;
 
-        document.addEventListener('mousedown', function(e) {
-            const tile = document.getElementById('localTile');
-            if (!tile || !tile.classList.contains('minimized')) return;
-            if (e.target.closest('button')) return; // Don't drag when clicking buttons
-            if (!tile.contains(e.target)) return;
-
+        selfPip.addEventListener('mousedown', function(e) {
+            if (e.target.closest('button')) return;
             isDragging = true;
-            const rect = tile.getBoundingClientRect();
+            const rect = selfPip.getBoundingClientRect();
             dragOffsetX = e.clientX - rect.left;
             dragOffsetY = e.clientY - rect.top;
-            tile.style.transition = 'none';
+            selfPip.style.transition = 'none';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', function(e) {
             if (!isDragging) return;
-            const tile = document.getElementById('localTile');
-            if (!tile) return;
-
-            // Switch from right/bottom to left/top positioning for drag
-            tile.style.right = 'auto';
-            tile.style.bottom = 'auto';
-            tile.style.left = Math.max(0, Math.min(window.innerWidth - tile.offsetWidth, e.clientX - dragOffsetX)) + 'px';
-            tile.style.top = Math.max(0, Math.min(window.innerHeight - tile.offsetHeight, e.clientY - dragOffsetY)) + 'px';
+            selfPip.style.right = 'auto';
+            selfPip.style.bottom = 'auto';
+            selfPip.style.left = Math.max(0, Math.min(window.innerWidth - selfPip.offsetWidth, e.clientX - dragOffsetX)) + 'px';
+            selfPip.style.top = Math.max(0, Math.min(window.innerHeight - selfPip.offsetHeight, e.clientY - dragOffsetY)) + 'px';
         });
 
         document.addEventListener('mouseup', function() {
             if (!isDragging) return;
             isDragging = false;
-            const tile = document.getElementById('localTile');
-            if (tile) tile.style.transition = '';
+            selfPip.style.transition = '';
         });
 
-        // Touch support for mobile
-        document.addEventListener('touchstart', function(e) {
-            const tile = document.getElementById('localTile');
-            if (!tile || !tile.classList.contains('minimized')) return;
+        selfPip.addEventListener('touchstart', function(e) {
             if (e.target.closest('button')) return;
-            if (!tile.contains(e.target)) return;
-
             isDragging = true;
             const touch = e.touches[0];
-            const rect = tile.getBoundingClientRect();
+            const rect = selfPip.getBoundingClientRect();
             dragOffsetX = touch.clientX - rect.left;
             dragOffsetY = touch.clientY - rect.top;
-            tile.style.transition = 'none';
+            selfPip.style.transition = 'none';
         }, { passive: true });
 
         document.addEventListener('touchmove', function(e) {
             if (!isDragging) return;
-            const tile = document.getElementById('localTile');
-            if (!tile) return;
             const touch = e.touches[0];
-            tile.style.right = 'auto';
-            tile.style.bottom = 'auto';
-            tile.style.left = Math.max(0, Math.min(window.innerWidth - tile.offsetWidth, touch.clientX - dragOffsetX)) + 'px';
-            tile.style.top = Math.max(0, Math.min(window.innerHeight - tile.offsetHeight, touch.clientY - dragOffsetY)) + 'px';
+            selfPip.style.right = 'auto';
+            selfPip.style.bottom = 'auto';
+            selfPip.style.left = Math.max(0, Math.min(window.innerWidth - selfPip.offsetWidth, touch.clientX - dragOffsetX)) + 'px';
+            selfPip.style.top = Math.max(0, Math.min(window.innerHeight - selfPip.offsetHeight, touch.clientY - dragOffsetY)) + 'px';
         }, { passive: true });
 
         document.addEventListener('touchend', function() {
             if (!isDragging) return;
             isDragging = false;
-            const tile = document.getElementById('localTile');
-            if (tile) tile.style.transition = '';
+            selfPip.style.transition = '';
         });
     })();
 })();
