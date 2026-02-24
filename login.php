@@ -350,7 +350,7 @@ if (isset($_SESSION['login_error'])) {
         <div class="login-container">
             <div class="login-card">
                 <div class="login-header">
-                    <img src="pictures/Logo.png" alt="Exploits University Logo" class="login-logo">
+                    <img src="assets/img/Logo.png" alt="Exploits University Logo" class="login-logo">
                     <h4>Exploits University Malawi</h4>
                     <p>Virtual Learning Environment</p>
                 </div>
