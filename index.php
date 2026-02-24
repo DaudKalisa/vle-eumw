@@ -154,8 +154,9 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(13,27,74,.25) 0%, rgba(27,58,123,.20) 50%, rgba(13,27,74,.25) 100%);
+            background: linear-gradient(135deg, rgba(13,27,74,.20) 0%, rgba(27,58,123,.15) 50%, rgba(13,27,74,.20) 100%);
             pointer-events: none;
+            z-index: 1;
         }
         .eu-hero .carousel-caption {
             inset: 0;
