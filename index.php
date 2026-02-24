@@ -155,6 +155,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             position: absolute;
             inset: 0;
             background: linear-gradient(135deg, rgba(13,27,74,.25) 0%, rgba(27,58,123,.20) 50%, rgba(13,27,74,.25) 100%);
+            pointer-events: none;
         }
         .eu-hero .carousel-caption {
             inset: 0;
@@ -163,6 +164,8 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             justify-content: center;
             text-align: center;
             padding: 2rem;
+            position: relative;
+            z-index: 2;
         }
         .eu-hero .hero-inner { max-width: 850px; margin: 0 auto; }
         .eu-hero .hero-badge {
@@ -603,6 +606,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Digital library, online examinations, live classrooms and collaborative learning — all in one platform.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-mortarboard"></i> Access VLE</a>
+                                <a href="login.php" class="btn-hero-outline"><i class="bi bi-book"></i> Resources</a>
                                 <a href="https://exploitsmw.com" target="_blank" class="btn-hero-outline"><i class="bi bi-globe"></i> Visit Website</a>
                             </div>
                         </div>
