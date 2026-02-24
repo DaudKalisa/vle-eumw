@@ -143,10 +143,8 @@ $breadcrumbs = [['title' => 'Examinations']];
             <div class="flex-grow-1">
                 <?php if ($payment_percentage < 50): ?>
                     <h5 class="alert-heading mb-1"><i class="bi bi-lock-fill me-1"></i>Examination Access Restricted</h5>
-                    <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong> (K<?= number_format($total_paid) ?> of K<?= number_format($expected_total) ?>). You need to pay at least <strong>50%</strong> of your total fees to access mid-semester exams, quizzes and assignments.</p>
-                    <div class="mb-2">
-                        <strong>Balance Due:</strong> <span class="text-danger fs-5">K<?= number_format($expected_total - $total_paid > 0 ? $expected_total - $total_paid : 0) ?></span>
-                    </div>
+                    <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong> (Amount paid: <strong>K<?= number_format($total_paid) ?></strong>). You need to pay at least <strong>50%</strong> of your total fees to access mid-semester exams, quizzes and assignments.</p>
+                    <p class="mb-2">Balance Due: <strong class="text-danger fs-5">K<?= number_format($expected_total - $total_paid > 0 ? $expected_total - $total_paid : 0) ?></strong></p>
                     <div>
                         <a href="<?= $_student_base ?? '../student/' ?>submit_payment.php" class="btn btn-danger btn-sm me-2">
                             <i class="bi bi-credit-card me-1"></i>Pay Fees & Submit Proof
@@ -157,8 +155,8 @@ $breadcrumbs = [['title' => 'Examinations']];
                     </div>
                 <?php else: ?>
                     <h5 class="alert-heading mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Limited Examination Access</h5>
-                    <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong>. You can access <strong>mid-semester exams, quizzes and assignments</strong>, but <strong>end-semester (final) exams require 100% payment</strong>.</p>
-                    <p class="mb-2">Full Outstanding Balance: <strong class="text-danger fs-5">K<?= number_format($balance) ?></strong></p>
+                    <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong> (Amount paid: <strong>K<?= number_format($total_paid) ?></strong>). You can access <strong>mid-semester exams, quizzes and assignments</strong>, but <strong>end-semester (final) exams require 100% payment</strong>.</p>
+                    <p class="mb-2">Balance Due: <strong class="text-danger fs-5">K<?= number_format($expected_total - $total_paid > 0 ? $expected_total - $total_paid : 0) ?></strong></p>
                     <div>
                         <a href="<?= $_student_base ?? '../student/' ?>submit_payment.php" class="btn btn-warning btn-sm me-2">
                             <i class="bi bi-credit-card me-1"></i>Complete Payment & Submit Proof
