@@ -44,7 +44,6 @@ if (isset($_SESSION['login_error'])) {
             --eu-accent: #e8a317;
             --eu-accent-hover: #c88b0f;
             --eu-light: #f0f4ff;
-            --eu-radius: 16px;
             --eu-transition: all .35s cubic-bezier(.4,0,.2,1);
         }
         *, *::before, *::after { box-sizing: border-box; }
@@ -53,51 +52,90 @@ if (isset($_SESSION['login_error'])) {
             margin: 0;
             min-height: 100vh;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            flex-direction: column;
             position: relative;
-            overflow: hidden;
+            overflow-x: hidden;
         }
 
-        /* Full-screen background image */
-        .login-bg {
+        /* ─── Background Slideshow ─────────────── */
+        .bg-slideshow {
             position: fixed;
             inset: 0;
             z-index: 0;
         }
-        .login-bg img {
-            width: 100%; height: 100%;
+        .bg-slideshow img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
             object-fit: cover;
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
         }
-        .login-bg::after {
+        .bg-slideshow img.active { opacity: 1; }
+        .bg-slideshow::after {
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(13,27,74,.25) 0%, rgba(27,58,123,.20) 50%, rgba(13,27,74,.25) 100%);
+            background: linear-gradient(180deg, rgba(13,27,74,.30) 0%, rgba(0,0,0,.15) 40%, rgba(13,27,74,.35) 100%);
+            z-index: 1;
         }
 
-        /* Glass card */
-        .login-wrapper {
+        /* ─── Top Bar ──────────────────────────── */
+        .eu-topbar {
+            background: rgba(13,27,74,.85);
+            backdrop-filter: blur(8px);
+            color: rgba(255,255,255,.8);
+            font-size: .78rem;
+            padding: 6px 0;
             position: relative;
             z-index: 10;
-            width: 100%;
-            max-width: 460px;
-            margin: 20px;
         }
+        .eu-topbar a { color: var(--eu-accent); text-decoration: none; }
+        .eu-topbar a:hover { text-decoration: underline; }
 
+        /* ─── Navbar ───────────────────────────── */
+        .eu-navbar {
+            background: rgba(255,255,255,.95);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 2px 20px rgba(0,0,0,.08);
+            padding: .5rem 0;
+            position: relative;
+            z-index: 10;
+        }
+        .eu-navbar .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+        .eu-navbar .nav-brand img { height: 44px; width: auto; }
+        .eu-navbar .nav-brand .uni-name { font-weight: 800; font-size: .95rem; color: var(--eu-primary); line-height: 1.2; }
+        .eu-navbar .nav-brand .vle-label { font-size: .68rem; color: var(--eu-accent); font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; }
+        .eu-navbar .nav-link-custom { font-weight: 500; color: #1f2937; padding: .4rem .8rem !important; border-radius: 8px; font-size: .9rem; transition: var(--eu-transition); text-decoration: none; }
+        .eu-navbar .nav-link-custom:hover { background: var(--eu-light); color: var(--eu-secondary); }
+        .eu-navbar .btn-apply { background: linear-gradient(135deg,#10b981,#059669); color: #fff; border: none; padding: .45rem 1.4rem; border-radius: 50px; font-weight: 600; font-size: .85rem; transition: var(--eu-transition); }
+        .eu-navbar .btn-apply:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(16,185,129,.3); color: #fff; }
+
+        /* ─── Login Section ────────────────────── */
+        .login-section {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+            position: relative;
+            z-index: 5;
+        }
+        .login-container {
+            width: 100%;
+            max-width: 440px;
+        }
         .login-card {
             background: rgba(255,255,255,.92);
             backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: var(--eu-radius);
-            box-shadow: 0 25px 60px rgba(0,0,0,.3), 0 0 0 1px rgba(255,255,255,.15);
+            border-radius: 20px;
+            box-shadow: 0 25px 60px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.3);
             overflow: hidden;
         }
-
-        /* Header */
         .login-header {
             background: var(--eu-primary);
-            padding: 2rem 2rem 1.8rem;
+            padding: 28px 28px 24px;
             text-align: center;
             position: relative;
         }
@@ -105,15 +143,17 @@ if (isset($_SESSION['login_error'])) {
             content: '';
             position: absolute;
             bottom: 0;
-            left: 0; right: 0;
+            left: 0;
+            right: 0;
             height: 4px;
-            background: linear-gradient(90deg, var(--eu-accent), #f5d76e, var(--eu-accent));
+            background: linear-gradient(90deg, var(--eu-accent), #10b981, var(--eu-accent));
         }
         .login-logo {
-            width: 80px; height: 80px;
+            width: 80px;
+            height: 80px;
             object-fit: contain;
-            margin-bottom: 14px;
-            filter: drop-shadow(0 4px 8px rgba(0,0,0,.2));
+            margin-bottom: 12px;
+            filter: brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0,0,0,.3));
         }
         .login-header h4 {
             color: #fff;
@@ -123,20 +163,18 @@ if (isset($_SESSION['login_error'])) {
         }
         .login-header p {
             color: var(--eu-accent);
-            font-size: .78rem;
-            margin: 0;
+            font-size: .82rem;
             font-weight: 600;
-            letter-spacing: 1.5px;
+            letter-spacing: 1px;
             text-transform: uppercase;
+            margin: 0;
         }
-
-        /* Body */
         .login-body {
-            padding: 2rem;
+            padding: 28px;
         }
         .form-label {
             font-weight: 600;
-            color: var(--eu-primary);
+            color: #1e293b;
             font-size: .88rem;
             margin-bottom: 6px;
         }
@@ -146,69 +184,62 @@ if (isset($_SESSION['login_error'])) {
             padding: 12px 16px;
             font-size: .95rem;
             transition: var(--eu-transition);
-            background: rgba(248,250,252,.8);
+            background: #f8fafc;
         }
         .form-control:focus {
-            border-color: var(--eu-accent);
-            box-shadow: 0 0 0 4px rgba(232,163,23,.15);
+            border-color: var(--eu-primary);
+            box-shadow: 0 0 0 4px rgba(13,27,74,.08);
             background: #fff;
         }
         .form-control::placeholder { color: #94a3b8; }
 
-        .input-group-text {
-            background: rgba(248,250,252,.8);
-            border: 2px solid #e2e8f0;
-            border-right: none;
-            border-radius: 10px 0 0 10px;
-            color: var(--eu-secondary);
-        }
-        .input-group .form-control {
-            border-left: none;
-            border-radius: 0 10px 10px 0;
-        }
-        .input-group:focus-within .input-group-text {
-            border-color: var(--eu-accent);
-            color: var(--eu-accent);
-        }
-
-        /* Login Button */
-        .btn-login-main {
+        .btn-login {
             background: var(--eu-primary);
             border: none;
             padding: 14px 28px;
             font-size: 1rem;
             font-weight: 700;
-            border-radius: 50px;
+            border-radius: 10px;
             color: #fff;
             width: 100%;
             transition: var(--eu-transition);
             position: relative;
             overflow: hidden;
         }
-        .btn-login-main:hover {
+        .btn-login::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.15), transparent);
+            transition: left .5s ease;
+        }
+        .btn-login:hover {
             background: var(--eu-secondary);
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(13,27,74,.4);
+            box-shadow: 0 8px 25px rgba(13,27,74,.35);
             color: #fff;
         }
+        .btn-login:hover::before { left: 100%; }
+        .btn-login:active { transform: translateY(0); }
 
-        /* Footer links */
         .login-footer {
             text-align: center;
-            padding-top: 1.2rem;
+            padding-top: 18px;
             border-top: 1px solid #e2e8f0;
-            margin-top: 1.5rem;
+            margin-top: 20px;
         }
         .login-footer a {
             color: var(--eu-primary);
             text-decoration: none;
             font-weight: 500;
             font-size: .88rem;
-            transition: var(--eu-transition);
+            transition: .2s;
         }
-        .login-footer a:hover { color: var(--eu-accent); }
+        .login-footer a:hover { color: var(--eu-accent); text-decoration: underline; }
 
-        /* Portal buttons */
         .portal-links {
             display: flex;
             gap: 10px;
@@ -219,37 +250,27 @@ if (isset($_SESSION['login_error'])) {
             align-items: center;
             justify-content: center;
             gap: 6px;
-            padding: 10px 16px;
-            border-radius: 50px;
+            padding: 10px 18px;
+            border-radius: 10px;
             font-weight: 600;
             font-size: .82rem;
             text-decoration: none;
             transition: var(--eu-transition);
             flex: 1;
-            border: none;
         }
         .btn-portal-apply {
-            background: var(--eu-accent);
-            color: var(--eu-primary);
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+            border: none;
         }
-        .btn-portal-apply:hover {
-            background: var(--eu-accent-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 14px rgba(232,163,23,.4);
-            color: var(--eu-primary);
-        }
+        .btn-portal-apply:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(16,185,129,.4); color: #fff; }
         .btn-portal-website {
-            background: var(--eu-primary);
-            color: #fff;
+            background: var(--eu-light);
+            color: var(--eu-primary);
+            border: 2px solid #e2e8f0;
         }
-        .btn-portal-website:hover {
-            background: var(--eu-secondary);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 14px rgba(13,27,74,.3);
-            color: #fff;
-        }
+        .btn-portal-website:hover { border-color: var(--eu-primary); transform: translateY(-2px); box-shadow: 0 4px 14px rgba(13,27,74,.1); color: var(--eu-primary); }
 
-        /* Alerts */
         .alert {
             border-radius: 10px;
             border: none;
@@ -257,119 +278,156 @@ if (isset($_SESSION['login_error'])) {
             font-size: .88rem;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
-        .alert-danger {
-            background: linear-gradient(135deg, #fef2f2, #fecaca);
-            color: #991b1b;
-        }
-        .alert-warning {
-            background: linear-gradient(135deg, #fffbeb, #fef3c7);
-            color: #92400e;
-        }
+        .alert-danger { background: #fef2f2; color: #991b1b; }
+        .alert-warning { background: #fffbeb; color: #92400e; }
 
-        /* Back to home */
-        .back-home {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            color: rgba(255,255,255,.9);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: .88rem;
-            margin-bottom: 1rem;
-            padding: 8px 18px;
-            border-radius: 50px;
-            background: rgba(13,27,74,.5);
+        /* ─── Footer ───────────────────────────── */
+        .eu-footer-mini {
+            background: rgba(13,27,74,.85);
             backdrop-filter: blur(8px);
-            transition: var(--eu-transition);
+            color: rgba(255,255,255,.6);
+            text-align: center;
+            padding: .8rem;
+            font-size: .75rem;
+            position: relative;
+            z-index: 10;
         }
-        .back-home:hover {
-            background: rgba(13,27,74,.7);
-            color: var(--eu-accent);
-        }
+        .eu-footer-mini a { color: var(--eu-accent); text-decoration: none; }
 
-        /* Responsive */
         @media (max-width: 480px) {
-            .login-body { padding: 1.5rem; }
-            .login-header { padding: 1.5rem; }
-            .login-logo { width: 65px; height: 65px; }
+            .login-body { padding: 22px 18px; }
+            .login-header { padding: 22px 18px; }
+            .login-logo { width: 64px; height: 64px; }
             .login-header h4 { font-size: 1.1rem; }
             .portal-links { flex-direction: column; }
+            .eu-navbar .nav-brand img { height: 36px; }
+            .eu-navbar .nav-brand .uni-name { font-size: .82rem; }
         }
     </style>
 </head>
 
 <body>
-    <!-- Background Image -->
-    <div class="login-bg">
-        <img src="pictures/Slider-1.jpg" alt="Exploits University Campus">
+    <!-- Background Slideshow -->
+    <div class="bg-slideshow">
+        <img src="pictures/Slider-1.jpg" alt="" class="active">
+        <img src="pictures/Slider-2.png" alt="">
+        <img src="pictures/Slider-3.jpg" alt="">
+        <img src="pictures/Slider-4.jpg" alt="">
+        <img src="pictures/Slider-5.png" alt="">
+        <img src="pictures/Slider-6.jpg" alt="">
     </div>
 
-    <div class="login-wrapper">
-        <a href="index.php" class="back-home"><i class="bi bi-arrow-left"></i> Back to Home</a>
+    <!-- Top Bar -->
+    <div class="eu-topbar d-none d-md-block">
+        <div class="container d-flex justify-content-between align-items-center">
+            <div><i class="bi bi-envelope me-1"></i> <a href="mailto:info@exploitsonline.com">info@exploitsonline.com</a> <span class="mx-2">|</span> <i class="bi bi-telephone me-1"></i> +265 999 000 000</div>
+            <div><a href="https://exploitsmw.com" target="_blank"><i class="bi bi-globe me-1"></i> exploitsmw.com</a></div>
+        </div>
+    </div>
 
-        <div class="login-card">
-            <div class="login-header">
-                <img src="pictures/Logo.png" alt="Exploits University Logo" class="login-logo">
-                <h4>Exploits University Malawi</h4>
-                <p>Virtual Learning Environment</p>
+    <!-- Navbar -->
+    <nav class="eu-navbar">
+        <div class="container d-flex align-items-center justify-content-between">
+            <a href="index.php" class="nav-brand">
+                <img src="pictures/Logo.png" alt="Exploits University Logo">
+                <div>
+                    <div class="uni-name">Exploits University Malawi</div>
+                    <div class="vle-label">Virtual Learning Environment</div>
+                </div>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <a href="index.php" class="nav-link-custom d-none d-sm-inline-block"><i class="bi bi-house me-1"></i> Home</a>
+                <a href="https://exploitsmw.com" target="_blank" class="nav-link-custom d-none d-md-inline-block"><i class="bi bi-globe me-1"></i> Website</a>
+                <a href="https://apply.exploitsonline.com" target="_blank" class="btn btn-apply"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
             </div>
+        </div>
+    </nav>
 
-            <div class="login-body">
-                <?php if ($timeout_message): ?>
-                    <div class="alert alert-warning">
-                        <i class="bi bi-clock-history"></i>
-                        <span><?php echo htmlspecialchars($timeout_message); ?></span>
-                    </div>
-                <?php endif; ?>
-                
-                <?php if ($error_message): ?>
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-circle-fill"></i>
-                        <span><?php echo htmlspecialchars($error_message); ?></span>
-                    </div>
-                <?php endif; ?>
+    <!-- Login Form -->
+    <div class="login-section">
+        <div class="login-container">
+            <div class="login-card">
+                <div class="login-header">
+                    <img src="pictures/Logo.png" alt="Exploits University Logo" class="login-logo">
+                    <h4>Exploits University Malawi</h4>
+                    <p>Virtual Learning Environment</p>
+                </div>
 
-                <form method="POST" action="login_process.php">
-                    <div class="mb-3">
-                        <label for="username_email" class="form-label">
-                            <i class="bi bi-person me-1"></i> Username or Email
-                        </label>
-                        <input type="text" class="form-control" id="username_email" name="username_email" 
-                               placeholder="Enter your username or email" required>
-                    </div>
+                <div class="login-body">
+                    <?php if ($timeout_message): ?>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-clock-history"></i>
+                            <span><?php echo htmlspecialchars($timeout_message); ?></span>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($error_message): ?>
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-circle-fill"></i>
+                            <span><?php echo htmlspecialchars($error_message); ?></span>
+                        </div>
+                    <?php endif; ?>
 
-                    <div class="mb-4">
-                        <label for="password" class="form-label">
-                            <i class="bi bi-lock me-1"></i> Password
-                        </label>
-                        <input type="password" class="form-control" id="password" name="password" 
-                               placeholder="Enter your password" required>
-                    </div>
+                    <form method="POST" action="login_process.php">
+                        <div class="mb-3">
+                            <label for="username_email" class="form-label">
+                                <i class="bi bi-person me-1"></i> Username or Email
+                            </label>
+                            <input type="text" class="form-control" id="username_email" name="username_email" 
+                                   placeholder="Enter your username or email" required>
+                        </div>
 
-                    <button type="submit" class="btn btn-login-main">
-                        <i class="bi bi-box-arrow-in-right me-2"></i> Sign In
-                    </button>
-                </form>
+                        <div class="mb-4">
+                            <label for="password" class="form-label">
+                                <i class="bi bi-lock me-1"></i> Password
+                            </label>
+                            <input type="password" class="form-control" id="password" name="password" 
+                                   placeholder="Enter your password" required>
+                        </div>
 
-                <div class="login-footer">
-                    <a href="forgot_password.php" class="d-block mb-3">
-                        <i class="bi bi-key me-1"></i> Forgot Password?
-                    </a>
-                    <div class="portal-links">
-                        <a href="https://apply.exploitsonline.com" class="btn-portal btn-portal-apply" target="_blank" rel="noopener">
-                            <i class="bi bi-pencil-square"></i> Apply Now
+                        <button type="submit" class="btn btn-login">
+                            <i class="bi bi-box-arrow-in-right me-2"></i> Sign In
+                        </button>
+                    </form>
+
+                    <div class="login-footer">
+                        <a href="forgot_password.php" class="d-block mb-3">
+                            <i class="bi bi-key me-1"></i> Forgot Password?
                         </a>
-                        <a href="https://www.exploitsmw.com" class="btn-portal btn-portal-website" target="_blank" rel="noopener">
-                            <i class="bi bi-globe"></i> Visit Website
-                        </a>
+                        <div class="portal-links">
+                            <a href="https://apply.exploitsonline.com" target="_blank" class="btn-portal btn-portal-apply">
+                                <i class="bi bi-pencil-square"></i> Apply Now
+                            </a>
+                            <a href="https://exploitsmw.com" target="_blank" class="btn-portal btn-portal-website">
+                                <i class="bi bi-globe"></i> Visit Website
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Footer -->
+    <div class="eu-footer-mini">
+        &copy; <?php echo date('Y'); ?> Exploits University Malawi. All rights reserved. &bull;
+        <a href="https://vle.exploitsonline.com">vle.exploitsonline.com</a>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Background slideshow
+        (function() {
+            const imgs = document.querySelectorAll('.bg-slideshow img');
+            let current = 0;
+            setInterval(() => {
+                imgs[current].classList.remove('active');
+                current = (current + 1) % imgs.length;
+                imgs[current].classList.add('active');
+            }, 5000);
+        })();
+    </script>
 </body>
 </html>
