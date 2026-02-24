@@ -144,7 +144,72 @@ $breadcrumbs = [['title' => 'Examinations']];
                 <?php if ($payment_percentage < 50): ?>
                     <h5 class="alert-heading mb-1"><i class="bi bi-lock-fill me-1"></i>Examination Access Restricted</h5>
                     <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong> (K<?= number_format($total_paid) ?> of K<?= number_format($expected_total) ?>). You need to pay at least <strong>50%</strong> of your total fees to access mid-semester exams, quizzes and assignments.</p>
-                    <p class="mb-2">Full Outstanding Balance: <strong class="text-danger fs-5">K<?= number_format($balance) ?></strong></p>
+                    <div class="mb-2">
+                        <strong>Outstanding Balance Breakdown:</strong>
+                        <ul class="mb-1" style="list-style: disc inside; font-size: 1rem;">
+                            <?php
+                            // Replicate the breakdown logic from student/payment_history.php
+                            $is_professional = false;
+                            $is_continuing = false;
+                            $application_fee = 5500;
+                            $registration_fee = 39500;
+                            $tuition_amount = $expected_total - $application_fee - $registration_fee;
+                            $installment_amount = $tuition_amount / 4;
+                            // Try to get student type and program type if available
+                            $student_stmt = $conn->prepare("SELECT student_type, program_type FROM students WHERE student_id = ? LIMIT 1");
+                            $student_stmt->bind_param("s", $student_id);
+                            $student_stmt->execute();
+                            $student_row = $student_stmt->get_result()->fetch_assoc();
+                            if ($student_row) {
+                                $is_continuing = ($student_row['student_type'] === 'continuing');
+                                $is_professional = ($student_row['program_type'] === 'professional');
+                            }
+                            if ($is_professional) {
+                                $application_fee = $is_continuing ? 0 : 5500;
+                                $registration_fee = 10000;
+                            } else {
+                                $application_fee = $is_continuing ? 0 : 5500;
+                                // Use fee_settings if available
+                                $fee_settings = null;
+                                $fee_result = $conn->query("SELECT * FROM fee_settings LIMIT 1");
+                                if ($fee_result && $fee_result->num_rows > 0) {
+                                    $fee_settings = $fee_result->fetch_assoc();
+                                }
+                                $new_student_reg_fee = $fee_settings['new_student_reg_fee'] ?? 39500;
+                                $continuing_reg_fee = $fee_settings['continuing_reg_fee'] ?? 35000;
+                                $registration_fee = $is_continuing ? $continuing_reg_fee : $new_student_reg_fee;
+                            }
+                            $tuition_amount = $expected_total - $application_fee - $registration_fee;
+                            $installment_amount = $tuition_amount / 4;
+                            // Distribute total paid amount across fee types
+                            $remaining_to_distribute = $total_paid;
+                            $app_paid = 0;
+                            if (!$is_continuing) {
+                                $app_paid = min($remaining_to_distribute, $application_fee);
+                                $remaining_to_distribute -= $app_paid;
+                            }
+                            $reg_paid = min($remaining_to_distribute, $registration_fee);
+                            $remaining_to_distribute -= $reg_paid;
+                            $inst1_paid = min($remaining_to_distribute, $installment_amount);
+                            $remaining_to_distribute -= $inst1_paid;
+                            $inst2_paid = min($remaining_to_distribute, $installment_amount);
+                            $remaining_to_distribute -= $inst2_paid;
+                            $inst3_paid = min($remaining_to_distribute, $installment_amount);
+                            $remaining_to_distribute -= $inst3_paid;
+                            $inst4_paid = min($remaining_to_distribute, $installment_amount);
+                            $remaining_to_distribute -= $inst4_paid;
+                            ?>
+                            <?php if (!$is_continuing): ?>
+                                <li>Application Fee: <span class="text-danger">K<?= number_format($application_fee - $app_paid) ?></span></li>
+                            <?php endif; ?>
+                            <li>Registration Fee: <span class="text-danger">K<?= number_format($registration_fee - $reg_paid) ?></span></li>
+                            <li>1st Installment: <span class="text-danger">K<?= number_format($installment_amount - $inst1_paid) ?></span></li>
+                            <li>2nd Installment: <span class="text-danger">K<?= number_format($installment_amount - $inst2_paid) ?></span></li>
+                            <li>3rd Installment: <span class="text-danger">K<?= number_format($installment_amount - $inst3_paid) ?></span></li>
+                            <li>4th Installment: <span class="text-danger">K<?= number_format($installment_amount - $inst4_paid) ?></span></li>
+                        </ul>
+                        <strong>Total Outstanding: <span class="text-danger fs-5">K<?= number_format($balance) ?></span></strong>
+                    </div>
                     <div>
                         <a href="<?= $_student_base ?? '../student/' ?>submit_payment.php" class="btn btn-danger btn-sm me-2">
                             <i class="bi bi-credit-card me-1"></i>Pay Fees & Submit Proof
