@@ -1,3 +1,4 @@
+    <?php include 'lecturer_navbar.php'; ?>
 <?php
 // view_student_answers.php - Detailed view of student answers
 require_once '../includes/auth.php';
@@ -50,7 +51,6 @@ while ($row = $result->fetch_assoc()) {
     $answers[$row['question_id']] = $row;
 }
 
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">

@@ -59,8 +59,6 @@ if ($check_column->num_rows == 0) {
     echo "✓ faculty_id column already exists in departments table.<br>";
 }
 
-$conn->close();
-
 echo "<br><strong>Faculties table setup complete!</strong><br>";
 echo '<a href="admin/dashboard.php">Go to Admin Dashboard</a>';
 ?>

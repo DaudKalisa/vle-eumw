@@ -83,7 +83,7 @@ $breadcrumbs = [['url' => 'manage_exams.php', 'title' => 'Examinations'], ['titl
                 <h2 class="vle-page-title mb-1"><?= htmlspecialchars($exam['exam_name']) ?></h2>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <span class="badge bg-<?= $status_color ?>"><?= $status ?></span>
-                    <span class="badge bg-<?= ['quiz'=>'info','mid_term'=>'warning','final'=>'danger','assignment'=>'primary'][$exam['exam_type']] ?? 'secondary' ?>"><?= ucfirst(str_replace('_','-',$exam['exam_type'])) ?></span>
+                    <span class="badge bg-<?= ['quiz'=>'info','mid_term'=>'warning','final'=>'danger','assignment'=>'primary'][$exam['exam_type']] ?? 'secondary' ?>"><?= ['quiz'=>'Quiz','mid_term'=>'Mid-Semester Exam','final'=>'End-Semester Examination','assignment'=>'Assignment'][$exam['exam_type']] ?? ucfirst(str_replace('_','-',$exam['exam_type'])) ?></span>
                     <span class="text-muted"><?= htmlspecialchars($exam['exam_code']) ?></span>
                     <?php if ($exam['course_name']): ?>
                         <span class="text-muted">| <?= htmlspecialchars($exam['course_code'] . ' - ' . $exam['course_name']) ?></span>

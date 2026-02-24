@@ -1,8 +1,9 @@
 <?php
 // manage_administrators.php - Admin manage system administrators
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -23,27 +24,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $phone = trim($_POST['phone'] ?? '');
         $position = trim($_POST['position'] ?? 'Administrator');
         $gender = trim($_POST['gender'] ?? '');
+        $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
         $admin_role = trim($_POST['admin_role'] ?? 'System Administrator');
 
-        // Add to lecturers table with role='staff'
-        $stmt = $conn->prepare("INSERT INTO lecturers (full_name, email, phone, position, gender, role) VALUES (?, ?, ?, ?, ?, 'staff')");
-        $stmt->bind_param("sssss", $full_name, $email, $phone, $position, $gender);
-        
-        if ($stmt->execute()) {
-            $lecturer_id = $conn->insert_id;
-
-            // Create user account
-            $password_hash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_lecturer_id) VALUES (?, ?, ?, 'staff', ?)");
-            $stmt->bind_param("sssi", $username, $email, $password_hash, $lecturer_id);
-            
-            if ($stmt->execute()) {
-                $success = "Administrator added successfully! Admin ID: ADM" . str_pad($lecturer_id, 4, '0', STR_PAD_LEFT);
-            } else {
-                $error = "Failed to create user account. Error: " . $stmt->error;
-            }
+        // Validate required fields
+        if (empty($first_name) || empty($last_name)) {
+            $error = "First name and last name are required.";
+        } elseif (empty($username)) {
+            $error = "Username is required.";
+        } elseif (empty($password)) {
+            $error = "Password is required.";
+        } elseif (empty($email)) {
+            $error = "Email is required.";
         } else {
-            $error = "Failed to add administrator. Error: " . $stmt->error;
+            // Check if username already exists
+            $check_stmt = $conn->prepare("SELECT user_id FROM users WHERE username = ?");
+            $check_stmt->bind_param("s", $username);
+            $check_stmt->execute();
+            if ($check_stmt->get_result()->num_rows > 0) {
+                $error = "Username '$username' already exists. Please choose a different username.";
+            } else {
+                // Check if email already exists in users table
+                $check_stmt = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
+                $check_stmt->bind_param("s", $email);
+                $check_stmt->execute();
+                if ($check_stmt->get_result()->num_rows > 0) {
+                    $error = "Email '$email' is already registered. Please use a different email.";
+                } else {
+                    // Check if email already exists in lecturers table
+                    $check_stmt = $conn->prepare("SELECT lecturer_id FROM lecturers WHERE email = ?");
+                    $check_stmt->bind_param("s", $email);
+                    $check_stmt->execute();
+                    if ($check_stmt->get_result()->num_rows > 0) {
+                        $error = "Email '$email' is already registered in the staff system. Please use a different email.";
+                    }
+                }
+            }
+            $check_stmt->close();
+        }
+
+        // Proceed only if no errors
+        if (empty($error)) {
+            // Add to lecturers table with role='staff'
+            $stmt = $conn->prepare("INSERT INTO lecturers (full_name, email, phone, position, gender, role) VALUES (?, ?, ?, ?, ?, 'staff')");
+            $stmt->bind_param("sssss", $full_name, $email, $phone, $position, $gender);
+        
+            if ($stmt->execute()) {
+                $lecturer_id = $conn->insert_id;
+
+                // Create user account
+                $password_hash = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_lecturer_id, must_change_password) VALUES (?, ?, ?, 'staff', ?, 1)");
+                $stmt->bind_param("sssi", $username, $email, $password_hash, $lecturer_id);
+                
+                if ($stmt->execute()) {
+                    // Send welcome email with credentials
+                    if (isEmailEnabled()) {
+                        sendAdminWelcomeEmail($email, $full_name, $username, $password);
+                    }
+                    $success = "Administrator added successfully! Admin ID: ADM" . str_pad($lecturer_id, 4, '0', STR_PAD_LEFT);
+                } else {
+                    $error = "Failed to create user account. Error: " . $stmt->error;
+                    // Rollback: delete the lecturer record if user creation fails
+                    $conn->query("DELETE FROM lecturers WHERE lecturer_id = $lecturer_id");
+                }
+            } else {
+                $error = "Failed to add administrator. Error: " . $stmt->error;
+            }
         }
     } elseif (isset($_POST['delete_admin'])) {
         $lecturer_id = (int)$_POST['lecturer_id'];
@@ -79,11 +126,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $confirm_password = trim($_POST['confirm_password']);
         
         if ($new_password === $confirm_password && strlen($new_password) >= 6) {
+            // Get admin info for email
+            $admin_info_stmt = $conn->prepare("SELECT l.full_name, l.email FROM lecturers l WHERE l.lecturer_id = ?");
+            $admin_info_stmt->bind_param("i", $lecturer_id);
+            $admin_info_stmt->execute();
+            $admin_info = $admin_info_stmt->get_result()->fetch_assoc();
+            
             $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("UPDATE users SET password_hash = ? WHERE related_lecturer_id = ?");
+            $stmt = $conn->prepare("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE related_lecturer_id = ?");
             $stmt->bind_param("si", $password_hash, $lecturer_id);
             
             if ($stmt->execute()) {
+                // Send password reset notification email
+                if (isEmailEnabled() && $admin_info) {
+                    sendPasswordResetEmail($admin_info['email'], $admin_info['full_name'], $new_password, true);
+                }
                 $success = "Password reset successfully!";
             } else {
                 $error = "Failed to reset password.";
@@ -107,7 +164,7 @@ if ($result) {
     }
 }
 
-$conn->close();
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
 <!DOCTYPE html>
@@ -118,40 +175,41 @@ $conn->close();
     <title>Manage Administrators - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-speedometer2"></i> Admin Dashboard
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-                <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
-    </nav>
+<body>
+    <?php 
+    $currentPage = 'manage_administrators';
+    $pageTitle = 'Manage Administrators';
+    $breadcrumbs = [['title' => 'Administrators']];
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2><i class="bi bi-shield-fill-check text-warning"></i> Manage Administrators</h2>
-                <p class="text-muted mb-0">Manage system administrators and staff accounts</p>
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-1"><i class="bi bi-shield-fill-check me-2"></i>Manage Administrators</h1>
+                    <p class="text-muted mb-0">Manage system administrators and staff accounts</p>
+                </div>
+                <button type="button" class="btn btn-vle-primary" data-bs-toggle="modal" data-bs-target="#addAdminModal">
+                    <i class="bi bi-person-plus-fill"></i> Add New Administrator
+                </button>
             </div>
-            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#addAdminModal">
-                <i class="bi bi-person-plus-fill"></i> Add New Administrator
-            </button>
         </div>
 
         <?php if ($success): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if ($error): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
+            <div class="alert vle-alert-error alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -160,7 +218,7 @@ $conn->close();
         <!-- Statistics -->
         <div class="row mb-4">
             <div class="col-md-4">
-                <div class="card border-warning">
+                <div class="card vle-card border-warning">
                     <div class="card-body text-center">
                         <i class="bi bi-shield-fill-check text-warning" style="font-size: 2.5rem;"></i>
                         <h6 class="text-muted text-uppercase mt-2">Total Administrators</h6>
@@ -308,19 +366,20 @@ $conn->close();
                             <div class="col-12"><h6 class="text-warning">Administrator Information</h6></div>
                             <div class="col-md-4">
                                 <label class="form-label">First Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="first_name" required>
+                                <input type="text" class="form-control" id="admin_first_name" name="first_name" required oninput="generateAdminCredentials()">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Middle Name</label>
-                                <input type="text" class="form-control" name="middle_name">
+                                <input type="text" class="form-control" id="admin_middle_name" name="middle_name" oninput="generateAdminCredentials()">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Last Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="last_name" required>
+                                <input type="text" class="form-control" id="admin_last_name" name="last_name" required oninput="generateAdminCredentials()">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Username <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="username" required>
+                                <input type="text" class="form-control" id="admin_username" name="username" required>
+                                <small class="text-muted">Auto-generated</small>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Password <span class="text-danger">*</span></label>
@@ -355,7 +414,8 @@ $conn->close();
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Email</label>
-                                <input type="email" class="form-control" name="email">
+                                <input type="email" class="form-control" id="admin_email" name="email">
+                                <small class="text-muted">Auto-generated</small>
                             </div>
                         </div>
                     </div>
@@ -371,5 +431,23 @@ $conn->close();
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Auto-generate username and email from first, middle, and last name
+    function generateAdminCredentials() {
+        const firstName = document.getElementById('admin_first_name').value.trim().toLowerCase();
+        const middleName = document.getElementById('admin_middle_name')?.value.trim().toLowerCase() || '';
+        const lastName = document.getElementById('admin_last_name').value.trim().toLowerCase();
+        
+        if (firstName && lastName) {
+            // Username: first initial + middle initial + surname (e.g., daud kalisa phiri = dkphiri)
+            const middleInitial = middleName ? middleName.charAt(0) : '';
+            const username = firstName.charAt(0) + middleInitial + lastName.replace(/\s+/g, '');
+            document.getElementById('admin_username').value = username;
+            
+            // Email: username@exploitsonline.com
+            document.getElementById('admin_email').value = username + '@exploitsonline.com';
+        }
+    }
+    </script>
 </body>
 </html>

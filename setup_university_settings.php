@@ -58,7 +58,5 @@ if ($conn->query($sql) === TRUE) {
     echo "❌ Error creating table: " . $conn->error . "<br>";
 }
 
-$conn->close();
-
 echo "<br><a href='admin/university_settings.php'>Go to University Settings</a>";
 ?>

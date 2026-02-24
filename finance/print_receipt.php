@@ -18,7 +18,7 @@ if (empty($transaction_id)) {
 // Get transaction details
 $query = "SELECT pt.*, s.student_id, s.full_name, s.email, s.phone, d.department_name, d.department_code
           FROM payment_transactions pt
-          JOIN students s ON pt.student_id COLLATE utf8mb4_unicode_ci = s.student_id COLLATE utf8mb4_unicode_ci
+          JOIN students s ON pt.student_id = s.student_id
           LEFT JOIN departments d ON s.department = d.department_id
           WHERE pt.transaction_id = ?";
 $stmt = $conn->prepare($query);
@@ -51,17 +51,20 @@ if (!$university) {
     ];
 }
 
-$conn->close();
-
 // Format payment type
 $payment_types = [
     'registration' => 'Registration Fee',
+    'application' => 'Application Fee',
+    'tuition' => 'Tuition Fee',
+    'payment' => 'General Payment',
     'installment_1' => 'Tuition - Installment 1',
     'installment_2' => 'Tuition - Installment 2',
     'installment_3' => 'Tuition - Installment 3',
-    'installment_4' => 'Tuition - Installment 4'
+    'installment_4' => 'Tuition - Installment 4',
+    'full_payment' => 'Full Tuition Payment',
+    'other' => 'Other Payment'
 ];
-$payment_type_label = $payment_types[$transaction['payment_type']] ?? $transaction['payment_type'];
+$payment_type_label = $payment_types[$transaction['payment_type']] ?? ucwords(str_replace('_', ' ', $transaction['payment_type']));
 ?>
 
 <!DOCTYPE html>

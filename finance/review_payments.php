@@ -1,6 +1,8 @@
 <?php
 // review_payments.php - Finance officer payment review and approval
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
+require_once '../includes/notifications.php';
 requireLogin();
 requireRole(['finance', 'staff']);
 
@@ -39,8 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
                 
                 // Record payment in payment_transactions table
                 $payment_notes = $submission['transaction_type'] . ' via ' . $submission['bank_name'] . ' - Ref: ' . $submission['payment_reference'];
-                $stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, amount, payment_type, payment_date, notes) VALUES (?, ?, 'payment', ?, ?)");
-                $stmt->bind_param("sdss", $submission['student_id'], $submission['amount'], $submission['transaction_date'], $payment_notes);
+                $stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, amount, payment_type, payment_date, notes, recorded_by) VALUES (?, ?, 'payment', ?, ?, ?)");
+                $stmt->bind_param("sdsss", $submission['student_id'], $submission['amount'], $submission['transaction_date'], $payment_notes, $user_id);
                 $stmt->execute();
                 $finance_id = $conn->insert_id;
                 
@@ -68,7 +70,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
                 $stmt->execute();
                 
                 $conn->commit();
-                $success = "Payment approved and recorded successfully!";
+                
+                // Send payment confirmation email + in-app notification
+                // Get student info
+                $student_stmt = $conn->prepare("SELECT s.full_name, s.email, u.user_id, sf.balance, sf.payment_percentage 
+                    FROM students s 
+                    LEFT JOIN student_finances sf ON s.student_id = sf.student_id 
+                    LEFT JOIN users u ON u.related_student_id = s.student_id 
+                    WHERE s.student_id = ?");
+                $student_stmt->bind_param("s", $submission['student_id']);
+                $student_stmt->execute();
+                $student_info = $student_stmt->get_result()->fetch_assoc();
+                
+                // Create in-app notification for the student
+                if ($student_info && $student_info['user_id']) {
+                    createNotification(
+                        (int)$student_info['user_id'],
+                        'finance',
+                        'Payment Approved - K' . number_format($submission['amount'], 2),
+                        'Your payment of K' . number_format($submission['amount'], 2) . ' (Ref: ' . $submission['payment_reference'] . ') has been approved. Your new balance is K' . number_format(max(0, $student_info['balance']), 2) . '.',
+                        '../finance/payment_receipt.php?id=' . $submission_id,
+                        (string)$submission_id,
+                        'payment'
+                    );
+                }
+                
+                // Send email with receipt link
+                if (isEmailEnabled() && $student_info && $student_info['email']) {
+                    sendPaymentApprovedWithReceiptEmail(
+                        $student_info['email'],
+                        $student_info['full_name'],
+                        $submission['amount'],
+                        $submission['transaction_type'] . ' (' . $submission['bank_name'] . ')',
+                        $submission['payment_reference'],
+                        max(0, $student_info['balance']),
+                        $student_info['payment_percentage'] ?? 0,
+                        $submission_id
+                    );
+                }
+                
+                $success = "Payment approved and recorded successfully! <a href='payment_receipt.php?id=$submission_id' target='_blank' class='btn btn-sm btn-success ms-2'><i class='bi bi-printer'></i> Print Receipt</a>";
             } else {
                 $conn->rollback();
                 $error = "Invalid submission or already processed.";
@@ -91,8 +132,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
 // Get pending submissions
 $pending_query = "SELECT ps.*, s.full_name, s.email, sf.balance 
                   FROM payment_submissions ps
-                  JOIN students s ON ps.student_id COLLATE utf8mb4_general_ci = s.student_id COLLATE utf8mb4_general_ci
-                  LEFT JOIN student_finances sf ON ps.student_id COLLATE utf8mb4_general_ci = sf.student_id COLLATE utf8mb4_general_ci
+                  JOIN students s ON ps.student_id = s.student_id
+                  LEFT JOIN student_finances sf ON ps.student_id = sf.student_id
                   WHERE ps.status = 'pending'
                   ORDER BY ps.submission_date ASC";
 $pending_submissions = $conn->query($pending_query)->fetch_all(MYSQLI_ASSOC);
@@ -100,13 +141,12 @@ $pending_submissions = $conn->query($pending_query)->fetch_all(MYSQLI_ASSOC);
 // Get reviewed submissions
 $reviewed_query = "SELECT ps.*, s.full_name, s.email 
                    FROM payment_submissions ps
-                   JOIN students s ON ps.student_id COLLATE utf8mb4_general_ci = s.student_id COLLATE utf8mb4_general_ci
+                   JOIN students s ON ps.student_id = s.student_id
                    WHERE ps.status IN ('approved', 'rejected')
                    ORDER BY ps.reviewed_date DESC
                    LIMIT 50";
 $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -117,14 +157,22 @@ $conn->close();
     <title>Review Payment Submissions - Finance</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body class="bg-light">
-    <div class="container-fluid mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-check2-square"></i> Review Payment Submissions</h2>
-            <a href="dashboard.php" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Back to Dashboard
-            </a>
+<body>
+    <?php 
+    $currentPage = 'review_payments';
+    $pageTitle = 'Review Payment Submissions';
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-check2-square me-2"></i>Review Payment Submissions</h1>
+            <p class="text-muted mb-0">Approve or reject student payment submissions</p>
         </div>
 
         <?php if (isset($success)): ?>
@@ -321,6 +369,7 @@ $conn->close();
                                     <th>Reference</th>
                                     <th>Status</th>
                                     <th>Reviewed By</th>
+                                    <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -338,6 +387,16 @@ $conn->close();
                                             <?php endif; ?>
                                         </td>
                                         <td><?php echo htmlspecialchars($sub['reviewed_by']); ?></td>
+                                        <td>
+                                            <?php if ($sub['status'] == 'approved'): ?>
+                                                <a href="payment_receipt.php?id=<?php echo $sub['submission_id']; ?>" 
+                                                   class="btn btn-sm btn-primary" target="_blank" title="Print Receipt">
+                                                    <i class="bi bi-printer"></i> Receipt
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>

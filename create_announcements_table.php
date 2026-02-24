@@ -21,5 +21,4 @@ if ($conn->query($sql)) {
     echo "Error creating table: " . $conn->error . "\n";
 }
 
-$conn->close();
 ?>

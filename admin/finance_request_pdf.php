@@ -11,12 +11,10 @@ $stmt = $conn->prepare("SELECT r.*, l.full_name, l.email, l.position, l.departme
 $stmt->bind_param("i", $request_id);
 $stmt->execute();
 $req = $stmt->get_result()->fetch_assoc();
-$conn->close();
-
 if (!$req) die('Request not found.');
 
 // University logo path
-$logo = '../pictures/logo.bmp';
+$logo = '../assets/img/Logo.png';
 
 // HTML for PDF
 $html = '<style>body{font-family:sans-serif;} .header{border-bottom:2px solid #333;margin-bottom:20px;} .info-table td{padding:4px 8px;}</style>';

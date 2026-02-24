@@ -2,7 +2,7 @@
 // edit_administrator.php - Admin edit administrator details
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 $admin_id = isset($_GET['id']) ? $_GET['id'] : '';
@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_administrator'
     $username = trim($_POST['username'] ?? '');
     $position = trim($_POST['position']);
     $gender = trim($_POST['gender'] ?? '');
+    $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
     $phone = trim($_POST['phone'] ?? '');
     $office = trim($_POST['office'] ?? '');
     
@@ -77,7 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_administrator'
     }
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -88,23 +88,34 @@ $conn->close();
     <title>Edit Administrator - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-shield-fill-check"></i> Edit Administrator</h2>
-            <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
+<body>
+    <?php 
+    $currentPage = 'edit_administrator';
+    $pageTitle = 'Edit Administrator';
+    $breadcrumbs = [['title' => 'Administrators', 'url' => 'manage_administrators.php'], ['title' => 'Edit Administrator']];
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-shield-fill-check me-2"></i>Edit Administrator</h1>
+            <p class="text-muted mb-0">Update administrator information and profile</p>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if (isset($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
+            <div class="alert vle-alert-error alert-dismissible fade show">
                 <?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -112,7 +123,7 @@ $conn->close();
 
         <div class="row">
             <div class="col-md-4">
-                <div class="card">
+                <div class="card vle-card">
                     <div class="card-header bg-warning">
                         <h5 class="mb-0">Profile Picture</h5>
                     </div>

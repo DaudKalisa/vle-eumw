@@ -45,7 +45,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     $phone = trim($_POST['phone'] ?? '');
     $address = trim($_POST['address'] ?? '');
     $gender = trim($_POST['gender'] ?? '');
-    $national_id = trim($_POST['national_id'] ?? '');
+    $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
+    $national_id = strtoupper(trim($_POST['national_id'] ?? '')); // Auto-capitalize
+    
+    // Validate National ID - max 8 characters
+    if (!empty($national_id) && strlen($national_id) > 8) {
+        $error = "National ID must be 8 characters or less.";
+    }
+    
+    // Check for duplicate National ID (if provided, exclude current student)
+    if (!isset($error) && !empty($national_id)) {
+        $nid_check = $conn->prepare("SELECT student_id FROM students WHERE national_id = ? AND student_id != ?");
+        $nid_check->bind_param("ss", $national_id, $student_id);
+        $nid_check->execute();
+        if ($nid_check->get_result()->num_rows > 0) {
+            $error = "This National ID '" . htmlspecialchars($national_id) . "' is already registered to another student.";
+        }
+        $nid_check->close();
+    }
+    
     $department = trim($_POST['department'] ?? '');
     $program = trim($_POST['program'] ?? '');
     
@@ -63,7 +81,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         if (in_array($file_ext, $allowed_exts)) {
             // Check file size (5MB max)
             if ($_FILES['profile_picture']['size'] <= 5242880) {
-                $new_filename = 'student_' . $student_id . '_' . time() . '.' . $file_ext;
+                // Sanitize student_id by replacing slashes with underscores to avoid directory issues
+                $safe_student_id = str_replace(['/', '\\'], '_', $student_id);
+                $new_filename = 'student_' . $safe_student_id . '_' . time() . '.' . $file_ext;
                 $target_path = $upload_dir . $new_filename;
                 
                 if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
@@ -106,7 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -117,55 +136,96 @@ $conn->close();
     <title>My Profile - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <link href="../assets/css/style.css" rel="stylesheet">
+    <style>
+        .profile-avatar-container {
+            position: relative;
+            display: inline-block;
+        }
+        .profile-avatar-container img,
+        .profile-avatar-container .avatar-placeholder {
+            border: 4px solid var(--vle-primary);
+            box-shadow: 0 8px 25px rgba(30, 60, 114, 0.2);
+        }
+        .avatar-placeholder {
+            width: 200px;
+            height: 200px;
+            font-size: 80px;
+            background: var(--vle-gradient-primary);
+        }
+        .profile-card-header {
+            background: var(--vle-gradient-primary) !important;
+            border: none;
+            color: white;
+        }
+        .academic-card-header {
+            background: linear-gradient(135deg, #17a2b8 0%, #0dcaf0 100%) !important;
+            border: none;
+            color: white;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
+<body>
+    <?php 
+    // Set up breadcrumb navigation
+    $page_title = "My Profile";
+    $breadcrumbs = [
+        ['title' => 'My Profile']
+    ];
+    include 'header_nav.php'; 
+    ?>
+    
+    <div class="vle-content">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-person-circle"></i> My Profile</h2>
-            <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
+            <h2 class="vle-page-title"><i class="bi bi-person-circle me-2"></i>My Profile</h2>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
-                <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
+            <div class="alert vle-alert-success alert-dismissible fade show">
+                <i class="bi bi-check-circle-fill me-2"></i><?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if (isset($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
-                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
+            <div class="alert vle-alert-danger alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i><?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <div class="row">
             <div class="col-md-4">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-image"></i> Profile Picture</h5>
+                <div class="card vle-card">
+                    <div class="card-header profile-card-header">
+                        <h5 class="mb-0"><i class="bi bi-image me-2"></i>Profile Picture</h5>
                     </div>
                     <div class="card-body text-center">
-                        <?php if ($student['profile_picture']): ?>
-                            <img src="../uploads/profiles/<?php echo htmlspecialchars($student['profile_picture']); ?>" 
-                                 class="img-fluid rounded-circle mb-3 shadow" 
-                                 style="max-width: 200px; max-height: 200px; object-fit: cover; border: 4px solid #0d6efd;"
-                                 alt="Profile Picture">
-                        <?php else: ?>
-                            <div class="bg-secondary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3 shadow"
-                                 style="width: 200px; height: 200px; font-size: 80px; border: 4px solid #6c757d;">
-                                <i class="bi bi-person-circle"></i>
-                            </div>
-                        <?php endif; ?>
-                        <h4><?php echo htmlspecialchars($student['full_name']); ?></h4>
+                        <div class="profile-avatar-container mb-3">
+                            <?php if ($student['profile_picture']): ?>
+                                <img src="../uploads/profiles/<?php echo htmlspecialchars($student['profile_picture']); ?>" 
+                                     class="img-fluid rounded-circle" 
+                                     style="max-width: 200px; max-height: 200px; object-fit: cover;"
+                                     alt="Profile Picture">
+                            <?php else: ?>
+                                <div class="text-white rounded-circle d-inline-flex align-items-center justify-content-center avatar-placeholder">
+                                    <i class="bi bi-person-circle"></i>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <h4 style="color: var(--vle-primary);"><?php echo htmlspecialchars($student['full_name']); ?></h4>
                         <p class="text-muted mb-1">Student ID: <?php echo htmlspecialchars($student['student_id']); ?></p>
-                        <p class="text-muted mb-1"><i class="bi bi-envelope"></i> <?php echo htmlspecialchars($student['email']); ?></p>
+                        <p class="text-muted mb-1"><i class="bi bi-envelope me-1"></i><?php echo htmlspecialchars($student['email']); ?></p>
                     </div>
                 </div>
 
-                <div class="card shadow-sm mt-3">
-                    <div class="card-header bg-info text-white">
-                        <h6 class="mb-0"><i class="bi bi-info-circle"></i> Academic Info</h6>
+                <div class="card vle-card mt-3">
+                    <div class="card-header academic-card-header">
+                        <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Academic Info</h6>
                     </div>
                     <div class="card-body">
                         <p class="mb-2">
@@ -185,7 +245,7 @@ $conn->close();
                             elseif ($campus == 'Lilongwe Campus') $campus_code = 'LL';
                             elseif ($campus == 'Blantyre Campus') $campus_code = 'BT';
                             echo htmlspecialchars($campus);
-                            if ($campus_code) echo ' <span class="badge bg-primary">' . $campus_code . '</span>';
+                            if ($campus_code) echo ' <span class="vle-badge-primary">' . $campus_code . '</span>';
                             ?>
                         </p>
                         <p class="mb-2">
@@ -287,10 +347,11 @@ $conn->close();
                                     </select>
                                 </div>
                                 <div class="col-md-6">
-                                    <label for="national_id" class="form-label">National ID Number</label>
+                                    <label for="national_id" class="form-label">National ID Number <small class="text-muted">(Max 8 chars)</small></label>
                                     <input type="text" class="form-control" id="national_id" name="national_id" 
                                            value="<?php echo htmlspecialchars($student['national_id'] ?? ''); ?>" 
-                                           placeholder="Enter your National ID">
+                                           placeholder="Enter your National ID" maxlength="8" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
+                                    <div class="form-text">Must be unique. No duplicates allowed.</div>
                                 </div>
                             </div>
                             <div class="mb-3">

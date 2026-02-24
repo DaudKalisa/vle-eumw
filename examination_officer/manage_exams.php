@@ -319,8 +319,8 @@ $breadcrumbs = [['title' => 'Examinations']];
                         <select name="type" class="form-select">
                             <option value="">All Types</option>
                             <option value="quiz" <?= $filter_type === 'quiz' ? 'selected' : '' ?>>Quiz</option>
-                            <option value="mid_term" <?= $filter_type === 'mid_term' ? 'selected' : '' ?>>Mid-Term</option>
-                            <option value="final" <?= $filter_type === 'final' ? 'selected' : '' ?>>Final</option>
+                            <option value="mid_term" <?= $filter_type === 'mid_term' ? 'selected' : '' ?>>Mid-Semester Exam</option>
+                            <option value="final" <?= $filter_type === 'final' ? 'selected' : '' ?>>End-Semester Examination</option>
                             <option value="assignment" <?= $filter_type === 'assignment' ? 'selected' : '' ?>>Assignment</option>
                         </select>
                     </div>
@@ -391,7 +391,7 @@ $breadcrumbs = [['title' => 'Examinations']];
                                         <?php if ($exam['require_token']): ?><span class="badge bg-warning text-dark ms-1" title="Token Required"><i class="bi bi-key-fill"></i></span><?php endif; ?>
                                     </td>
                                     <td><?= $exam['course_name'] ? htmlspecialchars($exam['course_code']) : '<em>General</em>' ?></td>
-                                    <td><span class="badge bg-<?= $type_colors[$exam['exam_type']] ?? 'secondary' ?>"><?= ucfirst(str_replace('_', '-', $exam['exam_type'])) ?></span></td>
+                                    <td><span class="badge bg-<?= $type_colors[$exam['exam_type']] ?? 'secondary' ?>"><?= ['quiz'=>'Quiz','mid_term'=>'Mid-Semester Exam','final'=>'End-Semester Examination','assignment'=>'Assignment'][$exam['exam_type']] ?? ucfirst(str_replace('_', '-', $exam['exam_type'])) ?></span></td>
                                     <td>
                                         <small><?= date('M d, Y', $start) ?></small><br>
                                         <small class="text-muted"><?= date('h:i A', $start) ?> - <?= date('h:i A', $end) ?></small>

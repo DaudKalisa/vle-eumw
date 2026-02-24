@@ -34,5 +34,4 @@ if ($check->num_rows == 0) {
     echo "<a href='admin/dashboard.php'>Go to Admin Dashboard</a>";
 }
 
-$conn->close();
 ?>

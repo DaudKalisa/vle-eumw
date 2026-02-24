@@ -2,7 +2,7 @@
 // manage_modules.php - Admin manage modules
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -201,7 +201,12 @@ while ($row = $result->fetch_assoc()) {
     $programs[] = $row;
 }
 
-$conn->close();
+// Get stats for dashboard
+$total_modules = count($modules);
+$total_credits = array_sum(array_column($modules, 'credits'));
+$unique_programs = count(array_unique(array_column($modules, 'program_of_study')));
+
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
 <!DOCTYPE html>
@@ -212,30 +217,81 @@ $conn->close();
     <title>Manage Modules - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <style>
+        .stat-icon {
+            font-size: 2.5rem;
+            opacity: 0.3;
+            position: absolute;
+            right: 15px;
+            top: 15px;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-journal-code"></i> Manage Modules</h2>
-            <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
+<body>
+    <?php 
+    $currentPage = 'manage_modules';
+    $pageTitle = 'Manage Modules';
+    $breadcrumbs = [['title' => 'Modules']];
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-journal-code me-2"></i>Manage Modules</h1>
+            <p class="text-muted mb-0">Add, edit and manage course modules</p>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if (isset($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
+            <div class="alert vle-alert-error alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
+        <!-- Quick Stats -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card vle-card border-info position-relative">
+                    <div class="card-body">
+                        <i class="bi bi-journal-code stat-icon text-info"></i>
+                        <h6 class="text-muted text-uppercase">Total Modules</h6>
+                        <h3 class="mb-0 text-info"><?php echo $total_modules; ?></h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card vle-card border-success position-relative">
+                    <div class="card-body">
+                        <i class="bi bi-award stat-icon text-success"></i>
+                        <h6 class="text-muted text-uppercase">Total Credits</h6>
+                        <h3 class="mb-0 text-success"><?php echo $total_credits; ?></h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card vle-card border-warning position-relative">
+                    <div class="card-body">
+                        <i class="bi bi-building stat-icon text-warning"></i>
+                        <h6 class="text-muted text-uppercase">Programs Covered</h6>
+                        <h3 class="mb-0 text-warning"><?php echo $unique_programs; ?></h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Upload from Template Section -->
-        <div class="card mb-4">
+        <div class="card vle-card mb-4">
             <div class="card-header bg-success text-white">
                 <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Bulk Upload Modules</h5>
             </div>
@@ -270,7 +326,7 @@ $conn->close();
         </div>
 
         <!-- Add Module Form -->
-        <div class="card mb-4">
+        <div class="card mb-4 shadow-sm">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Module</h5>
             </div>
@@ -338,7 +394,7 @@ $conn->close();
         </div>
 
         <!-- Filter Section -->
-        <div class="card mb-4">
+        <div class="card mb-4 shadow-sm">
             <div class="card-header bg-secondary text-white">
                 <h6 class="mb-0"><i class="bi bi-funnel"></i> Filter Modules</h6>
             </div>
@@ -385,7 +441,7 @@ $conn->close();
         </div>
 
         <!-- Modules List -->
-        <div class="card">
+        <div class="card shadow-sm">
             <div class="card-header bg-info text-white">
                 <h5 class="mb-0"><i class="bi bi-list-ul"></i> All Modules (<?php echo count($modules); ?>)</h5>
             </div>

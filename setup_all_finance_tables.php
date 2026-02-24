@@ -159,8 +159,6 @@ if ($check->num_rows == 0) {
     $conn->query("UPDATE lecturers SET role = 'finance' WHERE email = 'finance@university.edu'");
 }
 
-$conn->close();
-
 echo "<hr>";
 echo "<h3 style='color: green;'>✓ All Finance System Tables Created Successfully!</h3>";
 echo "<br>";

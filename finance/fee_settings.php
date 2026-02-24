@@ -64,20 +64,12 @@ if (!$fees) {
     <title>Fee Settings - Finance</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-cash-stack"></i> Finance Fee Management
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-            </div>
-        </div>
-    </nav>
+<body class="bg-light">
+    <?php include 'header_nav.php'; ?>
 
-    <div class="container mt-4">
+    <div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
         <div class="row justify-content-center">
             <div class="col-md-8">
                 <div class="card">

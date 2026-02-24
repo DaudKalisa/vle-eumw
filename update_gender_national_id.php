@@ -47,5 +47,4 @@ if ($check->num_rows == 0) {
 echo "<h3>Database update completed successfully!</h3>";
 echo "<p><a href='admin/dashboard.php'>Go to Admin Dashboard</a></p>";
 
-$conn->close();
 ?>

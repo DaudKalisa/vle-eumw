@@ -26,7 +26,7 @@ $student_query = "SELECT s.student_id, s.full_name, s.email, s.gender, s.program
                          d.department_name, d.department_code as program_code, d.department_id,
                          f.faculty_name, f.faculty_id
                   FROM students s 
-                  LEFT JOIN student_finances sf ON s.student_id COLLATE utf8mb4_unicode_ci = sf.student_id COLLATE utf8mb4_unicode_ci 
+                  LEFT JOIN student_finances sf ON s.student_id = sf.student_id 
                   LEFT JOIN departments d ON s.department = d.department_id 
                   LEFT JOIN faculties f ON d.faculty_id = f.faculty_id 
                   WHERE s.student_id = ?";
@@ -88,16 +88,24 @@ $history = $stmt->get_result();
     <title>Student Finance Details - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <style>
-        .payment-badge-0 { background-color: #dc3545; }
-        .payment-badge-25 { background-color: #ffc107; }
-        .payment-badge-50 { background-color: #0dcaf0; }
-        .payment-badge-75 { background-color: #0d6efd; }
-        .payment-badge-100 { background-color: #198754; }
+        .payment-badge-0 { background-color: var(--vle-danger); }
+        .payment-badge-25 { background-color: var(--vle-warning); }
+        .payment-badge-50 { background-color: var(--vle-info); }
+        .payment-badge-75 { background-color: var(--vle-accent); }
+        .payment-badge-100 { background-color: var(--vle-success); }
     </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+<body>
+    <?php 
+    $currentPage = 'view_student_finance';
+    $pageTitle = 'Student Finance Details';
+    include 'header_nav.php'; 
+    ?>
         <div class="container-fluid">
             <a class="navbar-brand" href="student_finances.php">
                 <i class="bi bi-arrow-left-circle"></i> Back to Student Accounts
@@ -408,4 +416,4 @@ $history = $stmt->get_result();
 </body>
 </html>
 
-<?php $conn->close(); ?>
+<?php  ?>

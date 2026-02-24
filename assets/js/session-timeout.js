@@ -1,6 +1,7 @@
 /**
  * VLE System - Session Timeout Manager
- * Handles automatic logout after 5 minutes of inactivity
+ * Handles automatic logout after 15 minutes of inactivity
+ * Exempts assignment writing pages where students may be working for extended periods
  */
 
 (function() {
@@ -10,9 +11,18 @@
     const SESSION_TIMEOUT = 900000; // 15 minutes
     const WARNING_TIME = 60000; // Show warning 1 minute before timeout
     
+    // Pages exempted from auto-logout (assignment writing pages)
+    const EXEMPT_PAGES = [
+        'submit_assignment.php',
+        'add_assignment.php',
+        'edit_assignment.php',
+        'add_assignment_questions.php'
+    ];
+    
     let timeoutTimer;
     let warningTimer;
     let lastActivity = Date.now();
+    let isExemptPage = false;
     
     // Activities that reset the timer
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
@@ -121,20 +131,48 @@
     }
     
     /**
-     * Logout user and redirect to login page
+     * Logout user and redirect to login page with cache clearing
      */
     function logoutUser() {
+        // Don't logout on exempt pages
+        if (isExemptPage) {
+            return;
+        }
+        
+        // Clear any local/session storage
+        try {
+            sessionStorage.clear();
+            // Clear specific items but keep important ones
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('session') || key.includes('user') || key.includes('auth'))) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+        } catch(e) {
+            // Ignore storage errors
+        }
+        
+        // Calculate the base URL to the login page
+        const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+        const loginUrl = baseUrl.replace(/\/(admin|student|lecturer|finance).*/, '') + '/login.php?timeout=1';
+        
         // Send logout request
-        fetch('logout.php', {
+        fetch(baseUrl.replace(/\/(admin|student|lecturer|finance).*/, '') + '/logout.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
-            body: 'auto_logout=1'
+            body: 'auto_logout=1',
+            cache: 'no-store'
         }).finally(() => {
-            // Redirect to login with timeout parameter
-            const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-            window.location.href = baseUrl.replace(/\/(admin|student|lecturer|finance).*/, '') + '/login.php?timeout=1';
+            // Force reload with cache clearing
+            window.location.replace(loginUrl);
         });
     }
     
@@ -158,11 +196,47 @@
     }
     
     /**
+     * Check if current page is an assignment writing page (exempt from timeout)
+     */
+    function checkExemptPage() {
+        const currentPath = window.location.pathname;
+        const currentPage = currentPath.substring(currentPath.lastIndexOf('/') + 1);
+        
+        // Check if current page is in exempt list
+        for (let page of EXEMPT_PAGES) {
+            if (currentPage === page || currentPath.includes(page)) {
+                return true;
+            }
+        }
+        
+        // Also check for assignment_id parameter (indicates assignment activity)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('assignment_id') && (currentPath.includes('submit') || currentPath.includes('assignment'))) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
      * Initialize session timeout tracking
      */
     function init() {
         // Only run on authenticated pages (skip login page)
         if (window.location.pathname.includes('login.php')) {
+            return;
+        }
+        
+        // Check if this is an assignment page (exempt from auto-logout)
+        isExemptPage = checkExemptPage();
+        
+        if (isExemptPage) {
+            console.log('Session timeout: This is an assignment page - auto-logout disabled');
+            // Still keep session alive but don't auto-logout
+            setInterval(() => {
+                // Ping server to keep session alive
+                fetch('', { method: 'HEAD', cache: 'no-cache' }).catch(() => {});
+            }, 60000); // Ping every minute
             return;
         }
         

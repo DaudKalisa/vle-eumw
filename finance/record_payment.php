@@ -20,7 +20,7 @@ if ($pre_selected_student) {
                                    sf.expected_total, sf.total_paid, sf.balance, sf.payment_percentage, sf.content_access_weeks,
                                    d.department_name, d.department_code as program_code, d.department_id
                             FROM students s 
-                            LEFT JOIN student_finances sf ON s.student_id COLLATE utf8mb4_unicode_ci = sf.student_id COLLATE utf8mb4_unicode_ci 
+                            LEFT JOIN student_finances sf ON s.student_id = sf.student_id 
                             LEFT JOIN departments d ON s.department = d.department_id 
                             WHERE s.student_id = ?");
     $stmt->bind_param("s", $pre_selected_student);
@@ -192,6 +192,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->bind_param("sdssssss", $student_id, $amount, $payment_type, $payment_method, $reference_number, $payment_date, $notes, $recorded_by);
             $stmt->execute();
             
+            // Get the transaction ID for the receipt
+            $transaction_id = $conn->insert_id;
+            
             // Set payment dates for newly paid or partially paid items
             $app_fee_date = ($app_payment > 0) ? $payment_date : $student_data['application_fee_date'];
             $reg_paid_date = ($reg_payment > 0) ? $payment_date : $student_data['registration_paid_date'];
@@ -242,8 +245,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
             $success_message = implode(" ", $success_parts);
             
-            // Redirect to student finances or payment history
-            header("Location: view_student_finance.php?id=" . urlencode($student_id) . "&success=1");
+            // Redirect to print receipt page for the recorded transaction
+            header("Location: payment_receipt.php?id=" . $transaction_id . "&type=transaction&new=1");
             exit;
             
         } catch (Exception $e) {
@@ -262,17 +265,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <title>Record Payment - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <style>
-        .navbar.sticky-top {
-            position: sticky;
-            top: 0;
-            z-index: 1030;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
         .info-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--vle-gradient-primary);
             color: white;
-            border-radius: 10px;
+            border-radius: var(--vle-radius);
             padding: 20px;
             margin-bottom: 20px;
         }
@@ -282,20 +283,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success sticky-top">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="student_finances.php">
-                <i class="bi bi-arrow-left-circle"></i> Back to Student Accounts
-            </a>
-            <div class="navbar-nav ms-auto">
-                <span class="navbar-text me-3 text-white">Welcome, <?php echo htmlspecialchars($user['display_name']); ?></span>
-                <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
-    </nav>
+<body>
+    <?php 
+    $currentPage = 'record_payment';
+    $pageTitle = 'Record Payment';
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
+    <div class="vle-content">
         <div class="row">
             <div class="col-md-8 mx-auto">
                 <div class="card shadow">
@@ -617,4 +612,4 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </body>
 </html>
 
-<?php $conn->close(); ?>
+<?php  ?>

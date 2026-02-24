@@ -167,7 +167,7 @@ include 'header_nav.php';
                                 <div class="col-md-6">
                                     <label class="form-label">Exam Name *</label>
                                     <input type="text" class="form-control" name="exam_name" required
-                                           placeholder="e.g., Computer Science Mid-Term Exam">
+                                           placeholder="e.g., Computer Science Mid-Semester Exam">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Course *</label>
@@ -197,8 +197,8 @@ include 'header_nav.php';
                                 <div class="col-md-6">
                                     <label class="form-label">Exam Type</label>
                                     <select class="form-select" name="exam_type">
-                                        <option value="mid_term">Mid-Term Exam</option>
-                                        <option value="final">Final Exam</option>
+                                        <option value="mid_term">Mid-Semester Exam</option>
+                                        <option value="final">End-Semester Examination</option>
                                         <option value="quiz">Quiz</option>
                                         <option value="assignment">Assignment</option>
                                     </select>

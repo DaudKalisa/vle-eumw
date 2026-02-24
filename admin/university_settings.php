@@ -2,7 +2,7 @@
 // admin/university_settings.php - Manage university details
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -135,36 +135,36 @@ if (!$settings) {
     <title>University Settings - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-building"></i> Admin Panel
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-            </div>
-        </div>
-    </nav>
+    <?php 
+    $currentPage = 'university_settings';
+    $pageTitle = 'University Settings';
+    $breadcrumbs = [['title' => 'Settings']];
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
+    <div class="vle-content">
         <div class="row">
             <div class="col-md-8 offset-md-2">
-                <div class="card shadow">
-                    <div class="card-header bg-primary text-white">
+                <div class="card vle-card shadow">
+                    <div class="card-header bg-vle-primary text-white">
                         <h4 class="mb-0"><i class="bi bi-gear-fill"></i> University Settings</h4>
                     </div>
                     <div class="card-body">
                         <?php if ($success): ?>
-                            <div class="alert alert-success alert-dismissible fade show">
+                            <div class="alert vle-alert-success alert-dismissible fade show">
                                 <i class="bi bi-check-circle"></i> <?php echo $success; ?>
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>
                         <?php endif; ?>
                         
                         <?php if ($error): ?>
-                            <div class="alert alert-danger alert-dismissible fade show">
+                            <div class="alert vle-alert-error alert-dismissible fade show">
                                 <i class="bi bi-exclamation-circle"></i> <?php echo $error; ?>
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>

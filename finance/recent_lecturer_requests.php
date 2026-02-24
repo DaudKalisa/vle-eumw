@@ -18,7 +18,6 @@ if ($result) {
         $recent_lecturer_requests[] = $row;
     }
 }
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">

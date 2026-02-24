@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     $office = trim($_POST['office'] ?? '');
     $bio = trim($_POST['bio'] ?? '');
     $gender = trim($_POST['gender'] ?? '');
+    $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
     
     // Handle profile picture upload
     $profile_picture = $lecturer['profile_picture'];
@@ -74,7 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -85,16 +85,26 @@ $conn->close();
     <title>My Profile - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-person-badge"></i> My Profile</h2>
-            <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
+<body>
+    <?php 
+    $currentPage = 'profile';
+    $pageTitle = 'My Profile';
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-person-badge me-2"></i>My Profile</h1>
+            <p class="text-muted mb-0">Manage your profile information</p>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>

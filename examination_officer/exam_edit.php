@@ -141,7 +141,7 @@ $breadcrumbs = [['url' => 'manage_exams.php', 'title' => 'Examinations'], ['url'
                                 <div class="col-md-6">
                                     <label class="form-label">Exam Type</label>
                                     <select name="exam_type" class="form-select">
-                                        <?php foreach (['quiz' => 'Quiz', 'mid_term' => 'Mid-Term Exam', 'final' => 'Final Exam', 'assignment' => 'Assignment'] as $val => $label): ?>
+                                        <?php foreach (['quiz' => 'Quiz', 'mid_term' => 'Mid-Semester Exam', 'final' => 'End-Semester Examination', 'assignment' => 'Assignment'] as $val => $label): ?>
                                             <option value="<?= $val ?>" <?= $exam['exam_type'] === $val ? 'selected' : '' ?>><?= $label ?></option>
                                         <?php endforeach; ?>
                                     </select>

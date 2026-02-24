@@ -60,7 +60,6 @@ $result = $stmt->get_result();
 $requests = $result->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -73,6 +72,7 @@ $conn->close();
     <link href="../assets/css/style.css" rel="stylesheet">
 </head>
 <body>
+        <?php include 'lecturer_navbar.php'; ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="#">VLE System - Lecturer</a>

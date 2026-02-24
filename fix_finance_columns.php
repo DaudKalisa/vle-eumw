@@ -85,5 +85,4 @@ foreach ($default_updates as $update_sql) {
 echo "<h3>All Done!</h3>";
 echo "<p><a href='finance/student_finances.php'>Go to Student Finances</a> | <a href='finance/dashboard.php'>Finance Dashboard</a></p>";
 
-$conn->close();
 ?>

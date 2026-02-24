@@ -2,7 +2,7 @@
 // admin/fee_settings.php - Manage fee settings
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'finance']);
+requireRole(['staff', 'admin', 'finance']);
 
 $conn = getDbConnection();
 
@@ -13,6 +13,8 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_fees'])) {
     $application_fee = floatval($_POST['application_fee']);
     $registration_fee = floatval($_POST['registration_fee']);
+    $new_student_reg_fee = floatval($_POST['new_student_reg_fee']);
+    $continuing_reg_fee = floatval($_POST['continuing_reg_fee']);
     $tuition_degree = floatval($_POST['tuition_degree']);
     $tuition_professional = floatval($_POST['tuition_professional']);
     $tuition_masters = floatval($_POST['tuition_masters']);
@@ -23,6 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_fees'])) {
     $stmt = $conn->prepare("UPDATE fee_settings SET 
         application_fee = ?,
         registration_fee = ?,
+        new_student_reg_fee = ?,
+        continuing_reg_fee = ?,
         tuition_degree = ?,
         tuition_professional = ?,
         tuition_masters = ?,
@@ -31,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_fees'])) {
         deferred_exam_fee = ?
         WHERE id = 1");
     
-    $stmt->bind_param("dddddddd", $application_fee, $registration_fee, $tuition_degree, $tuition_professional, $tuition_masters, $tuition_doctorate, $supplementary_exam, $deferred_exam);
+    $stmt->bind_param("dddddddddd", $application_fee, $registration_fee, $new_student_reg_fee, $continuing_reg_fee, $tuition_degree, $tuition_professional, $tuition_masters, $tuition_doctorate, $supplementary_exam, $deferred_exam);
     
     if ($stmt->execute()) {
         $success = "Fee settings updated successfully!";
@@ -46,6 +50,8 @@ if (!$fees) {
     $fees = [
         'application_fee' => 5500,
         'registration_fee' => 39500,
+        'new_student_reg_fee' => 39500,
+        'continuing_reg_fee' => 35000,
         'tuition_degree' => 500000,
         'tuition_professional' => 200000,
         'tuition_masters' => 1100000,
@@ -64,36 +70,36 @@ if (!$fees) {
     <title>Fee Settings - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-cash-stack"></i> Fee Management
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-            </div>
-        </div>
-    </nav>
+    <?php 
+    $currentPage = 'fee_settings';
+    $pageTitle = 'Fee Settings';
+    $breadcrumbs = [['title' => 'Fee Settings']];
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
+    <div class="vle-content">
         <div class="row">
             <div class="col-md-8 offset-md-2">
-                <div class="card shadow">
-                    <div class="card-header bg-success text-white">
+                <div class="card vle-card shadow">
+                    <div class="card-header bg-vle-success text-white">
                         <h4 class="mb-0"><i class="bi bi-currency-dollar"></i> Fee Settings</h4>
                     </div>
                     <div class="card-body">
                         <?php if ($success): ?>
-                            <div class="alert alert-success alert-dismissible fade show">
+                            <div class="alert vle-alert-success alert-dismissible fade show">
                                 <i class="bi bi-check-circle"></i> <?php echo $success; ?>
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>
                         <?php endif; ?>
                         
                         <?php if ($error): ?>
-                            <div class="alert alert-danger alert-dismissible fade show">
+                            <div class="alert vle-alert-error alert-dismissible fade show">
                                 <i class="bi bi-exclamation-circle"></i> <?php echo $error; ?>
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>
@@ -112,7 +118,24 @@ if (!$fees) {
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Registration Fee (K) <span class="text-danger">*</span></label>
                                         <input type="number" class="form-control" name="registration_fee" value="<?php echo $fees['registration_fee']; ?>" step="0.01" required>
-                                        <small class="text-muted">Paid after admission</small>
+                                        <small class="text-muted">Default/fallback registration fee</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Student Type Registration Fees -->
+                            <div class="mb-4">
+                                <h5 class="border-bottom pb-2"><i class="bi bi-people"></i> Registration Fees by Student Type</h5>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">New Student Registration Fee (K) <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" name="new_student_reg_fee" value="<?php echo $fees['new_student_reg_fee'] ?? 39500; ?>" step="0.01" required>
+                                        <small class="text-muted">For first-time students (Year 1 Semester 1)</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Continuing Student Registration Fee (K) <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" name="continuing_reg_fee" value="<?php echo $fees['continuing_reg_fee'] ?? 35000; ?>" step="0.01" required>
+                                        <small class="text-muted">For returning students (after passing exams)</small>
                                     </div>
                                 </div>
                             </div>
@@ -160,11 +183,14 @@ if (!$fees) {
                             <!-- Fee Summary -->
                             <div class="alert alert-info">
                                 <h6><i class="bi bi-info-circle"></i> Total Fees Summary:</h6>
+                                <p class="mb-1"><strong>New Students:</strong> Registration K<?php echo number_format($fees['new_student_reg_fee'] ?? 39500); ?></p>
+                                <p class="mb-2"><strong>Continuing Students:</strong> Registration K<?php echo number_format($fees['continuing_reg_fee'] ?? 35000); ?></p>
                                 <ul class="mb-0">
-                                    <li><strong>Degree:</strong> K<?php echo number_format($fees['application_fee'] + $fees['registration_fee'] + $fees['tuition_degree']); ?> (App + Reg + Tuition)</li>
-                                    <li><strong>Professional:</strong> K<?php echo number_format($fees['application_fee'] + $fees['registration_fee'] + $fees['tuition_professional']); ?></li>
-                                    <li><strong>Masters:</strong> K<?php echo number_format($fees['application_fee'] + $fees['registration_fee'] + $fees['tuition_masters']); ?></li>
-                                    <li><strong>Doctorate:</strong> K<?php echo number_format($fees['application_fee'] + $fees['registration_fee'] + $fees['tuition_doctorate']); ?></li>
+                                    <li><strong>Degree (New):</strong> K<?php echo number_format($fees['application_fee'] + ($fees['new_student_reg_fee'] ?? 39500) + $fees['tuition_degree']); ?> (App + Reg + Tuition)</li>
+                                    <li><strong>Degree (Continuing):</strong> K<?php echo number_format($fees['application_fee'] + ($fees['continuing_reg_fee'] ?? 35000) + $fees['tuition_degree']); ?></li>
+                                    <li><strong>Professional:</strong> K<?php echo number_format($fees['application_fee'] + ($fees['new_student_reg_fee'] ?? 39500) + $fees['tuition_professional']); ?></li>
+                                    <li><strong>Masters:</strong> K<?php echo number_format($fees['application_fee'] + ($fees['new_student_reg_fee'] ?? 39500) + $fees['tuition_masters']); ?></li>
+                                    <li><strong>Doctorate:</strong> K<?php echo number_format($fees['application_fee'] + ($fees['new_student_reg_fee'] ?? 39500) + $fees['tuition_doctorate']); ?></li>
                                 </ul>
                             </div>
 

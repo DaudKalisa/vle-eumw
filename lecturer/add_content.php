@@ -1,6 +1,7 @@
 <?php
 // add_content.php - Add weekly content to VLE course
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
 requireRole(['lecturer']);
 
@@ -62,6 +63,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param("iissssii", $course_id, $week, $title, $description, $content_type, $file_path, $file_name, $is_mandatory);
 
         if ($stmt->execute()) {
+            // Send notification to enrolled students
+            if (isEmailEnabled()) {
+                // Get enrolled students
+                $students_stmt = $conn->prepare("
+                    SELECT s.full_name, s.email 
+                    FROM students s 
+                    INNER JOIN vle_enrollments ve ON s.student_id = ve.student_id 
+                    WHERE ve.course_id = ?
+                ");
+                $students_stmt->bind_param("i", $course_id);
+                $students_stmt->execute();
+                $students_result = $students_stmt->get_result();
+                
+                // Get lecturer name
+                $lecturer_name = $user['display_name'] ?? 'Your Instructor';
+                
+                while ($student = $students_result->fetch_assoc()) {
+                    sendDocumentUploadedEmail(
+                        $student['email'],
+                        $student['full_name'],
+                        $lecturer_name,
+                        $course['course_name'],
+                        $title,
+                        $content_type,
+                        $description,
+                        $course_id
+                    );
+                }
+            }
+            
             header("Location: dashboard.php?course_id=$course_id");
             exit();
         } else {
@@ -73,12 +104,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
+        <style>
+            .navbar.sticky-Top, .navbar.fixed-top {
+                position: sticky;
+                top: 0;
+                z-index: 9999;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                background: #198754 !important;
+            }
+            .navbar-brand img {
+                height: 48px;
+                width: auto;
+                margin-right: 10px;
+            }
+        </style>
+        <!-- Modern Header -->
+        <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #002147; position: sticky; top: 0; z-index: 1050; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+            <div class="container-fluid">
+                <a class="navbar-brand d-flex align-items-center fw-bold text-white me-4" href="dashboard.php">
+                    <img src="../assets/img/Logo.png" alt="Logo" style="height:38px;width:auto;margin-right:10px;">
+                    <span>VLE-EUMW</span>
+                </a>
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="gradebook.php">Gradebook</a></li>
+                    <li class="nav-item"><a class="nav-link" href="messages.php">Messages</a></li>
+                    <li class="nav-item"><a class="nav-link" href="announcements.php">Announcements</a></li>
+                    <li class="nav-item"><a class="nav-link" href="forum.php">Forums</a></li>
+                </ul>
+                <ul class="navbar-nav align-items-center mb-2 mb-lg-0 ms-auto">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span><?php echo htmlspecialchars($user['display_name']); ?></span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person-circle me-2"></i>My Profile</a></li>
+                            <li><a class="dropdown-item" href="change_password.php"><i class="bi bi-key me-2"></i>Change Password</a></li>
+                            <li><a class="dropdown-item text-danger" href="../logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </nav>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add Content - VLE System</title>

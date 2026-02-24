@@ -2,7 +2,7 @@
 // edit_lecturer.php - Admin edit lecturer details
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 $lecturer_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_lecturer'])) {
     $program = trim($_POST['program'] ?? '');
     $position = trim($_POST['position']);
     $gender = trim($_POST['gender'] ?? '');
+    $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
     $phone = trim($_POST['phone'] ?? '');
     $office = trim($_POST['office'] ?? '');
     $bio = trim($_POST['bio'] ?? '');
@@ -68,13 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_lecturer'])) {
         $user_stmt->bind_param("ssi", $email, $username, $lecturer_id);
         $user_stmt->execute();
         
-        $success = "Lecturer details updated successfully!";
-        
-        // Refresh lecturer data with username
-        $stmt = $conn->prepare("SELECT l.*, u.username FROM lecturers l LEFT JOIN users u ON l.email = u.email WHERE l.lecturer_id = ?");
-        $stmt->bind_param("i", $lecturer_id);
-        $stmt->execute();
-        $lecturer = $stmt->get_result()->fetch_assoc();
+        // Redirect back to manage lecturers page
+        header("Location: manage_lecturers.php?success=" . urlencode("Lecturer details updated successfully!"));
+        exit();
     } else {
         $error = "Failed to update lecturer details.";
     }
@@ -89,7 +86,6 @@ if ($dept_result) {
     }
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -100,23 +96,34 @@ $conn->close();
     <title>Edit Lecturer - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-person-fill-gear"></i> Edit Lecturer</h2>
-            <a href="manage_lecturers.php" class="btn btn-secondary">Back to Manage Lecturers</a>
+<body>
+    <?php 
+    $currentPage = 'edit_lecturer';
+    $pageTitle = 'Edit Lecturer';
+    $breadcrumbs = [['title' => 'Lecturers', 'url' => 'manage_lecturers.php'], ['title' => 'Edit Lecturer']];
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-person-fill-gear me-2"></i>Edit Lecturer</h1>
+            <p class="text-muted mb-0">Update lecturer information and profile</p>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if (isset($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
+            <div class="alert vle-alert-error alert-dismissible fade show">
                 <?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -124,7 +131,7 @@ $conn->close();
 
         <div class="row">
             <div class="col-md-4">
-                <div class="card">
+                <div class="card vle-card">
                     <div class="card-header bg-success text-white">
                         <h5 class="mb-0">Profile Picture</h5>
                     </div>
@@ -225,8 +232,13 @@ $conn->close();
                             <div class="row mb-3">
                                 <div class="col-md-6">
                                     <label for="position" class="form-label">Position *</label>
-                                    <input type="text" class="form-control" id="position" name="position" 
-                                           value="<?php echo htmlspecialchars($lecturer['position']); ?>" required>
+                                    <select class="form-select" id="position" name="position" required>
+                                        <option value="">Select Position</option>
+                                        <option value="Associate Lecturer" <?php echo ($lecturer['position'] ?? '') == 'Associate Lecturer' ? 'selected' : ''; ?>>Associate Lecturer</option>
+                                        <option value="Lecturer" <?php echo ($lecturer['position'] ?? '') == 'Lecturer' ? 'selected' : ''; ?>>Lecturer</option>
+                                        <option value="Senior Lecturer" <?php echo ($lecturer['position'] ?? '') == 'Senior Lecturer' ? 'selected' : ''; ?>>Senior Lecturer</option>
+                                        <option value="Head of Department" <?php echo ($lecturer['position'] ?? '') == 'Head of Department' ? 'selected' : ''; ?>>Head of Department</option>
+                                    </select>
                                 </div>
                             </div>
 

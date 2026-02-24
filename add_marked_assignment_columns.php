@@ -46,8 +46,6 @@ if (!is_dir($marked_dir)) {
     echo "✓ Directory already exists: uploads/marked_assignments/\n";
 }
 
-$conn->close();
-
 echo "\nMigration completed successfully!\n";
 echo "\nNext steps:\n";
 echo "1. Lecturers can upload marked assignments when grading in the gradebook\n";

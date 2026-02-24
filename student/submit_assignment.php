@@ -79,16 +79,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Handle file upload
     if (isset($_FILES['submission_file']) && $_FILES['submission_file']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = '../uploads/submissions/';
-        if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0755, true);
-        }
         $file_name = basename($_FILES['submission_file']['name']);
-        $file_path = time() . '_' . $student_id . '_' . $file_name;
-        $target_path = $upload_dir . $file_path;
         
-        if (!move_uploaded_file($_FILES['submission_file']['tmp_name'], $target_path)) {
-            $error = "Failed to upload file.";
+        // Create student-specific directory structure
+        $base_upload_dir = '../uploads/submissions/';
+        
+        // Ensure base directory exists
+        if (!is_dir($base_upload_dir)) {
+            if (!mkdir($base_upload_dir, 0755, true)) {
+                $error = "Failed to create base upload directory: " . $base_upload_dir;
+            }
+        }
+        
+        if (empty($error)) {
+            $student_dir = $base_upload_dir . time() . '_' . $student_id . '/';
+            
+            // Create the student directory if it doesn't exist
+            if (!is_dir($student_dir)) {
+                if (!mkdir($student_dir, 0755, true)) {
+                    $error = "Failed to create student directory: " . $student_dir;
+                }
+            }
+            
+            if (empty($error)) {
+                $file_path = time() . '_' . $student_id . '/' . $file_name;
+                $target_path = $base_upload_dir . $file_path;
+                
+                // Double check that the target directory exists
+                $target_dir = dirname($target_path);
+                if (!is_dir($target_dir)) {
+                    if (!mkdir($target_dir, 0755, true)) {
+                        $error = "Failed to create final target directory: " . $target_dir;
+                    }
+                }
+                
+                if (empty($error)) {
+                    if (!move_uploaded_file($_FILES['submission_file']['tmp_name'], $target_path)) {
+                        $error = "Failed to move uploaded file from " . $_FILES['submission_file']['tmp_name'] . " to " . $target_path . ". Check directory permissions.";
+                    }
+                }
+            }
         }
     }
 
@@ -188,7 +218,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -199,6 +228,7 @@ $conn->close();
     <title>Submit Assignment - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <link href="../assets/css/style.css" rel="stylesheet">
     <style>
         .question-card {
             background: white;
@@ -252,16 +282,27 @@ $conn->close();
     </style>
 </head>
 <body class="bg-light">
+    <?php 
+    // Set up breadcrumb navigation
+    $page_title = "Submit Assignment";
+    $breadcrumbs = [
+        ['title' => 'Course Access', 'url' => 'courses.php'],
+        ['title' => htmlspecialchars($assignment['course_name']), 'url' => 'course_content.php?course_id=' . $assignment['course_id']],
+        ['title' => 'Submit Assignment']
+    ];
+    include 'header_nav.php'; 
+    ?>
+    
     <div class="container mt-4 mb-5">
         <div class="row justify-content-center">
             <div class="col-md-10">
-                <!-- Header -->
+                <!-- Assignment Header -->
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                                    <?php if ($assignment['time_limit'] > 0): ?>
-                                    <div class="alert alert-info" id="timerAlert">
-                                        <i class="bi bi-clock"></i> <b>Time Remaining:</b> <span id="timerDisplay"></span>
-                                    </div>
-                                    <?php endif; ?>
+                    <?php if (isset($assignment['time_limit']) && $assignment['time_limit'] > 0): ?>
+                        <div class="alert alert-info" id="timerAlert">
+                            <i class="bi bi-clock"></i> <b>Time Remaining:</b> <span id="timerDisplay"></span>
+                        </div>
+                    <?php endif; ?>
                     <div>
                         <h3><i class="bi bi-file-earmark-text"></i> <?php echo htmlspecialchars($assignment['title']); ?></h3>
                         <p class="text-muted mb-0">
@@ -517,10 +558,11 @@ $conn->close();
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-        <?php if ($assignment['time_limit'] > 0): ?>
+        <?php $time_limit = isset($assignment['time_limit']) ? (int)$assignment['time_limit'] : 0; ?>
+        <?php if ($time_limit > 0): ?>
         <script>
         // Timer logic
-        let timeLimit = <?php echo (int)$assignment['time_limit']; ?> * 60; // seconds
+        let timeLimit = <?php echo $time_limit; ?> * 60; // seconds
         let timerDisplay = document.getElementById('timerDisplay');
         let timerAlert = document.getElementById('timerAlert');
         let form = document.getElementById('assignmentForm');

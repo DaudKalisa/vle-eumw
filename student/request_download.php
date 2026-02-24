@@ -51,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existing_request) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>

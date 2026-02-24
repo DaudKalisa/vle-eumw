@@ -243,6 +243,5 @@ try {
     $response['message'] = 'Error: ' . $e->getMessage();
 }
 
-$conn->close();
 echo json_encode($response);
 ?>

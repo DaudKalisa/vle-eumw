@@ -9,12 +9,37 @@ $user = getCurrentUser();
 $success_message = '';
 $error_message = '';
 
+// Determine redirect path based on role
+$dashboard_path = 'dashboard.php';
+switch ($user['role']) {
+    case 'student':
+        $dashboard_path = 'student/dashboard.php';
+        break;
+    case 'lecturer':
+        $dashboard_path = 'lecturer/dashboard.php';
+        break;
+    case 'finance':
+        $dashboard_path = 'finance/dashboard.php';
+        break;
+    case 'staff':
+    case 'hod':
+    case 'dean':
+        $dashboard_path = 'admin/dashboard.php';
+        break;
+}
+
+// Enforce password change at first login
+$force_change = false;
+if (isset($_SESSION['force_password_change']) && $_SESSION['force_password_change']) {
+    $force_change = true;
+}
+
 // Handle password change submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $current_password = $_POST['current_password'] ?? '';
     $new_password = $_POST['new_password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
-    
+
     // Validation
     if (empty($current_password)) {
         $error_message = "Please enter your current password.";
@@ -31,39 +56,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute();
         $result = $stmt->get_result();
         $user_data = $result->fetch_assoc();
-        
+
         if (!password_verify($current_password, $user_data['password_hash'])) {
             $error_message = "Current password is incorrect.";
         } else {
-            // Update password
+            // Update password and clear must_change_password flag
             $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-            $update_stmt = $conn->prepare("UPDATE users SET password_hash = ? WHERE user_id = ?");
+            $update_stmt = $conn->prepare("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE user_id = ?");
             $update_stmt->bind_param("si", $hashed_password, $user['user_id']);
-            
+
             if ($update_stmt->execute()) {
                 $success_message = "Password changed successfully!";
                 // Clear form fields
                 $_POST = [];
+                if ($force_change) {
+                    unset($_SESSION['force_password_change']);
+                    // Redirect to dashboard after password change
+                    header('Location: ' . $dashboard_path);
+                    exit();
+                }
             } else {
                 $error_message = "Error updating password. Please try again.";
             }
         }
     }
-}
-
-// Determine redirect path based on role
-$dashboard_path = 'dashboard.php';
-switch ($user['role']) {
-    case 'student':
-        $dashboard_path = 'student/dashboard.php';
-        break;
-    case 'lecturer':
-        $dashboard_path = 'lecturer/dashboard.php';
-        break;
-    case 'finance':
-    case 'staff':
-        $dashboard_path = 'admin/dashboard.php';
-        break;
 }
 ?>
 
@@ -130,6 +146,9 @@ switch ($user['role']) {
                             <small class="text-muted"><?php echo htmlspecialchars($user['email'] ?? ucfirst($user['role'])); ?></small>
                         </div>
 
+                        <?php if ($force_change): ?>
+                            <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> For security, you must change your password before accessing the system.</div>
+                        <?php endif; ?>
                         <form method="POST" action="" id="changePasswordForm">
                             <div class="mb-3">
                                 <label class="form-label">Current Password <span class="text-danger">*</span></label>
@@ -170,9 +189,11 @@ switch ($user['role']) {
                                 <button type="submit" class="btn btn-primary btn-lg">
                                     <i class="bi bi-check-circle"></i> Change Password
                                 </button>
+                                <?php if (!$force_change): ?>
                                 <a href="<?php echo $dashboard_path; ?>" class="btn btn-outline-secondary">
                                     <i class="bi bi-arrow-left"></i> Back to Dashboard
                                 </a>
+                                <?php endif; ?>
                             </div>
                         </form>
                     </div>
@@ -256,4 +277,4 @@ switch ($user['role']) {
 </body>
 </html>
 
-<?php $conn->close(); ?>
+<?php  ?>

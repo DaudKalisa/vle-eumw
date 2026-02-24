@@ -2,6 +2,7 @@
 // announcements.php - Lecturer course announcements
 require_once '../includes/auth.php';
 require_once '../includes/email.php';
+
 requireLogin();
 requireRole(['lecturer']);
 
@@ -25,22 +26,22 @@ $course = $result->fetch_assoc();
 
 // Handle announcement creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_announcement'])) {
-    $title = trim($_POST['title']);
-    $content = trim($_POST['content']);
-    
+    $title = trim($_POST['title'] ?? '');
+    $content = trim($_POST['content'] ?? '');
+
     if (!empty($title) && !empty($content)) {
         $stmt = $conn->prepare("INSERT INTO vle_announcements (course_id, lecturer_id, title, content) VALUES (?, ?, ?, ?)");
         $stmt->bind_param("iiss", $course_id, $lecturer_id, $title, $content);
-        
+
         if ($stmt->execute()) {
             $success = "Announcement posted successfully!";
-            
+
             // Get lecturer details
             $lecturer_query = $conn->prepare("SELECT full_name FROM lecturers WHERE lecturer_id = ?");
             $lecturer_query->bind_param("i", $lecturer_id);
             $lecturer_query->execute();
             $lecturer_data = $lecturer_query->get_result()->fetch_assoc();
-            
+
             // Get all enrolled students and send emails
             $students_query = $conn->prepare("
                 SELECT s.email, s.full_name
@@ -51,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_announcement']
             $students_query->bind_param("i", $course_id);
             $students_query->execute();
             $students_result = $students_query->get_result();
-            
+
             $email_count = 0;
             while ($student = $students_result->fetch_assoc()) {
                 if (sendAnnouncementEmail(
@@ -66,28 +67,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_announcement']
                     $email_count++;
                 }
             }
-            
+
             $success .= " Emails sent to $email_count students.";
         } else {
             $error = "Failed to post announcement.";
         }
+    } else {
+        $error = "Please provide both a title and content.";
     }
 }
 
 // Get all announcements for this course
 $announcements = [];
-$result = $conn->query("
+$stmt = $conn->prepare("
     SELECT a.*, l.full_name as lecturer_name
     FROM vle_announcements a
     LEFT JOIN lecturers l ON a.lecturer_id = l.lecturer_id
-    WHERE a.course_id = $course_id
+    WHERE a.course_id = ?
     ORDER BY a.created_date DESC
 ");
+$stmt->bind_param("i", $course_id);
+$stmt->execute();
+$result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
     $announcements[] = $row;
 }
 
-$conn->close();
+$page_title = 'Announcements';
+$breadcrumbs = [
+    ['title' => 'Announcements']
+];
 ?>
 
 <!DOCTYPE html>
@@ -95,18 +104,51 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Announcements - VLE System</title>
+    <title>Announcements - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <style>
+        .announcement-card .card-header small {
+            display: block;
+        }
+        .page-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        @media (max-width: 576px) {
+            .page-title {
+                font-size: 1.1rem;
+            }
+            .card-header h5,
+            .card-header h4 {
+                font-size: 1rem;
+            }
+        }
+    </style>
 </head>
 <body class="bg-light">
-    <div class="container-fluid mt-5">
+    <?php include 'header_nav.php'; ?>
+
+    <div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+        <div class="page-actions mb-3">
+            <button class="btn btn-outline-secondary" onclick="window.history.back();">
+                <i class="bi bi-arrow-left"></i> Back
+            </button>
+        </div>
+
         <div class="row">
-            <div class="col-md-12">
-                <div class="card shadow">
+            <div class="col-12">
+                <div class="card shadow-sm">
                     <div class="card-header bg-warning">
-                        <h4><i class="bi bi-megaphone"></i> Announcements - <?php echo htmlspecialchars($course['course_name']); ?></h4>
-                        <a href="dashboard.php?course_id=<?php echo $course_id; ?>" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+                        <h4 class="mb-0 page-title">
+                            <i class="bi bi-megaphone"></i>
+                            Announcements - <?php echo htmlspecialchars($course['course_name']); ?>
+                        </h4>
                     </div>
                     <div class="card-body">
                         <?php if (isset($success)): ?>
@@ -115,18 +157,17 @@ $conn->close();
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>
                         <?php endif; ?>
-                        
+
                         <?php if (isset($error)): ?>
                             <div class="alert alert-danger alert-dismissible fade show">
                                 <?php echo $error; ?>
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>
                         <?php endif; ?>
-                        
-                        <!-- Create Announcement Form -->
+
                         <div class="card mb-4 border-warning">
                             <div class="card-header bg-warning bg-opacity-25">
-                                <h5><i class="bi bi-plus-circle"></i> Create New Announcement</h5>
+                                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Create New Announcement</h5>
                             </div>
                             <div class="card-body">
                                 <form method="POST">
@@ -147,26 +188,25 @@ $conn->close();
                                 </form>
                             </div>
                         </div>
-                        
-                        <!-- Previous Announcements -->
+
                         <h5 class="mb-3">Previous Announcements</h5>
                         <?php if (empty($announcements)): ?>
                             <p class="text-muted">No announcements posted yet.</p>
                         <?php else: ?>
                             <?php foreach ($announcements as $announcement): ?>
-                                <div class="card mb-3">
+                                <div class="card mb-3 announcement-card">
                                     <div class="card-header bg-light">
-                                        <h6 class="mb-0">
+                                        <h6 class="mb-1">
                                             <i class="bi bi-megaphone-fill text-warning"></i>
                                             <?php echo htmlspecialchars($announcement['title']); ?>
                                         </h6>
                                         <small class="text-muted">
-                                            Posted by <?php echo htmlspecialchars($announcement['lecturer_name']); ?> 
+                                            Posted by <?php echo htmlspecialchars($announcement['lecturer_name']); ?>
                                             on <?php echo date('F j, Y g:i A', strtotime($announcement['created_date'])); ?>
                                         </small>
                                     </div>
                                     <div class="card-body">
-                                        <p><?php echo nl2br(htmlspecialchars($announcement['content'])); ?></p>
+                                        <p class="mb-0"><?php echo nl2br(htmlspecialchars($announcement['content'])); ?></p>
                                     </div>
                                 </div>
                             <?php endforeach; ?>

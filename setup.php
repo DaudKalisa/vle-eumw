@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL UNIQUE,
     email VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    role ENUM('student', 'lecturer', 'staff', 'hod', 'dean', 'finance') NOT NULL,
+    role ENUM('student', 'lecturer', 'staff', 'hod', 'dean', 'finance', 'examination_manager') NOT NULL,
     related_student_id VARCHAR(20) NULL,
     related_lecturer_id INT NULL,
     related_staff_id INT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT TRUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_login DATETIME NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS students (
     student_id VARCHAR(20) PRIMARY KEY,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS students (
     year_of_study INT,
     enrollment_date DATE,
     is_active BOOLEAN DEFAULT TRUE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS lecturers (
     lecturer_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS lecturers (
     position VARCHAR(50),
     hire_date DATE,
     is_active BOOLEAN DEFAULT TRUE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS administrative_staff (
     staff_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS administrative_staff (
     position VARCHAR(50),
     hire_date DATE,
     is_active BOOLEAN DEFAULT TRUE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ";
 
 // VLE Tables SQL (same as create_vle_tables.php)
@@ -69,9 +69,12 @@ CREATE TABLE IF NOT EXISTS vle_courses (
     lecturer_id INT,
     total_weeks INT DEFAULT 16,
     is_active BOOLEAN DEFAULT TRUE,
+    program_of_study VARCHAR(100),
+    year_of_study INT,
+    semester ENUM('One', 'Two') DEFAULT 'One',
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (lecturer_id) REFERENCES lecturers(lecturer_id)
-);
+    FOREIGN KEY (lecturer_id) REFERENCES lecturers(lecturer_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_enrollments (
     enrollment_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -81,10 +84,12 @@ CREATE TABLE IF NOT EXISTS vle_enrollments (
     current_week INT DEFAULT 1,
     is_completed BOOLEAN DEFAULT FALSE,
     completion_date DATETIME NULL,
-    FOREIGN KEY (student_id) REFERENCES students(student_id),
-    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id),
-    UNIQUE (student_id, course_id)
-);
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    UNIQUE (student_id, course_id),
+    INDEX idx_student (student_id),
+    INDEX idx_course (course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_weekly_content (
     content_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -98,8 +103,9 @@ CREATE TABLE IF NOT EXISTS vle_weekly_content (
     is_mandatory BOOLEAN DEFAULT TRUE,
     sort_order INT DEFAULT 0,
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id)
-);
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    INDEX idx_course (course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_assignments (
     assignment_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -115,8 +121,9 @@ CREATE TABLE IF NOT EXISTS vle_assignments (
     file_name VARCHAR(255) NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id)
-);
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    INDEX idx_course (course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_submissions (
     submission_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -131,11 +138,13 @@ CREATE TABLE IF NOT EXISTS vle_submissions (
     graded_by INT NULL,
     graded_date DATETIME NULL,
     status ENUM('submitted', 'graded', 'late') DEFAULT 'submitted',
-    FOREIGN KEY (assignment_id) REFERENCES vle_assignments(assignment_id),
-    FOREIGN KEY (student_id) REFERENCES students(student_id),
-    FOREIGN KEY (graded_by) REFERENCES users(user_id),
-    UNIQUE (assignment_id, student_id)
-);
+    FOREIGN KEY (assignment_id) REFERENCES vle_assignments(assignment_id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
+    FOREIGN KEY (graded_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    UNIQUE (assignment_id, student_id),
+    INDEX idx_assignment (assignment_id),
+    INDEX idx_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_progress (
     progress_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -146,10 +155,11 @@ CREATE TABLE IF NOT EXISTS vle_progress (
     progress_type ENUM('content_viewed', 'assignment_completed', 'week_completed') NOT NULL,
     completion_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     score DECIMAL(5,2) NULL,
-    FOREIGN KEY (enrollment_id) REFERENCES vle_enrollments(enrollment_id),
-    FOREIGN KEY (content_id) REFERENCES vle_weekly_content(content_id),
-    FOREIGN KEY (assignment_id) REFERENCES vle_assignments(assignment_id)
-);
+    FOREIGN KEY (enrollment_id) REFERENCES vle_enrollments(enrollment_id) ON DELETE CASCADE,
+    FOREIGN KEY (content_id) REFERENCES vle_weekly_content(content_id) ON DELETE SET NULL,
+    FOREIGN KEY (assignment_id) REFERENCES vle_assignments(assignment_id) ON DELETE SET NULL,
+    INDEX idx_enrollment (enrollment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_forums (
     forum_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -159,8 +169,9 @@ CREATE TABLE IF NOT EXISTS vle_forums (
     description TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id)
-);
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    INDEX idx_course (course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_forum_posts (
     post_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -171,10 +182,12 @@ CREATE TABLE IF NOT EXISTS vle_forum_posts (
     content TEXT NOT NULL,
     post_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     is_pinned BOOLEAN DEFAULT FALSE,
-    FOREIGN KEY (forum_id) REFERENCES vle_forums(forum_id),
-    FOREIGN KEY (parent_post_id) REFERENCES vle_forum_posts(post_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
-);
+    FOREIGN KEY (forum_id) REFERENCES vle_forums(forum_id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_post_id) REFERENCES vle_forum_posts(post_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    INDEX idx_forum (forum_id),
+    INDEX idx_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_grades (
     grade_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -186,9 +199,10 @@ CREATE TABLE IF NOT EXISTS vle_grades (
     percentage DECIMAL(5,2),
     grade_letter VARCHAR(2),
     graded_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (enrollment_id) REFERENCES vle_enrollments(enrollment_id),
-    FOREIGN KEY (assignment_id) REFERENCES vle_assignments(assignment_id)
-);
+    FOREIGN KEY (enrollment_id) REFERENCES vle_enrollments(enrollment_id) ON DELETE CASCADE,
+    FOREIGN KEY (assignment_id) REFERENCES vle_assignments(assignment_id) ON DELETE SET NULL,
+    INDEX idx_enrollment (enrollment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Attendance Session Management Tables
 CREATE TABLE IF NOT EXISTS attendance_sessions (
@@ -202,9 +216,9 @@ CREATE TABLE IF NOT EXISTS attendance_sessions (
     qr_code_data TEXT NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id),
-    FOREIGN KEY (lecturer_id) REFERENCES lecturers(lecturer_id)
-);
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    FOREIGN KEY (lecturer_id) REFERENCES lecturers(lecturer_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS attendance_records (
     record_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -217,17 +231,19 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     status ENUM('present', 'late', 'left_early', 'unresponsive') DEFAULT 'present',
     duration_minutes INT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES attendance_sessions(session_id),
-    FOREIGN KEY (student_id) REFERENCES students(student_id),
-    UNIQUE (session_id, student_id)
-);
+    FOREIGN KEY (session_id) REFERENCES attendance_sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
+    UNIQUE (session_id, student_id),
+    INDEX idx_session (session_id),
+    INDEX idx_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Messaging System
 CREATE TABLE IF NOT EXISTS vle_messages (
     message_id INT AUTO_INCREMENT PRIMARY KEY,
-    sender_type ENUM('student', 'lecturer') NOT NULL,
+    sender_type ENUM('student', 'lecturer', 'admin', 'finance') NOT NULL,
     sender_id VARCHAR(50) NOT NULL,
-    recipient_type ENUM('student', 'lecturer') NOT NULL,
+    recipient_type ENUM('student', 'lecturer', 'admin', 'finance') NOT NULL,
     recipient_id VARCHAR(50) NOT NULL,
     subject VARCHAR(200) NOT NULL,
     message TEXT NOT NULL,
@@ -236,7 +252,7 @@ CREATE TABLE IF NOT EXISTS vle_messages (
     read_date DATETIME NULL,
     INDEX (recipient_type, recipient_id),
     INDEX (sender_type, sender_id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Quiz Tables
 CREATE TABLE IF NOT EXISTS vle_quizzes (
@@ -250,8 +266,9 @@ CREATE TABLE IF NOT EXISTS vle_quizzes (
     passing_score DECIMAL(5,2) DEFAULT 50.00,
     is_active BOOLEAN DEFAULT TRUE,
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id)
-);
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    INDEX idx_course (course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_quiz_questions (
     question_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -262,8 +279,9 @@ CREATE TABLE IF NOT EXISTS vle_quiz_questions (
     options JSON NULL, -- for multiple choice
     points DECIMAL(5,2) DEFAULT 1.00,
     order_num INT DEFAULT 0,
-    FOREIGN KEY (quiz_id) REFERENCES vle_quizzes(quiz_id)
-);
+    FOREIGN KEY (quiz_id) REFERENCES vle_quizzes(quiz_id) ON DELETE CASCADE,
+    INDEX idx_quiz (quiz_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_quiz_attempts (
     attempt_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -275,9 +293,11 @@ CREATE TABLE IF NOT EXISTS vle_quiz_attempts (
     score DECIMAL(5,2) NULL,
     max_score DECIMAL(5,2) NULL,
     status ENUM('in_progress', 'completed', 'timed_out') DEFAULT 'in_progress',
-    FOREIGN KEY (quiz_id) REFERENCES vle_quizzes(quiz_id),
-    FOREIGN KEY (student_id) REFERENCES students(student_id)
-);
+    FOREIGN KEY (quiz_id) REFERENCES vle_quizzes(quiz_id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
+    INDEX idx_quiz (quiz_id),
+    INDEX idx_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vle_quiz_answers (
     answer_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -286,9 +306,11 @@ CREATE TABLE IF NOT EXISTS vle_quiz_answers (
     answer_text TEXT,
     is_correct BOOLEAN,
     points_earned DECIMAL(5,2) DEFAULT 0.00,
-    FOREIGN KEY (attempt_id) REFERENCES vle_quiz_attempts(attempt_id),
-    FOREIGN KEY (question_id) REFERENCES vle_quiz_questions(question_id)
-);
+    FOREIGN KEY (attempt_id) REFERENCES vle_quiz_attempts(attempt_id) ON DELETE CASCADE,
+    FOREIGN KEY (question_id) REFERENCES vle_quiz_questions(question_id) ON DELETE CASCADE,
+    INDEX idx_attempt (attempt_id),
+    INDEX idx_question (question_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Download Requests Table
 CREATE TABLE IF NOT EXISTS vle_download_requests (
@@ -301,10 +323,76 @@ CREATE TABLE IF NOT EXISTS vle_download_requests (
     status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
     requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     approved_at DATETIME NULL,
-    FOREIGN KEY (student_id) REFERENCES students(student_id),
-    FOREIGN KEY (content_id) REFERENCES vle_weekly_content(content_id),
-    FOREIGN KEY (lecturer_id) REFERENCES users(user_id)
-);
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
+    FOREIGN KEY (content_id) REFERENCES vle_weekly_content(content_id) ON DELETE CASCADE,
+    FOREIGN KEY (lecturer_id) REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_student (student_id),
+    INDEX idx_content (content_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vle_live_sessions (
+    session_id INT PRIMARY KEY AUTO_INCREMENT,
+    course_id INT NOT NULL,
+    lecturer_id VARCHAR(50) NOT NULL,
+    session_name VARCHAR(255) NOT NULL,
+    session_code VARCHAR(50) UNIQUE NOT NULL,
+    status ENUM('pending', 'active', 'completed') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP NULL,
+    ended_at TIMESTAMP NULL,
+    max_participants INT DEFAULT 50,
+    meeting_url VARCHAR(500),
+    FOREIGN KEY (course_id) REFERENCES vle_courses(course_id) ON DELETE CASCADE,
+    FOREIGN KEY (lecturer_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    INDEX idx_course (course_id),
+    INDEX idx_lecturer (lecturer_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vle_session_participants (
+    participant_id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id INT NOT NULL,
+    student_id VARCHAR(50) NOT NULL,
+    joined_at TIMESTAMP NULL,
+    left_at TIMESTAMP NULL,
+    status ENUM('invited', 'joined', 'left') DEFAULT 'invited',
+    FOREIGN KEY (session_id) REFERENCES vle_live_sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_session_student (session_id, student_id),
+    INDEX idx_session (session_id),
+    INDEX idx_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vle_session_invites (
+    invite_id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id INT NOT NULL,
+    student_id VARCHAR(50) NOT NULL,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    viewed_at TIMESTAMP NULL,
+    accepted_at TIMESTAMP NULL,
+    status ENUM('sent', 'viewed', 'accepted', 'declined') DEFAULT 'sent',
+    FOREIGN KEY (session_id) REFERENCES vle_live_sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_session_invite (session_id, student_id),
+    INDEX idx_session (session_id),
+    INDEX idx_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS zoom_settings (
+    setting_id INT PRIMARY KEY AUTO_INCREMENT,
+    zoom_account_email VARCHAR(100) NOT NULL UNIQUE,
+    zoom_api_key VARCHAR(255) NOT NULL,
+    zoom_api_secret VARCHAR(500) NOT NULL,
+    zoom_meeting_password VARCHAR(20),
+    zoom_enable_recording BOOLEAN DEFAULT TRUE,
+    zoom_require_authentication BOOLEAN DEFAULT TRUE,
+    zoom_wait_for_host BOOLEAN DEFAULT TRUE,
+    zoom_auto_recording ENUM('local', 'cloud', 'none') DEFAULT 'none',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ";
 
 try {
@@ -377,8 +465,8 @@ try {
     $sampleData = [
         "INSERT INTO lecturers (full_name, email, department, position) VALUES ('Dr. John Smith', 'john.smith@university.edu', 'Computer Science', 'Senior Lecturer')",
         "INSERT INTO students (student_id, full_name, email, department, year_of_study) VALUES ('STU001', 'Alice Johnson', 'alice.johnson@student.university.edu', 'Computer Science', 3)",
-        "INSERT INTO users (username, email, password_hash, role, related_lecturer_id) VALUES ('lecturer', 'john.smith@university.edu', '" . password_hash('mvustan', PASSWORD_DEFAULT) . "', 'lecturer', 1)",
-        "INSERT INTO users (username, email, password_hash, role, related_student_id) VALUES ('student', 'alice.johnson@student.university.edu', '" . password_hash('password', PASSWORD_DEFAULT) . "', 'student', 'STU001')"
+        "INSERT INTO users (username, email, password_hash, role, related_lecturer_id, must_change_password) VALUES ('lecturer', 'john.smith@university.edu', '" . password_hash('mvustan', PASSWORD_DEFAULT) . "', 'lecturer', 1, 1)",
+        "INSERT INTO users (username, email, password_hash, role, related_student_id, must_change_password) VALUES ('student', 'alice.johnson@student.university.edu', '" . password_hash('password', PASSWORD_DEFAULT) . "', 'student', 'STU001', 1)"
     ];
 
     $sampleSuccess = 0;
@@ -399,7 +487,6 @@ try {
     echo "<div class='alert alert-danger'>Error: " . $e->getMessage() . "</div>";
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>

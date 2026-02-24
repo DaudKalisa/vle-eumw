@@ -53,7 +53,5 @@ if ($conn->query($sql)) {
     echo "✗ Error creating programs table: " . $conn->error . "<br>";
 }
 
-$conn->close();
-
 echo "<br><a href='admin/manage_programs.php'>Go to Manage Programs</a> | <a href='admin/dashboard.php'>Admin Dashboard</a>";
 ?>

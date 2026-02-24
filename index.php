@@ -341,6 +341,22 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         
         <div class="hero-content">
             <div class="container">
+                <?php if (isset($_GET['session_expired'])): ?>
+                <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert" style="max-width: 600px; margin: 0 auto 20px;">
+                    <i class="fas fa-clock me-2"></i>
+                    <strong>Session Expired!</strong> You have been logged out due to inactivity.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                <?php endif; ?>
+                
+                <?php if (isset($_GET['timeout'])): ?>
+                <div class="alert alert-info alert-dismissible fade show mb-4" role="alert" style="max-width: 600px; margin: 0 auto 20px;">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Session Timeout!</strong> Your session has expired. Please login again.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                <?php endif; ?>
+                
                 <div class="logo-container">
                     <i class="fas fa-graduation-cap" style="font-size: 5rem;"></i>
                 </div>
@@ -353,7 +369,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                         <i class="fas fa-sign-in-alt"></i>
                         Login to VLE
                     </a>
-                    <a href="#about" class="btn-custom btn-secondary-custom">
+                    <a href="learn_more.php" class="btn-custom btn-secondary-custom">
                         <i class="fas fa-info-circle"></i>
                         Learn More
                     </a>
@@ -404,14 +420,46 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         </div>
     </div>
 
-    <footer>
+    <footer class="bg-dark text-light mt-5 pt-4 pb-2">
         <div class="container">
-            <p>&copy; <?php echo date('Y'); ?> EXPLOITS University Multi-campus. All rights reserved.</p>
-            <p>
-                <a href="#">Privacy Policy</a> | 
-                <a href="#">Terms of Service</a> | 
-                <a href="#">Contact Support</a>
-            </p>
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <h6 class="text-uppercase">Study at Exploits</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-light text-decoration-none">Postgraduate</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Undergraduate</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Short courses</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Professional education</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <h6 class="text-uppercase">About the University</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-light text-decoration-none">Research</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Campus Life</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Visiting the University</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Faculties</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Departments</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Vacancies</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <h6 class="text-uppercase">Resources</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-light text-decoration-none">Library</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Campus Map</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Directory</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Teacher Profiles</a></li>
+                        <li><a href="#" class="text-light text-decoration-none">Discussion</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-3 mb-3 d-flex flex-column justify-content-between">
+                    <div>
+                        <h6 class="text-uppercase">&nbsp;</h6>
+                        <p class="small">&copy; <?php echo date('Y'); ?> EXPLOITS University Multi-campus.<br>All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </footer>
 

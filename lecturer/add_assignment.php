@@ -1,6 +1,7 @@
 <?php
 // add_assignment.php - Add assignment to VLE course
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
 requireRole(['lecturer']);
 
@@ -54,9 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($error) && !empty($title)) {
-        // Insert assignment (with time_limit)
-        $stmt = $conn->prepare("INSERT INTO vle_assignments (course_id, week_number, title, description, assignment_type, max_score, passing_score, due_date, time_limit, file_path, file_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iisssiisiss", $course_id, $week, $title, $description, $assignment_type, $max_score, $passing_score, $due_date, $time_limit, $file_path, $file_name);
+        // Insert assignment (without time_limit)
+        $stmt = $conn->prepare("INSERT INTO vle_assignments (course_id, week_number, title, description, assignment_type, max_score, passing_score, due_date, file_path, file_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("iisssiisss", $course_id, $week, $title, $description, $assignment_type, $max_score, $passing_score, $due_date, $file_path, $file_name);
 
         if ($stmt->execute()) {
             $assignment_id = $stmt->insert_id;
@@ -73,8 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $q_correct = $q['correct'] ?? null;
                         $q_required = isset($q['required']) ? 1 : 0;
                         
-                        $q_stmt = $conn->prepare("INSERT INTO vle_assignment_questions (assignment_id, question_text, question_type, options, correct_answer, is_required) VALUES (?, ?, ?, ?, ?, ?)");
-                        $q_stmt->bind_param("issssi", $assignment_id, $q_text, $q_type, $q_options, $q_correct, $q_required);
+                        $q_stmt = $conn->prepare("INSERT INTO vle_assignment_questions (assignment_id, question_text, question_type, options, is_required) VALUES (?, ?, ?, ?, ?)");
+                        $q_stmt->bind_param("isssi", $assignment_id, $q_text, $q_type, $q_options, $q_required);
                         $q_stmt->execute();
                         $q_stmt->close();
                     }
@@ -82,6 +83,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $success = "Assignment created successfully!";
+            
+            // Send notification to enrolled students
+            if (isEmailEnabled() && $due_date) {
+                // Get enrolled students
+                $students_stmt = $conn->prepare("
+                    SELECT s.full_name, s.email 
+                    FROM students s 
+                    INNER JOIN enrollments e ON s.student_id = e.student_id 
+                    WHERE e.course_id = ? AND e.status = 'enrolled'
+                ");
+                $students_stmt->bind_param("i", $course_id);
+                $students_stmt->execute();
+                $students_result = $students_stmt->get_result();
+                
+                // Get lecturer name
+                $lecturer_name = $user['display_name'] ?? 'Your Instructor';
+                
+                while ($student = $students_result->fetch_assoc()) {
+                    sendNewAssignmentEmail(
+                        $student['email'],
+                        $student['full_name'],
+                        $lecturer_name,
+                        $course['course_name'],
+                        $title,
+                        $due_date,
+                        $course_id
+                    );
+                }
+            }
+            
             echo '<script>setTimeout(function(){ window.location = "dashboard.php?course_id=' . $course_id . '"; }, 2000);</script>';
         } else {
             $error = "Failed to add assignment: " . $conn->error;
@@ -91,7 +122,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -102,6 +132,20 @@ $conn->close();
     <title>Create Assignment - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <style>
+        .navbar.sticky-top, .navbar.fixed-top {
+            position: sticky;
+            top: 0;
+            z-index: 9999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            background: #198754 !important;
+        }
+        .navbar-brand img {
+            height: 48px;
+            width: auto;
+            margin-right: 10px;
+        }
+    </style>
     <style>
         .question-card {
             background: white;
@@ -182,6 +226,10 @@ $conn->close();
     </style>
 </head>
 <body class="bg-light">
+    <?php include 'lecturer_navbar.php'; ?>
+    <div class="container mt-2 mb-2">
+        <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+    </div>
     <div class="container mt-4 mb-5">
         <div class="row justify-content-center">
             <div class="col-md-10">
@@ -275,7 +323,7 @@ $conn->close();
                                     <option value="formative">Formative (Practice)</option>
                                     <option value="summative">Summative (Graded)</option>
                                     <option value="mid_sem">Mid Semester Exam</option>
-                                    <option value="final_exam">Final Exam</option>
+                                    <option value="final_exam">End-Semester Examination</option>
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">

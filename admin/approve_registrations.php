@@ -1,8 +1,9 @@
 <?php
 // admin/approve_registrations.php - Admin interface for approving student course registrations
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();
@@ -83,6 +84,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $update_stmt->execute();
                         
                         $conn->commit();
+                        
+                        // Send enrollment approval email
+                        if (isEmailEnabled()) {
+                            // Get student email
+                            $student_email_query = $conn->prepare("SELECT email FROM students WHERE student_id = ?");
+                            $student_email_query->bind_param("s", $request['student_id']);
+                            $student_email_query->execute();
+                            $student_email_result = $student_email_query->get_result();
+                            if ($student_email_row = $student_email_result->fetch_assoc()) {
+                                sendEnrollmentApprovedEmail(
+                                    $student_email_row['email'],
+                                    $request['student_name'],
+                                    $request['course_name'],
+                                    $request['course_code'],
+                                    $request['semester'],
+                                    $request['academic_year']
+                                );
+                            }
+                        }
+                        
                         $success = "Registration approved! " . htmlspecialchars($request['student_name']) . 
                                   " has been enrolled in " . htmlspecialchars($request['course_name']) . ".";
                     } catch (Exception $e) {
@@ -96,6 +117,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $request_id = (int)$_POST['request_id'];
         $admin_notes = trim($_POST['admin_notes'] ?? '');
         
+        // Get request details for email notification
+        $reject_query = $conn->prepare("SELECT r.*, s.email as student_email, s.full_name as student_name, 
+                                        c.course_name, c.course_code
+                                        FROM course_registration_requests r
+                                        INNER JOIN students s ON r.student_id = s.student_id
+                                        INNER JOIN vle_courses c ON r.course_id = c.course_id
+                                        WHERE r.request_id = ? AND r.status = 'pending'");
+        $reject_query->bind_param("i", $request_id);
+        $reject_query->execute();
+        $reject_result = $reject_query->get_result();
+        $request_to_reject = $reject_result->fetch_assoc();
+        
         // Update request status to rejected
         $update_stmt = $conn->prepare("UPDATE course_registration_requests 
                                       SET status = 'rejected', reviewed_by = ?, reviewed_date = NOW(), admin_notes = ? 
@@ -103,6 +136,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $update_stmt->bind_param("isi", $user['user_id'], $admin_notes, $request_id);
         
         if ($update_stmt->execute() && $update_stmt->affected_rows > 0) {
+            // Send rejection email
+            if (isEmailEnabled() && $request_to_reject) {
+                sendEnrollmentRejectedEmail(
+                    $request_to_reject['student_email'],
+                    $request_to_reject['student_name'],
+                    $request_to_reject['course_name'],
+                    $request_to_reject['course_code'],
+                    $admin_notes
+                );
+            }
             $success = "Registration request rejected.";
         } else {
             $error = "Error rejecting request or request already processed!";
@@ -258,20 +301,28 @@ $stats = $conn->query($stats_query)->fetch_assoc();
     <title>Approve Course Registrations - Admin VLE</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <style>
         .stats-card {
             border-left: 4px solid;
             transition: transform 0.2s;
+            border-radius: var(--vle-radius);
+            background: white;
+            box-shadow: var(--vle-shadow);
         }
         .stats-card:hover {
             transform: translateY(-2px);
         }
-        .stats-card.pending { border-left-color: #ffc107; }
-        .stats-card.approved { border-left-color: #198754; }
-        .stats-card.rejected { border-left-color: #dc3545; }
+        .stats-card.pending { border-left-color: var(--vle-warning); }
+        .stats-card.approved { border-left-color: var(--vle-success); }
+        .stats-card.rejected { border-left-color: var(--vle-danger); }
         
         .request-card {
             transition: all 0.3s;
+            border-radius: var(--vle-radius);
         }
         .request-card:hover {
             box-shadow: 0 4px 8px rgba(0,0,0,0.15);
@@ -283,37 +334,29 @@ $stats = $conn->query($stats_query)->fetch_assoc();
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-shield-check"></i> Admin Panel
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php">Dashboard</a>
-                <a class="nav-link" href="../logout.php">Logout</a>
-            </div>
-        </div>
-    </nav>
+    <?php 
+    $currentPage = 'approve_registrations';
+    $pageTitle = 'Course Registration Approvals';
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container-fluid mt-4">
-        <!-- Header -->
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <h2><i class="bi bi-clipboard-check"></i> Course Registration Approvals</h2>
-                <p class="text-muted">Review and approve student course registration requests</p>
-            </div>
+    <div class="vle-content">
+        <!-- Page Header -->
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-clipboard-check me-2"></i>Course Registration Approvals</h1>
+            <p class="text-muted mb-0">Review and approve student course registration requests</p>
         </div>
 
         <!-- Messages -->
         <?php if ($success): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle"></i> <?= $success ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         
         <?php if ($error): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
+            <div class="alert vle-alert-error alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle"></i> <?= $error ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -321,39 +364,39 @@ $stats = $conn->query($stats_query)->fetch_assoc();
 
         <!-- Statistics -->
         <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card stats-card pending shadow-sm">
+            <div class="col-md-4 mb-3 mb-md-0">
+                <div class="card stats-card pending">
                     <div class="card-body">
                         <h6 class="card-subtitle mb-2 text-muted">Pending Requests</h6>
-                        <h2 class="card-title text-warning"><?= $stats['pending_count'] ?></h2>
+                        <h2 class="card-title text-warning mb-0"><?= $stats['pending_count'] ?></h2>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card stats-card approved shadow-sm">
+            <div class="col-md-4 mb-3 mb-md-0">
+                <div class="card stats-card approved">
                     <div class="card-body">
                         <h6 class="card-subtitle mb-2 text-muted">Approved</h6>
-                        <h2 class="card-title text-success"><?= $stats['approved_count'] ?></h2>
+                        <h2 class="card-title text-success mb-0"><?= $stats['approved_count'] ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card stats-card rejected shadow-sm">
+                <div class="card stats-card rejected">
                     <div class="card-body">
                         <h6 class="card-subtitle mb-2 text-muted">Rejected</h6>
-                        <h2 class="card-title text-danger"><?= $stats['rejected_count'] ?></h2>
+                        <h2 class="card-title text-danger mb-0"><?= $stats['rejected_count'] ?></h2>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Filters -->
-        <div class="card shadow-sm mb-4">
+        <div class="card vle-card mb-4">
             <div class="card-body">
                 <form method="GET" class="row g-3">
                     <div class="col-md-3">
                         <label class="form-label">Status</label>
-                        <select name="status" class="form-select">
+                        <select name="status" class="form-select vle-form-control">
                             <option value="all" <?= $filter_status === 'all' ? 'selected' : '' ?>>All</option>
                             <option value="pending" <?= $filter_status === 'pending' ? 'selected' : '' ?>>Pending</option>
                             <option value="approved" <?= $filter_status === 'approved' ? 'selected' : '' ?>>Approved</option>
@@ -362,7 +405,7 @@ $stats = $conn->query($stats_query)->fetch_assoc();
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Program</label>
-                        <select name="program" class="form-select">
+                        <select name="program" class="form-select vle-form-control">
                             <option value="">All Programs</option>
                             <?php while ($prog = $programs_result->fetch_assoc()): ?>
                                 <option value="<?= htmlspecialchars($prog['program']) ?>" 

@@ -31,7 +31,6 @@ while ($row = $result->fetch_assoc()) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>

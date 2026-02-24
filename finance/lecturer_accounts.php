@@ -9,7 +9,6 @@ $conn = getDbConnection();
 // Fetch all lecturers
 $stmt = $conn->query("SELECT * FROM lecturers ORDER BY full_name ASC");
 $lecturers = $stmt->fetch_all(MYSQLI_ASSOC);
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">

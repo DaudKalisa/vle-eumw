@@ -61,5 +61,4 @@ echo "<h3>Setup Complete!</h3>";
 echo "<p>The course registration requests system is ready.</p>";
 echo "<p><a href='index.php'>← Back to Home</a></p>";
 
-$conn->close();
 ?>

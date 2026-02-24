@@ -2,7 +2,7 @@
 // get_students_for_allocation.php - Fetch students for course allocation
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 header('Content-Type: application/json');
 
@@ -38,7 +38,5 @@ while ($row = $result->fetch_assoc()) {
 }
 
 $stmt->close();
-$conn->close();
-
 echo json_encode(['students' => $students]);
 ?>

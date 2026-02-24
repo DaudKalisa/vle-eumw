@@ -2,7 +2,7 @@
 // manage_semester.php - View and filter modules by semester
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -33,7 +33,6 @@ while ($row = $result->fetch_assoc()) {
     $modules[] = $row;
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -44,6 +43,10 @@ $conn->close();
     <title>Manage Semester - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <style>
         .sticky-top-custom {
             position: sticky;
@@ -53,39 +56,32 @@ $conn->close();
         }
     </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-speedometer2"></i> Admin Dashboard
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-                <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
-    </nav>
+<body>
+    <?php 
+    $currentPage = 'manage_semester';
+    $pageTitle = 'Manage Semester';
+    $breadcrumbs = [['title' => 'Semester Overview']];
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container-fluid mt-4">
+    <div class="vle-content">
         <!-- Success/Error Messages -->
         <?php if ($success_message): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <div class="alert vle-alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle"></i> <?php echo $success_message; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         <?php if ($error_message): ?>
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <div class="alert vle-alert-error alert-dismissible fade show" role="alert">
                 <i class="bi bi-exclamation-triangle"></i> <?php echo $error_message; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         
-        <div class="row mb-4">
-            <div class="col-12">
-                <h2><i class="bi bi-calendar-check text-success"></i> Manage Semester - Module Overview</h2>
-                <p class="text-muted">View, filter, and assign modules to semesters</p>
-            </div>
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-calendar-check me-2"></i>Manage Semester - Module Overview</h1>
+            <p class="text-muted mb-0">View, filter, and assign modules to semesters</p>
         </div>
 
         <!-- Filters -->
@@ -121,7 +117,7 @@ $conn->close();
         <!-- Statistics -->
         <div class="row mb-4">
             <div class="col-md-3">
-                <div class="card border-primary">
+                <div class="card vle-card border-primary">
                     <div class="card-body text-center">
                         <i class="bi bi-journal-text text-primary" style="font-size: 2rem;"></i>
                         <h4 class="mt-2" id="totalModules"><?php echo count($modules); ?></h4>

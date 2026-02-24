@@ -2,7 +2,7 @@
 // manage_faculties.php - Admin manage faculties
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -217,60 +217,32 @@ while ($row = $result->fetch_assoc()) {
     $unassigned_departments[] = $row;
 }
 
-$conn->close();
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Faculties - Admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        .navbar.sticky-top {
-            position: sticky;
-            top: 0;
-            z-index: 1030;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .navbar-brand img {
-            height: 40px;
-            width: auto;
-            margin-right: 10px;
-        }
-    </style>
-</head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
-        <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="dashboard.php">
-                <img src="../pictures/logo.bmp" alt="VLE Logo">
-                <span>VLE Admin</span>
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php">Dashboard</a>
-                <a class="nav-link" href="../logout.php">Logout</a>
-            </div>
-        </div>
-    </nav>
+<body>
+    <?php 
+    $currentPage = 'manage_faculties';
+    $pageTitle = 'Manage Faculties';
+    $breadcrumbs = [['title' => 'Faculties']];
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-building-fill"></i> Manage Faculties</h2>
-            <a href="dashboard.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
+    <div class="vle-content">
+        <div class="vle-page-header mb-4">
+            <h1 class="h3 mb-1"><i class="bi bi-building-fill me-2"></i>Manage Faculties</h1>
+            <p class="text-muted mb-0">Manage university faculties and their departments</p>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if (isset($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
+            <div class="alert vle-alert-error alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>

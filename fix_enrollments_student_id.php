@@ -53,5 +53,4 @@ echo "</table>";
 echo "<h3 style='color: green;'>✓ Fix completed successfully!</h3>";
 echo "<p><a href='admin/manage_courses.php'>Go to Manage Courses</a> | <a href='admin/dashboard.php'>Go to Dashboard</a></p>";
 
-$conn->close();
 ?>

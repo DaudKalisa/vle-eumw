@@ -166,7 +166,6 @@ foreach ($assignments as $assignment) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -177,32 +176,36 @@ $conn->close();
     <title>Gradebook - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <style>
         .question-card {
             background: white;
             border: 1px solid #dadce0;
-            border-radius: 8px;
+            border-radius: var(--vle-radius);
             padding: 20px;
             margin-bottom: 16px;
             transition: box-shadow 0.2s;
         }
         .question-card:hover {
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            box-shadow: var(--vle-shadow-lg);
         }
         .answer-card {
             background: #f8f9fa;
-            border-left: 4px solid #1a73e8;
+            border-left: 4px solid var(--vle-accent);
             padding: 12px;
             margin-top: 8px;
             border-radius: 4px;
         }
         .correct-answer {
             background: #d1e7dd;
-            border-left: 4px solid #198754;
+            border-left-color: var(--vle-success);
         }
         .incorrect-answer {
             background: #f8d7da;
-            border-left: 4px solid #dc3545;
+            border-left-color: var(--vle-danger);
         }
         .submission-preview {
             max-height: 400px;
@@ -222,41 +225,47 @@ $conn->close();
         }
     </style>
 </head>
-<body class="bg-light">
-    <div class="container-fluid mt-4 mb-5">
+<body>
+    <?php 
+    $currentPage = 'gradebook';
+    $pageTitle = 'Gradebook';
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
         <div class="row">
             <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="vle-page-header d-flex justify-content-between align-items-center mb-4">
                     <div>
-                        <h3><i class="bi bi-clipboard-data"></i> Gradebook</h3>
+                        <h1 class="h3 mb-1"><i class="bi bi-clipboard-data me-2"></i>Gradebook</h1>
                         <p class="text-muted mb-0"><?php echo htmlspecialchars($course['course_name']); ?></p>
                     </div>
-                    <a href="dashboard.php?course_id=<?php echo $course_id; ?>" class="btn btn-outline-secondary">
+                    <a href="dashboard.php?course_id=<?php echo $course_id; ?>" class="btn btn-vle-accent">
                         <i class="bi bi-arrow-left"></i> Back to Dashboard
                     </a>
                 </div>
 
                 <?php if (isset($_GET['success'])): ?>
-                    <div class="alert alert-success alert-dismissible fade show">
+                    <div class="alert vle-alert-success alert-dismissible fade show">
                         <i class="bi bi-check-circle"></i> Grade saved successfully and student notified!
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 <?php endif; ?>
 
                 <?php if (empty($assignments)): ?>
-                    <div class="alert alert-info">
+                    <div class="alert vle-alert-info">
                         <i class="bi bi-info-circle"></i> No assignments created yet.
                     </div>
                 <?php elseif (empty($students)): ?>
-                    <div class="alert alert-info">
+                    <div class="alert vle-alert-info">
                         <i class="bi bi-info-circle"></i> No students enrolled yet.
                     </div>
                 <?php else: ?>
-                    <div class="card shadow">
+                    <div class="card vle-card">
                         <div class="card-body">
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle">
-                                    <thead class="table-light">
+                                <table class="table vle-table align-middle">
+                                    <thead>
                                         <tr>
                                             <th style="min-width: 200px;">Student</th>
                                             <?php foreach ($assignments as $assignment): ?>

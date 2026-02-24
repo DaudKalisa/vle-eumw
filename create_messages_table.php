@@ -30,5 +30,4 @@ if ($conn->query($sql)) {
     echo "<p>Failed to create table: " . $conn->error . "</p>";
 }
 
-$conn->close();
 ?>

@@ -27,10 +27,9 @@ $stmt->bind_param("s", $student_id);
 $stmt->execute();
 $submissions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Handle payment submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_payment'])) {
     $amount = floatval($_POST['amount']);
-    $payment_reference = trim($_POST['payment_reference']);
+    $payment_reference = strtoupper(trim($_POST['payment_reference'])); // Auto-capitalize
     $transaction_date = trim($_POST['transaction_date']);
     $transaction_type = trim($_POST['transaction_type'] ?? 'Bank Deposit');
     $bank_name = trim($_POST['bank_name'] ?? '');
@@ -39,9 +38,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_payment'])) {
     }
     $notes = trim($_POST['notes'] ?? '');
     
-    // Handle file upload
+    // Check for duplicate payment reference
+    $dup_check = $conn->prepare("SELECT submission_id FROM payment_submissions WHERE payment_reference = ?");
+    $dup_check->bind_param("s", $payment_reference);
+    $dup_check->execute();
+    if ($dup_check->get_result()->num_rows > 0) {
+        $error = "This payment reference '" . htmlspecialchars($payment_reference) . "' has already been submitted. Please use a unique reference number.";
+    }
+    $dup_check->close();
+    
+    // Handle file upload (only if no duplicate error)
     $proof_filename = null;
-    if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
+    if (!isset($error) && isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
         $upload_dir = '../uploads/payments/';
         if (!is_dir($upload_dir)) {
             mkdir($upload_dir, 0755, true);
@@ -89,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_payment'])) {
     }
 }
 
-$conn->close();
+
 ?>
 
 <!DOCTYPE html>
@@ -100,26 +108,53 @@ $conn->close();
     <title>Submit Payment - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <style>
+        .balance-card-header {
+            background: linear-gradient(135deg, #17a2b8 0%, #0dcaf0 100%) !important;
+            border: none;
+            color: white;
+        }
+        .instructions-card-header {
+            background: var(--vle-gradient-warning) !important;
+            border: none;
+            color: #1e293b;
+        }
+        .submit-card-header {
+            background: var(--vle-gradient-primary) !important;
+            border: none;
+            color: white;
+        }
+        .submissions-card-header {
+            background: var(--vle-gradient-accent) !important;
+            border: none;
+            color: white;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-cash-coin"></i> Submit Payment</h2>
-            <a href="dashboard.php" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Back to Dashboard
-            </a>
+<body>
+<?php 
+$breadcrumbs = [['title' => 'Submit Payment']];
+include 'header_nav.php'; 
+?>
+    <div class="vle-content">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+            <h2 class="vle-page-title"><i class="bi bi-cash-coin me-2"></i>Submit Payment</h2>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
-                <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
+            <div class="alert vle-alert-success alert-dismissible fade show">
+                <i class="bi bi-check-circle-fill me-2"></i><?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
         <?php if (isset($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
-                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
+            <div class="alert vle-alert-danger alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i><?php echo $error; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
@@ -127,15 +162,15 @@ $conn->close();
         <div class="row">
             <!-- Payment Summary -->
             <div class="col-md-4">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="bi bi-wallet2"></i> Your Balance</h5>
+                <div class="card vle-card mb-4">
+                    <div class="card-header balance-card-header">
+                        <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Your Balance</h5>
                     </div>
                     <div class="card-body">
                         <?php if ($finance_data): ?>
                             <div class="mb-3">
                                 <label class="text-muted small">Total Expected</label>
-                                <h4>K<?php echo number_format($finance_data['expected_total'] ?? 0); ?></h4>
+                                <h4 style="color: var(--vle-primary);">K<?php echo number_format($finance_data['expected_total'] ?? 0); ?></h4>
                             </div>
                             <div class="mb-3">
                                 <label class="text-muted small">Total Paid</label>
@@ -151,9 +186,9 @@ $conn->close();
                     </div>
                 </div>
 
-                <div class="card shadow-sm">
-                    <div class="card-header bg-warning">
-                        <h6 class="mb-0"><i class="bi bi-info-circle"></i> Instructions</h6>
+                <div class="card vle-card">
+                    <div class="card-header instructions-card-header">
+                        <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Instructions</h6>
                     </div>
                     <div class="card-body">
                         <ol class="small mb-0">
@@ -169,27 +204,27 @@ $conn->close();
 
             <!-- Payment Submission Form -->
             <div class="col-md-8">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-upload"></i> Submit Payment Proof</h5>
+                <div class="card vle-card mb-4">
+                    <div class="card-header submit-card-header">
+                        <h5 class="mb-0"><i class="bi bi-upload me-2"></i>Submit Payment Proof</h5>
                     </div>
                     <div class="card-body">
                         <form method="POST" enctype="multipart/form-data">
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label">Amount Paid (MWK) *</label>
-                                    <input type="number" class="form-control" name="amount" step="0.01" min="0" required>
+                                    <label class="form-label vle-form-label">Amount Paid (MWK) *</label>
+                                    <input type="number" class="form-control vle-form-control" name="amount" step="0.01" min="0" required>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label">Transaction Date *</label>
-                                    <input type="date" class="form-control" name="transaction_date" max="<?php echo date('Y-m-d'); ?>" required>
+                                    <label class="form-label vle-form-label">Transaction Date *</label>
+                                    <input type="date" class="form-control vle-form-control" name="transaction_date" max="<?php echo date('Y-m-d'); ?>" required>
                                 </div>
                             </div>
                             
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label">Type of Transaction *</label>
-                                    <select class="form-select" name="transaction_type" required>
+                                    <label class="form-label vle-form-label">Type of Transaction *</label>
+                                    <select class="form-select vle-form-control" name="transaction_type" required>
                                         <option value="Bank Deposit">Bank Deposit</option>
                                         <option value="Electronic Transfer">Electronic Transfer</option>
                                         <option value="Mobile Money">Mobile Money</option>
@@ -219,7 +254,8 @@ $conn->close();
                             
                             <div class="mb-3">
                                 <label class="form-label">Payment Reference/Transaction ID *</label>
-                                <input type="text" class="form-control" name="payment_reference" placeholder="e.g., TXN123456789" required>
+                                <input type="text" class="form-control" name="payment_reference" id="payment_reference" placeholder="e.g., TXN123456789" required style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
+                                <div class="form-text">Reference must be unique. Duplicates are not allowed.</div>
                             </div>
 
                             <div class="mb-3">
@@ -281,9 +317,12 @@ $conn->close();
                                                 </td>
                                                 <td>
                                                     <?php if ($sub['proof_of_payment']): ?>
-                                                        <a href="../uploads/payments/<?php echo $sub['proof_of_payment']; ?>" target="_blank" class="btn btn-sm btn-outline-primary">
-                                                            <i class="bi bi-file-earmark-image"></i> View
-                                                        </a>
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" 
+                                                                onclick="viewProof('<?php echo htmlspecialchars($sub['proof_of_payment']); ?>', 'K<?php echo number_format($sub['amount']); ?>', '<?php echo htmlspecialchars($sub['payment_reference']); ?>', '<?php echo date('M d, Y', strtotime($sub['submission_date'])); ?>')">
+                                                            <i class="bi bi-eye"></i> View
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
                                                     <?php endif; ?>
                                                 </td>
                                             </tr>
@@ -298,8 +337,117 @@ $conn->close();
         </div>
     </div>
 
+    <!-- Payment Proof Modal -->
+    <div class="modal fade" id="proofModal" tabindex="-1" aria-labelledby="proofModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="proofModalLabel">
+                        <i class="bi bi-file-earmark-image"></i> Payment Proof
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Payment Details -->
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <strong><i class="bi bi-cash-coin"></i> Amount:</strong>
+                            <span id="proofAmount" class="text-success fw-bold"></span>
+                        </div>
+                        <div class="col-md-4">
+                            <strong><i class="bi bi-hash"></i> Reference:</strong>
+                            <span id="proofReference"></span>
+                        </div>
+                        <div class="col-md-4">
+                            <strong><i class="bi bi-calendar"></i> Date:</strong>
+                            <span id="proofDate"></span>
+                        </div>
+                    </div>
+                    <hr>
+                    <!-- Proof Image/Document Container -->
+                    <div class="text-center" id="proofContainer">
+                        <div id="proofLoading" class="py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading proof...</p>
+                        </div>
+                        <img id="proofImage" src="" alt="Payment Proof" class="img-fluid rounded shadow" style="max-height: 500px; display: none;">
+                        <div id="proofPdf" style="display: none;">
+                            <iframe id="proofFrame" src="" style="width: 100%; height: 500px; border: 1px solid #ddd; border-radius: 8px;"></iframe>
+                        </div>
+                        <div id="proofOther" style="display: none;" class="py-4">
+                            <i class="bi bi-file-earmark-text display-1 text-muted"></i>
+                            <p class="mt-2">This file type cannot be previewed.</p>
+                            <a id="proofDownload" href="" target="_blank" class="btn btn-primary">
+                                <i class="bi bi-download"></i> Download File
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a id="proofNewTab" href="" target="_blank" class="btn btn-outline-primary">
+                        <i class="bi bi-box-arrow-up-right"></i> Open in New Tab
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg"></i> Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function viewProof(filename, amount, reference, date) {
+            // Set modal details
+            document.getElementById('proofAmount').textContent = amount;
+            document.getElementById('proofReference').textContent = reference;
+            document.getElementById('proofDate').textContent = date;
+            
+            const filePath = '../uploads/payments/' + filename;
+            const ext = filename.split('.').pop().toLowerCase();
+            
+            // Reset visibility
+            document.getElementById('proofLoading').style.display = 'block';
+            document.getElementById('proofImage').style.display = 'none';
+            document.getElementById('proofPdf').style.display = 'none';
+            document.getElementById('proofOther').style.display = 'none';
+            
+            // Set download/open links
+            document.getElementById('proofNewTab').href = filePath;
+            document.getElementById('proofDownload').href = filePath;
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('proofModal'));
+            modal.show();
+            
+            // Determine file type and display accordingly
+            setTimeout(function() {
+                document.getElementById('proofLoading').style.display = 'none';
+                
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+                    // Image file
+                    const img = document.getElementById('proofImage');
+                    img.src = filePath;
+                    img.style.display = 'block';
+                } else if (ext === 'pdf') {
+                    // PDF file
+                    document.getElementById('proofFrame').src = filePath;
+                    document.getElementById('proofPdf').style.display = 'block';
+                } else {
+                    // Other file types
+                    document.getElementById('proofOther').style.display = 'block';
+                }
+            }, 300);
+        }
+        
+        // Clean up when modal is closed
+        document.getElementById('proofModal').addEventListener('hidden.bs.modal', function () {
+            document.getElementById('proofImage').src = '';
+            document.getElementById('proofFrame').src = '';
+        });
+        
         function toggleCustomBank() {
             const bankSelect = document.getElementById('bank_name');
             const customField = document.getElementById('custom_bank_field');

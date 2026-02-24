@@ -20,5 +20,4 @@ if ($conn->query($sql2)) {
 }
 
 echo "Database update complete!";
-$conn->close();
 ?>

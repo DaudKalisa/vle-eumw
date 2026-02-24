@@ -157,8 +157,21 @@ $stmt->bind_param("s", $lecturer_id);
 $stmt->execute();
 $previous_requests = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+// Get already claimed months for this year (exclude rejected requests)
+$claimed_months = [];
+$current_year = date('Y');
+$stmt = $conn->prepare("
+    SELECT DISTINCT month FROM lecturer_finance_requests 
+    WHERE lecturer_id = ? AND year = ? AND status NOT IN ('rejected')
+");
+$stmt->bind_param("si", $lecturer_id, $current_year);
+$stmt->execute();
+$result = $stmt->get_result();
+while ($row = $result->fetch_assoc()) {
+    $claimed_months[] = (int)$row['month'];
+}
+
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -169,33 +182,38 @@ $conn->close();
     <title>Finance Request - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <link href="../assets/css/style.css" rel="stylesheet">
     <style>
         .signature-pad {
             border: 2px solid #ddd;
-            border-radius: 8px;
+            border-radius: var(--vle-radius);
             cursor: crosshair;
             background: white;
         }
         .stats-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--vle-gradient-primary);
             color: white;
-            border-radius: 10px;
+            border-radius: var(--vle-radius);
             padding: 20px;
             margin-bottom: 20px;
         }
         .course-checkbox {
             padding: 15px;
             border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            border-radius: var(--vle-radius);
             margin-bottom: 10px;
             transition: all 0.3s;
         }
         .course-checkbox:hover {
-            border-color: #667eea;
+            border-color: var(--vle-accent);
             background: #f8f9fa;
         }
         .course-checkbox input:checked ~ label {
-            color: #667eea;
+            color: var(--vle-accent);
             font-weight: bold;
         }
         .readonly-field {
@@ -204,24 +222,18 @@ $conn->close();
         }
     </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-mortarboard"></i> VLE System - Lecturer
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php">
-                    <i class="bi bi-arrow-left"></i> Back to Dashboard
-                </a>
-            </div>
-        </div>
-    </nav>
+<body>
+    <?php 
+    $currentPage = 'request_finance';
+    $pageTitle = 'Finance Request';
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4 pb-5">
-        <div class="row">
-            <div class="col-md-12">
-                <h2 class="mb-4"><i class="bi bi-cash-coin"></i> Finance Request Submission</h2>
+    <div class="vle-content">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+            <h2 class="vle-page-title"><i class="bi bi-cash-coin me-2"></i>Finance Request Submission</h2>
+            <a href="dashboard.php" class="btn btn-vle-secondary"><i class="bi bi-arrow-left me-1"></i> Back to Dashboard</a>
+        </div>
 
                 <?php if ($success_message): ?>
                     <div class="alert alert-success alert-dismissible fade show">
@@ -279,19 +291,20 @@ $conn->close();
                                     <label class="form-label">Month *</label>
                                     <select class="form-select" name="month" required>
                                         <option value="">Select Month</option>
-                                        <option value="1">January</option>
-                                        <option value="2">February</option>
-                                        <option value="3">March</option>
-                                        <option value="4">April</option>
-                                        <option value="5">May</option>
-                                        <option value="6">June</option>
-                                        <option value="7">July</option>
-                                        <option value="8">August</option>
-                                        <option value="9">September</option>
-                                        <option value="10">October</option>
-                                        <option value="11">November</option>
-                                        <option value="12">December</option>
+                                        <option value="1" <?php echo in_array(1, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>January</option>
+                                        <option value="2" <?php echo in_array(2, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>February</option>
+                                        <option value="3" <?php echo in_array(3, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>March</option>
+                                        <option value="4" <?php echo in_array(4, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>April</option>
+                                        <option value="5" <?php echo in_array(5, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>May</option>
+                                        <option value="6" <?php echo in_array(6, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>June</option>
+                                        <option value="7" <?php echo in_array(7, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>July</option>
+                                        <option value="8" <?php echo in_array(8, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>August</option>
+                                        <option value="9" <?php echo in_array(9, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>September</option>
+                                        <option value="10" <?php echo in_array(10, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>October</option>
+                                        <option value="11" <?php echo in_array(11, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>November</option>
+                                        <option value="12" <?php echo in_array(12, $claimed_months) ? 'disabled title="Already claimed"' : ''; ?>>December</option>
                                     </select>
+                                    <small class="text-muted d-block mt-2">Disabled months have already been claimed.</small>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Year *</label>
@@ -538,11 +551,23 @@ $conn->close();
                                                     </span>
                                                 </td>
                                                 <td>
-                                                     <?php if (!empty($req['request_id'])): ?>
-                                                    <a href="view_finance_request.php?id=<?php echo urlencode($req['request_id']); ?>" 
-                                                       class="btn btn-sm btn-outline-primary">
-                                                        <i class="bi bi-eye"></i> View
+                                                     <?php if (!empty($req['request_id']) && $req['status'] === 'paid'): ?>
+                                                    <a href="../finance/print_lecturer_payment.php?id=<?php echo urlencode($req['request_id']); ?>" 
+                                                       class="btn btn-sm btn-outline-success" target="_blank" title="View/Print Payment Confirmation">
+                                                        <i class="bi bi-printer"></i> Print
                                                     </a>
+                                                    <?php elseif (!empty($req['request_id']) && $req['status'] === 'pending'): ?>
+                                                    <span class="btn btn-sm btn-outline-warning disabled" title="Awaiting approval">
+                                                        <i class="bi bi-hourglass-split"></i> Pending
+                                                    </span>
+                                                    <?php elseif (!empty($req['request_id']) && $req['status'] === 'approved'): ?>
+                                                    <span class="btn btn-sm btn-outline-info disabled" title="Approved, awaiting payment">
+                                                        <i class="bi bi-check-circle"></i> Approved
+                                                    </span>
+                                                    <?php elseif (!empty($req['request_id']) && $req['status'] === 'rejected'): ?>
+                                                    <span class="btn btn-sm btn-outline-danger disabled" title="Request rejected">
+                                                        <i class="bi bi-x-circle"></i> Rejected
+                                                    </span>
                                                     <?php else: ?>
                                                     <span class="btn btn-sm btn-outline-secondary disabled" title="No request ID">
                                                         <i class="bi bi-eye-slash"></i> N/A
@@ -694,4 +719,3 @@ $conn->close();
     </script>
 </body>
 </html>
-composer require mpdf/mpdf

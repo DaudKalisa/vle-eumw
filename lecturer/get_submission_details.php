@@ -1,3 +1,4 @@
+    <?php include 'lecturer_navbar.php'; ?>
 <?php
 // get_submission_details.php - Fetch submission details for grading
 require_once '../includes/auth.php';
@@ -70,8 +71,6 @@ $result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
     $response['answers'][] = $row;
 }
-
-$conn->close();
 
 echo json_encode($response);
 ?>

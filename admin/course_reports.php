@@ -2,7 +2,7 @@
 // course_reports.php - Admin course reports
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -38,7 +38,7 @@ while ($row = $result->fetch_assoc()) {
     $courses[] = $row;
 }
 
-$conn->close();
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
 <!DOCTYPE html>
@@ -49,18 +49,11 @@ $conn->close();
     <title>Course Reports - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <style>
-        .navbar.sticky-top {
-            position: sticky;
-            top: 0;
-            z-index: 1030;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .navbar-brand img {
-            height: 40px;
-            width: auto;
-            margin-right: 10px;
-        }
         .gender-chart {
             display: flex;
             align-items: center;
@@ -123,21 +116,15 @@ $conn->close();
         }
     </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
-        <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="dashboard.php">
-                <img src="../pictures/logo.bmp" alt="VLE Logo">
-                <span>VLE Admin</span>
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-house-door"></i> Dashboard</a>
-                <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </div>
-        </div>
-    </nav>
+<body>
+    <?php 
+    $currentPage = 'course_reports';
+    $pageTitle = 'Course Reports';
+    $breadcrumbs = [['title' => 'Reports']];
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
+    <div class="vle-content">
         <!-- Print Header (only visible when printing) -->
         <div class="print-header">
             <h2>VLE System - Course Reports</h2>
@@ -145,30 +132,32 @@ $conn->close();
             <p>Total Courses: <?php echo count($courses); ?></p>
         </div>
         
-        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-            <h2><i class="bi bi-graph-up"></i> Course Reports</h2>
-            <div>
-                <button onclick="printReport()" class="btn btn-primary me-2">
-                    <i class="bi bi-printer"></i> Print Report
-                </button>
-                <button onclick="exportToExcel()" class="btn btn-success me-2">
-                    <i class="bi bi-file-earmark-excel"></i> Export to Excel
-                </button>
-                <button onclick="exportToPDF()" class="btn btn-danger me-2">
-                    <i class="bi bi-file-earmark-pdf"></i> Export to PDF
-                </button>
-                <a href="dashboard.php" class="btn btn-secondary">
-                    <i class="bi bi-arrow-left"></i> Back
-                </a>
+        <div class="vle-page-header mb-4 no-print">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-1"><i class="bi bi-graph-up me-2"></i>Course Reports</h1>
+                    <p class="text-muted mb-0">Generate and export course analytics</p>
+                </div>
+                <div>
+                    <button onclick="printReport()" class="btn btn-vle-primary me-2">
+                        <i class="bi bi-printer"></i> Print Report
+                    </button>
+                    <button onclick="exportToExcel()" class="btn btn-vle-accent me-2">
+                        <i class="bi bi-file-earmark-excel"></i> Export to Excel
+                    </button>
+                    <button onclick="exportToPDF()" class="btn btn-danger me-2">
+                        <i class="bi bi-file-earmark-pdf"></i> Export to PDF
+                    </button>
+                </div>
             </div>
         </div>
 
         <?php if (empty($courses)): ?>
-            <div class="alert alert-info">
+            <div class="alert vle-alert-info">
                 <i class="bi bi-info-circle"></i> No courses found in the system.
             </div>
         <?php else: ?>
-            <div class="card">
+            <div class="card vle-card">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0"><i class="bi bi-list-ul"></i> All Courses (<?php echo count($courses); ?>)</h5>
                 </div>

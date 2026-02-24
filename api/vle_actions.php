@@ -219,6 +219,5 @@ try {
     $response = ['success' => false, 'message' => $e->getMessage()];
 }
 
-$conn->close();
 echo json_encode($response);
 ?>

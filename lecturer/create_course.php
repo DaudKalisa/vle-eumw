@@ -76,12 +76,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
+        <style>
+            .navbar.sticky-top, .navbar.fixed-top {
+                position: sticky;
+                top: 0;
+                z-index: 9999;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                background: #198754 !important;
+            }
+            .navbar-brand img {
+                height: 48px;
+                width: auto;
+                margin-right: 10px;
+            }
+        </style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Create Course - VLE System</title>
@@ -89,6 +102,13 @@ $conn->close();
     <link href="../assets/css/style.css" rel="stylesheet">
 </head>
 <body>
+            <?php include 'lecturer_navbar.php'; ?>
+            <div class="container mt-2 mb-2">
+                <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+            </div>
+        <div class="container mt-2 mb-2">
+            <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+        </div>
     <nav class="navbar navbar-expand-lg navbar-dark bg-success">
         <div class="container">
             <a class="navbar-brand" href="#">VLE System - Lecturer</a>

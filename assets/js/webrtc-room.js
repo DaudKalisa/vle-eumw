@@ -163,6 +163,53 @@
 
     function getMediaMode() { return mediaMode; }
 
+    /**
+     * Request additional media after initial join.
+     * type: 'audio' | 'video' | 'both'
+     * Used when student initially joins view-only / audio-only and later wants to upgrade.
+     */
+    async function requestMedia(type) {
+        const constraints = {};
+        if (type === 'audio' || type === 'both') {
+            constraints.audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+        }
+        if (type === 'video' || type === 'both') {
+            constraints.video = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
+        }
+
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        if (!localStream) {
+            localStream = newStream;
+        } else {
+            // Merge new tracks into existing stream
+            newStream.getTracks().forEach(function(track) {
+                localStream.addTrack(track);
+            });
+        }
+
+        // Update tracks in all peer connections
+        for (const peerId in peerConnections) {
+            const pc = peerConnections[peerId];
+            const senders = pc.getSenders();
+            newStream.getTracks().forEach(function(track) {
+                const existing = senders.find(s => s.track && s.track.kind === track.kind);
+                if (existing) {
+                    existing.replaceTrack(track);
+                } else {
+                    pc.addTrack(track, localStream);
+                }
+            });
+        }
+
+        // Update state
+        if (constraints.audio) { isAudioOn = true; mediaMode = mediaMode === 'view-only' ? 'audio' : mediaMode; notifyMediaState('audio', 1); }
+        if (constraints.video) { isVideoOn = true; mediaMode = 'full'; notifyMediaState('video', 1); }
+        if (mediaMode === 'audio' && constraints.video) mediaMode = 'full';
+
+        return { stream: localStream, mediaMode: mediaMode };
+    }
+
     // ─── LEAVE ROOM ──────────────────────────────────────────────
     async function leaveRoom() {
         isInRoom = false;
@@ -699,6 +746,7 @@
         toggleAudio,
         toggleVideo,
         toggleScreenShare,
+        requestMedia,
         startRecording,
         stopRecording,
         uploadRecording,

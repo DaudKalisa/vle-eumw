@@ -50,7 +50,6 @@ $stmt->bind_param("i", $assignment_id);
 $stmt->execute();
 $questions = $stmt->get_result();
 
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">

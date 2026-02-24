@@ -10,9 +10,9 @@ $user = getCurrentUser();
 // Get student ID from session
 $student_id = $_SESSION['vle_related_id'];
 
-// Get student information
-$student_query = "SELECT s.student_id, s.full_name, s.email, s.gender, s.program_type,
-                         sf.expected_total, sf.total_paid, sf.balance, sf.payment_percentage, sf.content_access_weeks,
+// Get student information including student_type
+$student_query = "SELECT s.student_id, s.full_name, s.email, s.gender, s.program_type, s.student_type,
+                         sf.expected_total, sf.expected_tuition, sf.total_paid, sf.balance, sf.payment_percentage, sf.content_access_weeks,
                          sf.application_fee_paid, sf.application_fee_date,
                          sf.registration_paid, sf.registration_paid_date,
                          sf.installment_1, sf.installment_1_date,
@@ -22,7 +22,7 @@ $student_query = "SELECT s.student_id, s.full_name, s.email, s.gender, s.program
                          d.department_name, d.department_code as program_code, d.department_id,
                          f.faculty_name, f.faculty_id
                   FROM students s 
-                  LEFT JOIN student_finances sf ON s.student_id COLLATE utf8mb4_unicode_ci = sf.student_id COLLATE utf8mb4_unicode_ci 
+                  LEFT JOIN student_finances sf ON s.student_id = sf.student_id 
                   LEFT JOIN departments d ON s.department = d.department_id 
                   LEFT JOIN faculties f ON d.faculty_id = f.faculty_id 
                   WHERE s.student_id = ?";
@@ -38,31 +38,37 @@ if ($result->num_rows == 0) {
 
 $student = $result->fetch_assoc();
 
-// Calculate correct total fees based on program type
-$application_fee = 5500;
-$registration_fee = 39500;
-$program_type = $student['program_type'] ?? 'degree';
+// Get fee settings for registration fees
+$fee_query = "SELECT * FROM fee_settings LIMIT 1";
+$fee_result = $conn->query($fee_query);
+$fee_settings = ($fee_result && $fee_result->num_rows > 0) ? $fee_result->fetch_assoc() : null;
 
-switch ($program_type) {
-    case 'professional':
-        $tuition = 200000;
-        break;
-    case 'masters':
-        $tuition = 1100000;
-        break;
-    case 'doctorate':
-        $tuition = 2200000;
-        break;
-    case 'degree':
-    default:
-        $tuition = 500000;
-        break;
+// Determine student type and program type
+$student_type = $student['student_type'] ?? 'new_student';
+$is_continuing = ($student_type === 'continuing');
+$program_type = $student['program_type'] ?? 'degree';
+$is_professional = ($program_type === 'professional');
+
+// Set fees based on student type and program type
+// Professional courses: K10,000 registration fee, no application fee for continuing
+// Other programs: Use fee_settings rates
+if ($is_professional) {
+    $application_fee = $is_continuing ? 0 : 5500; // Continuing students exempt from application fee
+    $registration_fee = 10000; // Professional courses have flat K10,000 registration fee
+} else {
+    $application_fee = $is_continuing ? 0 : 5500; // Continuing students don't pay application fee
+    $new_student_reg_fee = $fee_settings['new_student_reg_fee'] ?? 39500;
+    $continuing_reg_fee = $fee_settings['continuing_reg_fee'] ?? 35000;
+    $registration_fee = $is_continuing ? $continuing_reg_fee : $new_student_reg_fee;
 }
 
-$correct_expected_total = $application_fee + $registration_fee + $tuition;
+// Use expected_total and expected_tuition from the database (same as dashboard)
+$expected_total = $student['expected_total'] ?? 0;
+$expected_tuition = $student['expected_tuition'] ?? 0;
 $total_paid = $student['total_paid'] ?? 0;
-$correct_balance = $correct_expected_total - $total_paid;
-$correct_payment_percentage = $correct_expected_total > 0 ? round(($total_paid / $correct_expected_total) * 100) : 0;
+$balance = $expected_total - $total_paid;
+if ($balance < 0) $balance = 0;
+$payment_percentage = $expected_total > 0 ? round(($total_paid / $expected_total) * 100) : 0;
 
 // Get payment transactions history
 $transactions_query = "SELECT * FROM payment_transactions 
@@ -121,6 +127,7 @@ $conn->close();
     </style>
 </head>
 <body class="bg-light">
+    <?php include 'header_nav.php'; ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
         <div class="container-fluid">
             <a class="navbar-brand" href="dashboard.php">
@@ -146,7 +153,7 @@ $conn->close();
                 <div class="col-md-3">
                     <div class="stat-box">
                         <h6>Total Fees</h6>
-                        <h3>K<?php echo number_format($correct_expected_total); ?></h3>
+                        <h3>K<?php echo number_format($expected_total); ?></h3>
                         <small><?php echo ucfirst($program_type); ?> Program</small>
                     </div>
                 </div>
@@ -155,8 +162,8 @@ $conn->close();
                         <h6>Total Paid</h6>
                         <h3>K<?php echo number_format($total_paid); ?></h3>
                         <small>
-                            <span class="badge payment-badge-<?php echo $correct_payment_percentage; ?>">
-                                <?php echo $correct_payment_percentage; ?>%
+                            <span class="badge payment-badge-<?php echo $payment_percentage; ?>">
+                                <?php echo $payment_percentage; ?>%
                             </span>
                         </small>
                     </div>
@@ -164,9 +171,9 @@ $conn->close();
                 <div class="col-md-3">
                     <div class="stat-box">
                         <h6>Balance Due</h6>
-                        <h3>K<?php echo number_format($correct_balance); ?></h3>
+                        <h3>K<?php echo number_format($balance); ?></h3>
                         <small>
-                            <?php if ($correct_balance > 0): ?>
+                            <?php if ($balance > 0): ?>
                                 <i class="bi bi-exclamation-circle"></i> Outstanding
                             <?php else: ?>
                                 <i class="bi bi-check-circle"></i> Paid in Full
@@ -177,19 +184,29 @@ $conn->close();
                 <div class="col-md-3">
                     <div class="stat-box">
                         <h6>Content Access</h6>
-                        <h3><?php echo $student['content_access_weeks'] ?? 0; ?> Weeks</h3>
+                        <?php
+                        // Calculate content access percent and weeks (max 16 weeks)
+                        $max_weeks = 16;
+                        $content_access_percent = $expected_total > 0 ? ($total_paid / $expected_total) : 0;
+                        $content_access_percent_display = round($content_access_percent * 100);
+                        $content_access_weeks = (int)round($content_access_percent * $max_weeks);
+                        if ($content_access_weeks > $max_weeks) $content_access_weeks = $max_weeks;
+                        ?>
+                        <h3><?php echo $content_access_percent_display; ?>% <small class="text-white-50">(<?php echo $content_access_weeks; ?> of <?php echo $max_weeks; ?> weeks)</small></h3>
                         <small>
                             <?php 
-                            $weeks = $student['content_access_weeks'] ?? 0;
-                            if ($weeks == 0) {
+                            if ($content_access_weeks == 0) {
                                 echo 'No access';
-                            } elseif ($weeks >= 52) {
+                            } elseif ($content_access_weeks >= $max_weeks) {
                                 echo 'Full access';
                             } else {
-                                echo 'Weeks 1-' . $weeks;
+                                echo 'Weeks 1-' . $content_access_weeks;
                             }
                             ?>
                         </small>
+                        <div class="progress mt-2" style="height: 8px;">
+                            <div class="progress-bar bg-warning" role="progressbar" style="width: <?php echo $content_access_percent_display; ?>%;" aria-valuenow="<?php echo $content_access_percent_display; ?>" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -204,16 +221,19 @@ $conn->close();
                     </div>
                     <div class="card-body">
                         <?php
-                        // Use already calculated values based on program type
-                        $remaining_after_fees = $correct_expected_total - $application_fee - $registration_fee;
-                        $installment_amount = $remaining_after_fees / 4;
+                        // Use expected_tuition from database for installment calculations
+                        $tuition_amount = $expected_tuition > 0 ? $expected_tuition : ($expected_total - $application_fee - $registration_fee);
+                        $installment_amount = $tuition_amount / 4;
                         
                         // Distribute total paid amount across fee types
                         $remaining_to_distribute = $total_paid;
                         
-                        // 1. Application Fee
-                        $app_paid = min($remaining_to_distribute, $application_fee);
-                        $remaining_to_distribute -= $app_paid;
+                        // 1. Application Fee (only for new students)
+                        $app_paid = 0;
+                        if (!$is_continuing) {
+                            $app_paid = min($remaining_to_distribute, $application_fee);
+                            $remaining_to_distribute -= $app_paid;
+                        }
                         
                         // 2. Registration Fee
                         $reg_paid = min($remaining_to_distribute, $registration_fee);
@@ -250,6 +270,7 @@ $conn->close();
                                 </tr>
                             </thead>
                             <tbody>
+                                <?php if (!$is_continuing): // Only show Application Fee for new students ?>
                                 <tr>
                                     <td><strong>Application Fee</strong></td>
                                     <td>K<?php echo number_format($application_fee); ?></td>
@@ -266,8 +287,15 @@ $conn->close();
                                         <?php endif; ?>
                                     </td>
                                 </tr>
+                                <?php endif; ?>
                                 <tr>
-                                    <td><strong>Registration Fee</strong></td>
+                                    <td><strong>Registration Fee</strong>
+                                        <?php if ($is_professional): ?>
+                                            <small class="text-muted">(Professional Course)</small>
+                                        <?php elseif ($is_continuing): ?>
+                                            <small class="text-muted">(Continuing Student)</small>
+                                        <?php endif; ?>
+                                    </td>
                                     <td>K<?php echo number_format($registration_fee); ?></td>
                                     <td class="text-success">K<?php echo number_format($reg_paid); ?></td>
                                     <td class="text-danger">K<?php echo number_format($registration_fee - $reg_paid); ?></td>
@@ -379,6 +407,7 @@ $conn->close();
                                             <th>Method</th>
                                             <th>Reference</th>
                                             <th>Recorded By</th>
+                                            <th>Receipt</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -408,6 +437,12 @@ $conn->close();
                                                 <td><?php echo htmlspecialchars($transaction['payment_method'] ?? 'N/A'); ?></td>
                                                 <td><?php echo htmlspecialchars($transaction['reference_number'] ?? '-'); ?></td>
                                                 <td><small><?php echo htmlspecialchars($transaction['recorded_by'] ?? 'System'); ?></small></td>
+                                                <td>
+                                                    <a href="../finance/payment_receipt.php?id=<?php echo $transaction['transaction_id']; ?>&type=transaction" 
+                                                       target="_blank" class="btn btn-sm btn-outline-success" title="Print Receipt">
+                                                        <i class="bi bi-printer"></i>
+                                                    </a>
+                                                </td>
                                             </tr>
                                         <?php endwhile; ?>
                                     </tbody>
@@ -439,6 +474,7 @@ $conn->close();
                                             <th>Bank/Method</th>
                                             <th>Status</th>
                                             <th>Reviewed</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -476,6 +512,18 @@ $conn->close();
                                                         <small class="text-muted">Pending</small>
                                                     <?php endif; ?>
                                                 </td>
+                                                <td>
+                                                    <?php if ($submission['status'] === 'approved'): ?>
+                                                        <a href="../finance/payment_receipt.php?id=<?php echo $submission['submission_id']; ?>" 
+                                                           class="btn btn-sm btn-success" target="_blank" title="View/Print Receipt">
+                                                            <i class="bi bi-receipt"></i> View Receipt
+                                                        </a>
+                                                    <?php elseif ($submission['status'] === 'pending'): ?>
+                                                        <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Awaiting</span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-secondary"><i class="bi bi-x-circle"></i> N/A</span>
+                                                    <?php endif; ?>
+                                                </td>
                                             </tr>
                                         <?php endwhile; ?>
                                     </tbody>
@@ -494,9 +542,6 @@ $conn->close();
                     <a href="submit_payment.php" class="btn btn-primary btn-lg">
                         <i class="bi bi-upload"></i> Submit Payment Proof
                     </a>
-                    <a href="dashboard.php" class="btn btn-secondary btn-lg">
-                        <i class="bi bi-house"></i> Back to Dashboard
-                    </a>
                 </div>
             </div>
         </div>
@@ -506,11 +551,3 @@ $conn->close();
 </body>
 </html>
 
-<?php
-// ALTER TABLE statement to add the new column for marked file notification
-// This should be run once as a migration, not on every page load
-$conn = getDbConnection();
-$alter_table_query = "ALTER TABLE vle_submissions ADD COLUMN marked_file_notified TINYINT(1) NOT NULL DEFAULT 0 AFTER marked_file_name";
-$conn->query($alter_table_query);
-$conn->close();
-?>

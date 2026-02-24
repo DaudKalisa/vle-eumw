@@ -9,7 +9,6 @@ $conn = getDbConnection();
 $sql = "SELECT r.*, l.full_name, l.email, l.position, l.department FROM lecturer_finance_requests r JOIN lecturers l ON r.lecturer_id = l.lecturer_id WHERE r.status = 'approved' ORDER BY r.request_date DESC";
 $result = $conn->query($sql);
 $requests = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang='en'>

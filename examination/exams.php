@@ -46,7 +46,7 @@ function canAccessExam($exam_type, $pct) {
 }
 function examAccessMessage($exam_type, $pct, $balance = 0) {
     if ($pct < 50) return 'You must pay at least 50% of your fees to access any examination. Outstanding balance: <strong>K' . number_format($balance) . '</strong>';
-    if ($exam_type === 'final' && $pct < 100) return 'End-semester (final) exams require 100% fee payment. Outstanding balance: <strong>K' . number_format($balance) . '</strong>';
+    if ($exam_type === 'final' && $pct < 100) return 'End-semester examinations require 100% fee payment. Outstanding balance: <strong>K' . number_format($balance) . '</strong>';
     return '';
 }
 
@@ -155,7 +155,7 @@ $breadcrumbs = [['title' => 'Examinations']];
                     </div>
                 <?php else: ?>
                     <h5 class="alert-heading mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Limited Examination Access</h5>
-                    <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong> (Amount paid: <strong>K<?= number_format($total_paid) ?></strong>). You can access <strong>mid-semester exams, quizzes and assignments</strong>, but <strong>end-semester (final) exams require 100% payment</strong>.</p>
+                    <p class="mb-2">Your fee payment is at <strong><?= $payment_percentage ?>%</strong> (Amount paid: <strong>K<?= number_format($total_paid) ?></strong>). You can access <strong>mid-semester exams, quizzes and assignments</strong>, but <strong>end-semester examinations require 100% payment</strong>.</p>
                     <p class="mb-2">Balance Due: <strong class="text-danger fs-5">K<?= number_format($expected_total - $total_paid > 0 ? $expected_total - $total_paid : 0) ?></strong></p>
                     <div>
                         <a href="<?= $_student_base ?? '../student/' ?>submit_payment.php" class="btn btn-warning btn-sm me-2">
@@ -237,7 +237,7 @@ $breadcrumbs = [['title' => 'Examinations']];
                         <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                             <span><i class="bi bi-file-earmark-text me-2"></i><?= htmlspecialchars($exam['exam_name']) ?></span>
                             <span class="badge bg-<?= $exam['exam_type'] === 'final' ? 'danger' : ($exam['exam_type'] === 'mid_term' ? 'warning' : 'info') ?>">
-                                <?= ucfirst(str_replace('_', ' ', $exam['exam_type'])) ?>
+                                <?= ['quiz'=>'Quiz','mid_term'=>'Mid-Semester Exam','final'=>'End-Semester Examination','assignment'=>'Assignment'][$exam['exam_type']] ?? ucfirst(str_replace('_', ' ', $exam['exam_type'])) ?>
                             </span>
                         </div>
                         <div class="card-body">
@@ -348,7 +348,7 @@ $breadcrumbs = [['title' => 'Examinations']];
                             <?php if (!$upcoming_allowed): ?>
                             <div class="alert alert-danger py-2 mb-2">
                                 <small><i class="bi bi-lock-fill me-1"></i>
-                                <?= $exam['exam_type'] === 'final' ? 'Requires 100% fee payment' : 'Requires at least 50% fee payment' ?>
+                                <?= $exam['exam_type'] === 'final' ? 'End-semester examination requires 100% fee payment' : 'Requires at least 50% fee payment' ?>
                                 </small>
                             </div>
                             <?php endif; ?>

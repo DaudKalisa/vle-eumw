@@ -2,19 +2,26 @@
 // edit_finance.php - Admin edit finance user details
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
-$finance_id = isset($_GET['id']) ? $_GET['id'] : '';
+$finance_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+// Check if finance_users table exists
+$table_exists = $conn->query("SHOW TABLES LIKE 'finance_users'")->num_rows > 0;
+if (!$table_exists) {
+    echo "<div class='alert alert-warning m-4'>Finance users table not found. <a href='../setup_finance_table.php'>Click here to create it</a>.</div>";
+    exit;
+}
 
 // Get finance user details with username
-$stmt = $conn->prepare("SELECT l.*, u.username FROM lecturers l LEFT JOIN users u ON l.email = u.email WHERE l.lecturer_id = ? AND l.role = 'finance'");
-$stmt->bind_param("s", $finance_id);
+$stmt = $conn->prepare("SELECT f.*, u.username FROM finance_users f LEFT JOIN users u ON f.email COLLATE utf8mb4_general_ci = u.email WHERE f.finance_id = ?");
+$stmt->bind_param("i", $finance_id);
 $stmt->execute();
 $result = $stmt->get_result();
 
 if ($result->num_rows === 0) {
-    header('Location: dashboard.php');
+    header('Location: manage_finance.php');
     exit();
 }
 
@@ -27,8 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_finance'])) {
     $username = trim($_POST['username'] ?? '');
     $position = trim($_POST['position']);
     $gender = trim($_POST['gender'] ?? '');
+    $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
     $phone = trim($_POST['phone'] ?? '');
-    $office = trim($_POST['office'] ?? '');
+    $old_email = $finance['email'];
     
     // Handle profile picture upload
     $profile_picture = $finance['profile_picture'];
@@ -55,29 +63,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_finance'])) {
         }
     }
     
-    // Update finance user details (keep department as 'Finance Department')
-    $stmt = $conn->prepare("UPDATE lecturers SET full_name = ?, email = ?, position = ?, gender = ?, phone = ?, office = ?, profile_picture = ? WHERE lecturer_id = ? AND role = 'finance'");
-    $stmt->bind_param("ssssssss", $full_name, $email, $position, $gender, $phone, $office, $profile_picture, $finance_id);
+    // Update finance user details
+    $stmt = $conn->prepare("UPDATE finance_users SET full_name = ?, email = ?, position = ?, gender = ?, phone = ?, profile_picture = ? WHERE finance_id = ?");
+    $stmt->bind_param("ssssssi", $full_name, $email, $position, $gender, $phone, $profile_picture, $finance_id);
     
     if ($stmt->execute()) {
         // Update user email and username if exists
-        $user_stmt = $conn->prepare("UPDATE users SET email = ?, username = ? WHERE email = (SELECT email FROM lecturers WHERE lecturer_id = ?)");
-        $user_stmt->bind_param("sss", $email, $username, $finance_id);
+        $user_stmt = $conn->prepare("UPDATE users SET email = ?, username = ? WHERE email = ?");
+        $user_stmt->bind_param("sss", $email, $username, $old_email);
         $user_stmt->execute();
         
-        $success = "Finance user details updated successfully!";
-        
-        // Refresh finance data with username
-        $stmt = $conn->prepare("SELECT l.*, u.username FROM lecturers l LEFT JOIN users u ON l.email = u.email WHERE l.lecturer_id = ? AND l.role = 'finance'");
-        $stmt->bind_param("s", $finance_id);
-        $stmt->execute();
-        $finance = $stmt->get_result()->fetch_assoc();
+        // Redirect back to manage finance page
+        header("Location: manage_finance.php?success=" . urlencode("Finance user details updated successfully!"));
+        exit();
     } else {
         $error = "Failed to update finance user details.";
     }
 }
 
-$conn->close();
+// Note: Don't close $conn until page is done
 ?>
 
 <!DOCTYPE html>
@@ -93,7 +97,7 @@ $conn->close();
     <div class="container mt-5">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2><i class="bi bi-cash-coin"></i> Edit Finance User</h2>
-            <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
+            <a href="manage_finance.php" class="btn btn-secondary">Back to Finance Users</a>
         </div>
 
         <?php if (isset($success)): ?>
@@ -129,7 +133,7 @@ $conn->close();
                             </div>
                         <?php endif; ?>
                         <h5><?php echo htmlspecialchars($finance['full_name']); ?></h5>
-                        <p class="text-muted">ID: <?php echo htmlspecialchars($finance['lecturer_id']); ?></p>
+                        <p class="text-muted">Code: <?php echo htmlspecialchars($finance['finance_code'] ?? 'FIN-' . $finance['finance_id']); ?></p>
                         <span class="badge bg-success">Finance Officer</span>
                     </div>
                 </div>
@@ -144,8 +148,8 @@ $conn->close();
                         <form method="POST" enctype="multipart/form-data">
                             <div class="row mb-3">
                                 <div class="col-md-6">
-                                    <label for="finance_id" class="form-label">Finance User ID</label>
-                                    <input type="text" class="form-control" id="finance_id" value="<?php echo htmlspecialchars($finance['lecturer_id']); ?>" disabled>
+                                    <label for="finance_code" class="form-label">Finance Code</label>
+                                    <input type="text" class="form-control" id="finance_code" value="<?php echo htmlspecialchars($finance['finance_code'] ?? 'FIN-' . $finance['finance_id']); ?>" disabled>
                                 </div>
                                 <div class="col-md-6">
                                     <label for="full_name" class="form-label">Full Name *</label>
@@ -188,26 +192,23 @@ $conn->close();
                             <div class="row mb-3">
                                 <div class="col-md-6">
                                     <label for="position" class="form-label">Position/Title *</label>
-                                    <input type="text" class="form-control" id="position" name="position" 
-                                           value="<?php echo htmlspecialchars($finance['position'] ?? 'Finance Officer'); ?>" required>
-                                    <small class="text-muted">e.g., Finance Officer, Accountant, Bursar</small>
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="office" class="form-label">Office Location *</label>
-                                    <select class="form-select" id="office" name="office" required>
-                                        <option value="">Select Office Location</option>
-                                        <option value="Mzuzu Campus" <?php echo ($finance['office'] ?? '') == 'Mzuzu Campus' ? 'selected' : ''; ?>>Mzuzu Campus</option>
-                                        <option value="Lilongwe Campus" <?php echo ($finance['office'] ?? '') == 'Lilongwe Campus' ? 'selected' : ''; ?>>Lilongwe Campus</option>
-                                        <option value="Blantyre Campus" <?php echo ($finance['office'] ?? '') == 'Blantyre Campus' ? 'selected' : ''; ?>>Blantyre Campus</option>
-                                        <option value="Head Office" <?php echo ($finance['office'] ?? '') == 'Head Office' ? 'selected' : ''; ?>>Head Office</option>
+                                    <select class="form-select" id="position" name="position" required>
+                                        <option value="">Select Position</option>
+                                        <option value="University President" <?php echo ($finance['position'] ?? '') == 'University President' ? 'selected' : ''; ?>>University President</option>
+                                        <option value="Vice President" <?php echo ($finance['position'] ?? '') == 'Vice President' ? 'selected' : ''; ?>>Vice President</option>
+                                        <option value="Director of Corporate Services" <?php echo ($finance['position'] ?? '') == 'Director of Corporate Services' ? 'selected' : ''; ?>>Director of Corporate Services</option>
+                                        <option value="Senior Accountant" <?php echo ($finance['position'] ?? '') == 'Senior Accountant' ? 'selected' : ''; ?>>Senior Accountant</option>
+                                        <option value="Accountant" <?php echo ($finance['position'] ?? '') == 'Accountant' ? 'selected' : ''; ?>>Accountant</option>
+                                        <option value="Assistant Accountant" <?php echo ($finance['position'] ?? '') == 'Assistant Accountant' ? 'selected' : ''; ?>>Assistant Accountant</option>
+                                        <option value="Cashier" <?php echo ($finance['position'] ?? '') == 'Cashier' ? 'selected' : ''; ?>>Cashier</option>
+                                        <option value="Finance Officer" <?php echo ($finance['position'] ?? '') == 'Finance Officer' ? 'selected' : ''; ?>>Finance Officer</option>
                                     </select>
                                 </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Department</label>
-                                <input type="text" class="form-control" value="Finance Department" disabled>
-                                <small class="text-muted">Finance users are assigned to the Finance Department</small>
+                                <div class="col-md-6">
+                                    <label class="form-label">Department</label>
+                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($finance['department'] ?? 'Finance Department'); ?>" disabled>
+                                    <small class="text-muted">Finance users are assigned to the Finance Department</small>
+                                </div>
                             </div>
 
                             <div class="mb-3">
@@ -220,7 +221,7 @@ $conn->close();
                                 <button type="submit" name="update_finance" class="btn btn-success">
                                     <i class="bi bi-save"></i> Update Finance User
                                 </button>
-                                <a href="dashboard.php" class="btn btn-secondary">Cancel</a>
+                                <a href="manage_finance.php" class="btn btn-secondary">Cancel</a>
                             </div>
                         </form>
                     </div>

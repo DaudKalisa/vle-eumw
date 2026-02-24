@@ -77,8 +77,6 @@ if ($conn->query($update) === TRUE) {
     echo "✅ Updated existing student finance records!<br>";
 }
 
-$conn->close();
-
 echo "<br><a href='admin/fee_settings.php' class='btn btn-primary'>Manage Fee Settings</a> | ";
 echo "<a href='admin/dashboard.php'>Go to Dashboard</a>";
 ?>

@@ -41,17 +41,20 @@ if ($stmt->execute()) {
 } else {
     $error = "Failed to delete assignment: " . $conn->error;
 }
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delete Assignment</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-<div class="container mt-5">
+<?php include 'header_nav.php'; ?>
+<div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
     <div class="row justify-content-center">
         <div class="col-md-8">
             <div class="card shadow">

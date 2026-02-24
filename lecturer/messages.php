@@ -128,7 +128,14 @@ while ($row = $result->fetch_assoc()) {
     $lecturers[] = $row;
 }
 
-$conn->close();
+// Get admins for contact list
+$admins = [];
+$result = $conn->query("SELECT user_id, username as full_name, email FROM users WHERE role = 'staff' ORDER BY username");
+while ($row = $result->fetch_assoc()) {
+    $admins[] = $row;
+}
+
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
 <!DOCTYPE html>
@@ -138,37 +145,18 @@ $conn->close();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Messages - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="../assets/css/style.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">VLE System - Lecturer</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="../dashboard.php">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="dashboard.php">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="dashboard.php">My Courses</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="messages.php">Messages</a>
-                    </li>
-                </ul>
-                <div class="navbar-nav">
-                    <span class="navbar-text me-3">Welcome, <?php echo htmlspecialchars($user['display_name']); ?></span>
-                    <a class="nav-link" href="../logout.php">Logout</a>
-                </div>
-            </div>
-        </div>
-    </nav>
+    <?php 
+    $currentPage = 'messages';
+    $pageTitle = 'Messages';
+    include 'header_nav.php'; 
+    ?>
 
     <div class="container mt-4">
         <h2>Messages</h2>
@@ -195,6 +183,7 @@ $conn->close();
                                     <option value="">Select Type...</option>
                                     <option value="student">Student</option>
                                     <option value="lecturer">Lecturer</option>
+                                    <option value="admin">Administrator</option>
                                 </select>
                             </div>
 
@@ -217,6 +206,18 @@ $conn->close();
                                     <?php foreach ($lecturers as $lecturer): ?>
                                         <option value="<?php echo $lecturer['lecturer_id']; ?>">
                                             <?php echo htmlspecialchars($lecturer['full_name']) . ' (' . htmlspecialchars($lecturer['department']) . ')'; ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="mb-3" id="admin_select" style="display: none;">
+                                <label class="form-label">Select Administrator</label>
+                                <select class="form-select" name="recipient_id_admin" id="recipient_id_admin">
+                                    <option value="">Select Administrator...</option>
+                                    <?php foreach ($admins as $admin): ?>
+                                        <option value="<?php echo $admin['user_id']; ?>">
+                                            <?php echo htmlspecialchars($admin['full_name']); ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -283,7 +284,7 @@ $conn->close();
                                        data-partner-type="<?php echo $conv['partner_type']; ?>" 
                                        data-partner-id="<?php echo $conv['partner_id']; ?>">
                                         <div class="d-flex w-100 justify-content-between">
-                                            <h6 class="mb-1"><?php echo htmlspecialchars($conv['partner_name']); ?> (<?php echo ucfirst($conv['partner_type']); ?>)</h6>
+                                            <h6 class="mb-1"><?php echo htmlspecialchars((string)($conv['partner_name'] ?? '')); ?> (<?php echo ucfirst($conv['partner_type']); ?>)</h6>
                                             <small><?php echo date('M d, Y H:i', strtotime($conv['last_message']['sent_date'])); ?></small>
                                         </div>
                                         <p class="mb-1"><strong><?php echo htmlspecialchars($conv['last_message']['subject']); ?></strong></p>
@@ -344,24 +345,28 @@ $conn->close();
             const type = this.value;
             const lecturerSelect = document.getElementById('lecturer_select');
             const studentSelect = document.getElementById('student_select');
+            const adminSelect = document.getElementById('admin_select');
             const recipientIdLecturer = document.getElementById('recipient_id_lecturer');
             const recipientIdStudent = document.getElementById('recipient_id_student');
+            const recipientIdAdmin = document.getElementById('recipient_id_admin');
+            
+            // Hide all
+            lecturerSelect.style.display = 'none';
+            studentSelect.style.display = 'none';
+            adminSelect.style.display = 'none';
+            recipientIdLecturer.required = false;
+            recipientIdStudent.required = false;
+            recipientIdAdmin.required = false;
             
             if (type === 'lecturer') {
                 lecturerSelect.style.display = 'block';
-                studentSelect.style.display = 'none';
                 recipientIdLecturer.required = true;
-                recipientIdStudent.required = false;
             } else if (type === 'student') {
-                lecturerSelect.style.display = 'none';
                 studentSelect.style.display = 'block';
-                recipientIdLecturer.required = false;
                 recipientIdStudent.required = true;
-            } else {
-                lecturerSelect.style.display = 'none';
-                studentSelect.style.display = 'none';
-                recipientIdLecturer.required = false;
-                recipientIdStudent.required = false;
+            } else if (type === 'admin') {
+                adminSelect.style.display = 'block';
+                recipientIdAdmin.required = true;
             }
         });
 
@@ -371,6 +376,10 @@ $conn->close();
         });
         
         document.getElementById('recipient_id_student').addEventListener('change', function() {
+            document.getElementById('recipient_id').value = this.value;
+        });
+        
+        document.getElementById('recipient_id_admin').addEventListener('change', function() {
             document.getElementById('recipient_id').value = this.value;
         });
 
@@ -392,6 +401,9 @@ $conn->close();
                         document.getElementById('recipient_id').value = recipientId;
                     } else if (recipientType === 'student') {
                         document.getElementById('recipient_id_student').value = recipientId;
+                        document.getElementById('recipient_id').value = recipientId;
+                    } else if (recipientType === 'admin') {
+                        document.getElementById('recipient_id_admin').value = recipientId;
                         document.getElementById('recipient_id').value = recipientId;
                     }
                     
@@ -470,8 +482,11 @@ $conn->close();
                     if (partnerType === 'lecturer') {
                         document.getElementById('recipient_id_lecturer').value = partnerId;
                         document.getElementById('recipient_id').value = partnerId;
-                    } else {
+                    } else if (partnerType === 'student') {
                         document.getElementById('recipient_id_student').value = partnerId;
+                        document.getElementById('recipient_id').value = partnerId;
+                    } else if (partnerType === 'admin') {
+                        document.getElementById('recipient_id_admin').value = partnerId;
                         document.getElementById('recipient_id').value = partnerId;
                     }
                     document.querySelector('.card-header h5').scrollIntoView({ behavior: 'smooth' });

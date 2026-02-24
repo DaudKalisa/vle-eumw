@@ -2,7 +2,7 @@
 // get_module_count.php - Get module count for a student in a specific semester
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 header('Content-Type: application/json');
 
@@ -26,4 +26,3 @@ if ($student_id && $semester) {
     echo json_encode(['count' => 0]);
 }
 
-$conn->close();

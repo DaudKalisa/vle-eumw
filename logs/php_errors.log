@@ -1,0 +1,21 @@
+[29-Jan-2026 08:45:44 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Access denied for user 'root'@'localhost' (using password: YES) in C:\xampp\htdocs\vle-eumw\includes\config.php:55
+Stack trace:
+#0 C:\xampp\htdocs\vle-eumw\includes\config.php(55): mysqli->__construct('localhost', 'root', Object(SensitiveParameterValue))
+#1 C:\xampp\htdocs\vle-eumw\includes\auth.php(35): getDbConnection()
+#2 C:\xampp\htdocs\vle-eumw\index.php(45): getCurrentUser()
+#3 {main}
+  thrown in C:\xampp\htdocs\vle-eumw\includes\config.php on line 55
+[29-Jan-2026 08:45:49 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Access denied for user 'root'@'localhost' (using password: YES) in C:\xampp\htdocs\vle-eumw\includes\config.php:55
+Stack trace:
+#0 C:\xampp\htdocs\vle-eumw\includes\config.php(55): mysqli->__construct('localhost', 'root', Object(SensitiveParameterValue))
+#1 C:\xampp\htdocs\vle-eumw\includes\auth.php(35): getDbConnection()
+#2 C:\xampp\htdocs\vle-eumw\index.php(45): getCurrentUser()
+#3 {main}
+  thrown in C:\xampp\htdocs\vle-eumw\includes\config.php on line 55
+[29-Jan-2026 08:48:22 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Access denied for user 'root'@'localhost' (using password: YES) in C:\xampp\htdocs\vle-eumw\includes\config.php:55
+Stack trace:
+#0 C:\xampp\htdocs\vle-eumw\includes\config.php(55): mysqli->__construct('localhost', 'root', Object(SensitiveParameterValue))
+#1 C:\xampp\htdocs\vle-eumw\includes\auth.php(35): getDbConnection()
+#2 C:\xampp\htdocs\vle-eumw\index.php(45): getCurrentUser()
+#3 {main}
+  thrown in C:\xampp\htdocs\vle-eumw\includes\config.php on line 55

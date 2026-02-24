@@ -13,10 +13,11 @@ if (!$lecturer_id) {
 
 // Get lecturer's VLE courses
 $courses = [];
+
 $result = $conn->query("
     SELECT vc.*, COUNT(ve.enrollment_id) as enrolled_students
     FROM vle_courses vc
-    LEFT JOIN vle_enrollments ve ON vc.course_id = vc.course_id
+    LEFT JOIN vle_enrollments ve ON vc.course_id = ve.course_id
     WHERE vc.lecturer_id = '$lecturer_id'
     GROUP BY vc.course_id
     ORDER BY vc.course_name
@@ -108,7 +109,6 @@ if ($current_course_id) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -118,129 +118,106 @@ $conn->close();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VLE - Lecturer Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
     <style>
-        .navbar.sticky-top {
-            position: sticky;
-            top: 0;
-            z-index: 9999;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        .course-card {
+            border: none;
+            border-radius: var(--vle-radius-lg);
+            transition: all 0.3s ease;
+            overflow: hidden;
         }
-        .navbar-brand img {
-            height: 40px;
-            width: auto;
-            margin-right: 10px;
+        .course-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(30, 60, 114, 0.15);
+        }
+        .card-header-progress {
+            background: var(--vle-gradient-success) !important;
+            border: none;
+            color: white;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success sticky-top">
-        <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="dashboard.php">
-                <img src="../pictures/logo.bmp" alt="VLE Logo">
-                <span>VLE System - Lecturer</span>
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="../dashboard.php">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link <?php echo ($current_course_id ? 'active' : ''); ?>" href="dashboard.php">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link <?php echo (!$current_course_id ? 'active' : ''); ?>" href="dashboard.php">My Courses</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="messages.php">Messages</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="request_finance.php"><i class="bi bi-cash-coin"></i> Finance</a>
-                    </li>
-                </ul>
-                <div class="navbar-nav">
-                    <!-- Profile Dropdown -->
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <div class="rounded-circle bg-white text-success d-flex align-items-center justify-content-center me-2" style="width: 35px; height: 35px; font-weight: bold;">
-                                <?php echo strtoupper(substr($user['display_name'], 0, 1)); ?>
-                            </div>
-                            <span><?php echo htmlspecialchars($user['display_name']); ?></span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
-                            <li><h6 class="dropdown-header"><i class="bi bi-person-circle"></i> <?php echo htmlspecialchars($user['display_name']); ?></h6></li>
-                            <li><small class="dropdown-header text-muted">Lecturer</small></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person-badge"></i> My Profile</a></li>
-                            <li><a class="dropdown-item" href="change_password.php"><i class="bi bi-key"></i> Change Password</a></li>
-                            <li><a class="dropdown-item" href="messages.php"><i class="bi bi-envelope"></i> Messages</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
-                        </ul>
-                    </li>
-                </div>
+    <?php 
+    $breadcrumbs = [];
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+            <h2 class="vle-page-title"><i class="bi bi-collection me-2"></i>My Assigned Modules</h2>
+            <div>
+                <a href="live_classroom.php" class="btn btn-danger me-2"><i class="bi bi-camera-video me-1"></i> Live Classroom</a>
+                <a href="request_finance.php" class="btn btn-vle-accent me-2"><i class="bi bi-cash-coin me-1"></i> Finance</a>
+                <a href="class_session.php" class="btn btn-vle-primary"><i class="bi bi-clipboard-check me-1"></i> Attendance Sessions</a>
             </div>
         </div>
-    </nav>
 
-    <div class="container mt-4">
-        <div class="row">
-            <div class="col-md-12">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2>My Assigned Modules</h2>
-                    <div>
-                        <a href="request_finance.php" class="btn btn-success me-2"><i class="bi bi-cash-coin"></i> Finance</a>
-                        <a href="create_course.php" class="btn btn-primary">Create New Course</a>
-                    </div>
-                </div>
-
-                <?php if (empty($courses)): ?>
-                    <div class="alert alert-info">
-                        You haven't created any VLE courses yet.
-                        <a href="create_course.php" class="alert-link">Create your first course</a>.
-                    </div>
-                <?php else: ?>
-                    <div class="row">
-                        <?php foreach ($courses as $course): ?>
-                            <div class="col-md-4 mb-4">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <h5 class="card-title"><?php echo htmlspecialchars($course['course_name']); ?></h5>
-                                        <p class="card-text"><?php echo htmlspecialchars($course['description']); ?></p>
-                                        <p class="card-text"><small class="text-muted">Code: <?php echo htmlspecialchars($course['course_code']); ?></small></p>
-                                        <p class="card-text"><small class="text-muted">Enrolled: <?php echo $course['enrolled_students']; ?> students</small></p>
-                                        <div class="btn-group-vertical w-100">
-                                            <div class="btn-group mb-1">
-                                                <a href="?course_id=<?php echo $course['course_id']; ?>" class="btn btn-primary">Manage Content</a>
-                                                <a href="forum.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-info">Forums</a>
-                                            </div>
-                                            <div class="btn-group mb-1">
-                                                <a href="gradebook.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-success">Gradebook</a>
-                                                <a href="announcements.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-warning">Announcements</a>
-                                            </div>
-                                            <div class="btn-group">
-                                                <a href="edit_course.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-secondary">Edit Course</a>
-                                            </div>
-                                        </div>
+        <?php if (empty($courses)): ?>
+            <div class="alert vle-alert-info">
+                <i class="bi bi-info-circle me-2"></i>You haven't been assigned any VLE courses yet.
+                Please contact the administrator for module assignment.
+            </div>
+        <?php else: ?>
+            <div class="row">
+                <?php foreach ($courses as $course): ?>
+                    <div class="col-md-4 mb-4">
+                        <div class="card course-card vle-card">
+                            <div class="card-body">
+                                <h5 class="card-title" style="color: var(--vle-primary); font-weight: 700;">
+                                    <?php echo htmlspecialchars($course['course_name']); ?>
+                                </h5>
+                                <p class="card-text text-muted small"><?php echo htmlspecialchars($course['description']); ?></p>
+                                <p class="card-text"><small class="text-muted"><strong>Code:</strong> <?php echo htmlspecialchars($course['course_code']); ?></small></p>
+                                <p class="card-text">
+                                    <span class="vle-badge-primary">
+                                        <i class="bi bi-people me-1"></i><?php echo $course['enrolled_students']; ?> students
+                                    </span>
+                                </p>
+                                <div class="d-grid gap-2">
+                                    <div class="btn-group">
+                                        <a href="manage_content.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-vle-primary">
+                                            <i class="bi bi-folder me-1"></i>Content
+                                        </a>
+                                        <a href="forum.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-primary">
+                                            <i class="bi bi-chat me-1"></i>Forums
+                                        </a>
                                     </div>
+                                    <div class="btn-group">
+                                        <a href="gradebook.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-success">
+                                            <i class="bi bi-journal-check me-1"></i>Grades
+                                        </a>
+                                        <a href="announcements.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-warning">
+                                            <i class="bi bi-megaphone me-1"></i>Announce
+                                        </a>
+                                    </div>
+                                    <a href="edit_course.php?course_id=<?php echo $course['course_id']; ?>" class="btn btn-outline-secondary btn-sm">
+                                        <i class="bi bi-pencil me-1"></i>Edit Course
+                                    </a>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-
-                <?php if ($current_course): ?>
-                    <hr>
-                    <h3>Manage: <?php echo htmlspecialchars($current_course['course_name']); ?></h3>
-
-                    <!-- Student Progress Overview -->
-                    <div class="card mb-4">
-                        <div class="card-header bg-success text-white">
-                            <h5 class="mb-0">Student Progress Overview</h5>
                         </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($current_course): ?>
+            <hr class="my-4">
+            <h3 class="mb-4" style="color: var(--vle-primary);">
+                <i class="bi bi-gear me-2"></i>Manage: <?php echo htmlspecialchars($current_course['course_name']); ?>
+            </h3>
+
+            <!-- Student Progress Overview -->
+            <div class="card vle-card mb-4">
+                <div class="card-header card-header-progress">
+                    <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Student Progress Overview</h5>
+                </div>
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table class="table table-hover">

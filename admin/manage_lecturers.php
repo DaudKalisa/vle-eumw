@@ -1,10 +1,16 @@
 <?php
 // manage_lecturers.php - Admin manage lecturers
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
+
+// Check for success message from redirect
+if (isset($_GET['success'])) {
+    $success = htmlspecialchars($_GET['success']);
+}
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -20,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $program = trim($_POST['program'] ?? '');
         $position = trim($_POST['position']);
         $gender = trim($_POST['gender'] ?? '');
+        $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
         $phone = trim($_POST['phone'] ?? '');
         $phone2 = trim($_POST['phone2'] ?? '');
         $phone3 = trim($_POST['phone3'] ?? '');
@@ -29,28 +36,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $office = trim($_POST['office'] ?? '');
         $bio = trim($_POST['bio'] ?? '');
 
-        // Add to lecturers table
-        $stmt = $conn->prepare("INSERT INTO lecturers (full_name, email, department, program, position, gender, phone, office, bio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssssss", $full_name, $email, $department, $program, $position, $gender, $phone_combined, $office, $bio);
-        $stmt->execute();
-        $lecturer_id = $conn->insert_id;
+        // Check for duplicate username
+        $check_stmt = $conn->prepare("SELECT user_id FROM users WHERE username = ?");
+        $check_stmt->bind_param("s", $username);
+        $check_stmt->execute();
+        if ($check_stmt->get_result()->num_rows > 0) {
+            $error = "Username '$username' already exists. Please choose a different username.";
+        } else {
+            // Check for duplicate email
+            $check_stmt = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
+            $check_stmt->bind_param("s", $email);
+            $check_stmt->execute();
+            if ($check_stmt->get_result()->num_rows > 0) {
+                $error = "Email '$email' is already registered. Please use a different email.";
+            } else {
+                // Add to lecturers table
+                $stmt = $conn->prepare("INSERT INTO lecturers (full_name, email, department, program, position, gender, phone, office, bio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("sssssssss", $full_name, $email, $department, $program, $position, $gender, $phone_combined, $office, $bio);
+                $stmt->execute();
+                $lecturer_id = $conn->insert_id;
 
-        // Create user account
-        $password_hash = password_hash('password123', PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_lecturer_id) VALUES (?, ?, ?, 'lecturer', ?)");
-        $stmt->bind_param("sssi", $username, $email, $password_hash, $lecturer_id);
-        $stmt->execute();
+                // Create user account
+                $password_hash = password_hash('password123', PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_lecturer_id, must_change_password) VALUES (?, ?, ?, 'lecturer', ?, 1)");
+                $stmt->bind_param("sssi", $username, $email, $password_hash, $lecturer_id);
+                $stmt->execute();
 
-        header("Location: manage_lecturers.php");
-        exit();
+                // Send welcome email with credentials
+                $temp_password = 'password123';
+                if (isEmailEnabled()) {
+                    sendLecturerWelcomeEmail($email, $full_name, $username, $temp_password, $department, $position);
+                }
+
+                header("Location: manage_lecturers.php?success=Lecturer+added+successfully");
+                exit();
+            }
+        }
     } elseif (isset($_POST['delete_lecturer'])) {
         $lecturer_id = (int)$_POST['lecturer_id'];
 
-        // Delete from users and lecturers
+        // Delete submissions that reference assignments for courses taught by this lecturer
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_submissions WHERE assignment_id IN (SELECT assignment_id FROM vle_assignments WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?))");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete assignments that belong to courses taught by this lecturer
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_assignments WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?)");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete enrollments for courses taught by this lecturer (references vle_courses)
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_enrollments WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?)");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete weekly content for courses taught by this lecturer (references vle_courses)
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_weekly_content WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?)");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete announcements for courses taught by this lecturer (if exists)
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_announcements WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?)");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete course materials for courses taught by this lecturer (if exists)
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_course_materials WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?)");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete live sessions for courses taught by this lecturer (if exists)
+        try {
+            $stmt = $conn->prepare("DELETE FROM vle_live_sessions WHERE course_id IN (SELECT course_id FROM vle_courses WHERE lecturer_id = ?)");
+            $stmt->bind_param("i", $lecturer_id);
+            $stmt->execute();
+        } catch (Exception $e) { /* Table may not exist */ }
+
+        // Delete courses assigned to this lecturer
+        $stmt = $conn->prepare("DELETE FROM vle_courses WHERE lecturer_id = ?");
+        $stmt->bind_param("i", $lecturer_id);
+        $stmt->execute();
+
+        // Delete from users associated with this lecturer
         $stmt = $conn->prepare("DELETE FROM users WHERE related_lecturer_id = ?");
         $stmt->bind_param("i", $lecturer_id);
         $stmt->execute();
 
+        // Finally delete the lecturer record
         $stmt = $conn->prepare("DELETE FROM lecturers WHERE lecturer_id = ?");
         $stmt->bind_param("i", $lecturer_id);
         $stmt->execute();
@@ -63,12 +147,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $confirm_password = trim($_POST['confirm_password']);
         
         if ($new_password === $confirm_password) {
+            // Get lecturer info for email
+            $lecturer_info_stmt = $conn->prepare("SELECT l.full_name, l.email FROM lecturers l WHERE l.lecturer_id = ?");
+            $lecturer_info_stmt->bind_param("i", $lecturer_id);
+            $lecturer_info_stmt->execute();
+            $lecturer_info = $lecturer_info_stmt->get_result()->fetch_assoc();
+            
             $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("UPDATE users SET password_hash = ? WHERE related_lecturer_id = ?");
+            $stmt = $conn->prepare("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE related_lecturer_id = ?");
             $stmt->bind_param("si", $password_hash, $lecturer_id);
             
             if ($stmt->execute()) {
-                $success = "Password reset successfully for lecturer ID: " . $lecturer_id;
+                // Send password reset notification email
+                if (isEmailEnabled() && $lecturer_info) {
+                    sendPasswordResetEmail($lecturer_info['email'], $lecturer_info['full_name'], $new_password, true);
+                }
+                $success = "Password reset successfully for " . htmlspecialchars($lecturer_info['full_name'] ?? "lecturer ID: $lecturer_id");
             } else {
                 $error = "Failed to reset password.";
             }
@@ -106,7 +200,7 @@ $lecturers = [];
 $result = $conn->query("SELECT l.*, u.username, u.role 
                         FROM lecturers l 
                         LEFT JOIN users u ON l.lecturer_id = u.related_lecturer_id 
-                        WHERE u.role = 'lecturer' OR u.role IS NULL
+                        WHERE (u.role = 'lecturer' OR u.role IS NULL)
                         ORDER BY l.full_name");
 while ($row = $result->fetch_assoc()) {
     $lecturers[] = $row;
@@ -130,7 +224,7 @@ if ($courses_result) {
     }
 }
 
-$conn->close();
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
 <!DOCTYPE html>
@@ -141,21 +235,37 @@ $conn->close();
     <title>Manage Lecturers - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <style>
+        .card-header-lecturers {
+            background: var(--vle-gradient-primary) !important;
+            border: none;
+            color: white;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Manage Lecturers</h2>
+
+<body>
+    <?php 
+    $breadcrumbs = [['title' => 'Manage Lecturers']];
+    include 'header_nav.php'; 
+    ?>
+    
+    <div class="vle-content">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+            <h2 class="vle-page-title"><i class="bi bi-person-badge me-2"></i>Manage Lecturers</h2>
             <div>
-                <button type="button" class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#addLecturerModal">
-                    <i class="bi bi-person-plus-fill"></i> Add New Lecturer
+                <button type="button" class="btn btn-vle-accent" data-bs-toggle="modal" data-bs-target="#addLecturerModal">
+                    <i class="bi bi-person-plus-fill me-1"></i> Add New Lecturer
                 </button>
-                <a href="dashboard.php" class="btn btn-secondary">Back to Dashboard</a>
             </div>
         </div>
 
         <?php if (isset($success)): ?>
-            <div class="alert alert-success alert-dismissible fade show">
+            <div class="alert vle-alert-success alert-dismissible fade show">
                 <?php echo $success; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -324,15 +434,15 @@ $conn->close();
                             <div class="col-12"><h6 class="text-success">Personal Information</h6></div>
                             <div class="col-md-2">
                                 <label class="form-label">First Name *</label>
-                                <input type="text" class="form-control" name="first_name" required>
+                                <input type="text" class="form-control" id="lec_first_name" name="first_name" required oninput="generateLecturerCredentials()">
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">Middle Name</label>
-                                <input type="text" class="form-control" name="middle_name">
+                                <input type="text" class="form-control" id="lec_middle_name" name="middle_name" oninput="generateLecturerCredentials()">
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">Last Name *</label>
-                                <input type="text" class="form-control" name="last_name" required>
+                                <input type="text" class="form-control" id="lec_last_name" name="last_name" required oninput="generateLecturerCredentials()">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Gender</label>
@@ -345,7 +455,8 @@ $conn->close();
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Username *</label>
-                                <input type="text" class="form-control" name="username" required>
+                                <input type="text" class="form-control" id="lec_username" name="username" required>
+                                <small class="text-muted">Auto-generated</small>
                             </div>
                             
                             <div class="col-12"><h6 class="text-success mt-2">Contact Information</h6></div>
@@ -360,7 +471,8 @@ $conn->close();
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Email Address *</label>
-                                <input type="email" class="form-control" name="email" required>
+                                <input type="email" class="form-control" id="lec_email" name="email" required>
+                                <small class="text-muted">Auto-generated</small>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">Phone Number 1</label>
@@ -395,7 +507,13 @@ $conn->close();
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Position *</label>
-                                <input type="text" class="form-control" name="position" required>
+                                <select class="form-select" name="position" required>
+                                    <option value="">Select Position</option>
+                                    <option value="Associate Lecturer">Associate Lecturer</option>
+                                    <option value="Lecturer">Lecturer</option>
+                                    <option value="Senior Lecturer">Senior Lecturer</option>
+                                    <option value="Head of Department">Head of Department</option>
+                                </select>
                             </div>
                             
                             <div class="col-12"><h6 class="text-success mt-2">Additional Information</h6></div>
@@ -443,6 +561,23 @@ $conn->close();
             departmentInput.value = code;
         } else {
             departmentInput.value = '';
+        }
+    }
+    
+    // Auto-generate username and email from first, middle, and last name
+    function generateLecturerCredentials() {
+        const firstName = document.getElementById('lec_first_name').value.trim().toLowerCase();
+        const middleName = document.getElementById('lec_middle_name')?.value.trim().toLowerCase() || '';
+        const lastName = document.getElementById('lec_last_name').value.trim().toLowerCase();
+        
+        if (firstName && lastName) {
+            // Username: first initial + middle initial + surname (e.g., daud kalisa phiri = dkphiri)
+            const middleInitial = middleName ? middleName.charAt(0) : '';
+            const username = firstName.charAt(0) + middleInitial + lastName.replace(/\s+/g, '');
+            document.getElementById('lec_username').value = username;
+            
+            // Email: username@exploitsonline.com
+            document.getElementById('lec_email').value = username + '@exploitsonline.com';
         }
     }
     </script>

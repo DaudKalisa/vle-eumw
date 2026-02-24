@@ -2,7 +2,7 @@
 // manage_courses.php - Admin manage courses and student access
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff']);
+requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
@@ -14,10 +14,10 @@ if (isset($_GET['download_template'])) {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="courses_template.csv"');
     
-    echo "Course Code,Course Name,Description,Program of Study,Year of Study,Total Weeks,Lecturer ID\n";
-    echo "CS101,Introduction to Programming,Basic programming concepts,Computer Science,1,16,\n";
-    echo "CS201,Data Structures,Advanced data structures,Computer Science,2,16,\n";
-    echo "BUS101,Business Fundamentals,Introduction to business,Business Administration,1,16,\n";
+    echo "Course Code,Course Name,Description,Program of Study,Year of Study,Semester,Total Weeks,Lecturer ID\n";
+    echo "CS101,Introduction to Programming,Basic programming concepts,Computer Science,1,One,16,\n";
+    echo "CS201,Data Structures,Advanced data structures,Computer Science,2,One,16,\n";
+    echo "BUS101,Business Fundamentals,Introduction to business,Business Administration,1,Two,16,\n";
     exit;
 }
 
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                 while (($data = fgetcsv($handle)) !== false) {
                     $row_number++;
                     
-                    if (count($data) < 6) {
+                    if (count($data) < 7) {
                         $error_rows[] = "Row $row_number: Insufficient columns";
                         continue;
                     }
@@ -53,8 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                     $description = trim($data[2]);
                     $program = trim($data[3]);
                     $year_of_study = isset($data[4]) ? (int)trim($data[4]) : 1;
-                    $total_weeks = isset($data[5]) ? (int)trim($data[5]) : 16;
-                    $lecturer_id = isset($data[6]) && !empty(trim($data[6])) ? (int)trim($data[6]) : NULL;
+                    $semester = isset($data[5]) ? trim($data[5]) : 'One';
+                    $semester = in_array($semester, ['One', 'Two']) ? $semester : 'One';
+                    $total_weeks = isset($data[6]) ? (int)trim($data[6]) : 16;
+                    $lecturer_id = isset($data[7]) && !empty(trim($data[7])) ? (int)trim($data[7]) : NULL;
                     
                     if (empty($course_code) || empty($course_name)) {
                         $error_rows[] = "Row $row_number: Course code and name are required";
@@ -75,8 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                     $check_stmt->close();
                     
                     // Insert course
-                    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("sssiisi", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study);
+                    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->bind_param("sssiisis", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester);
                     
                     if ($stmt->execute()) {
                         $imported_count++;
@@ -117,11 +119,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_course'])) {
     $description = $_POST['description'];
     $program = $_POST['program'];
     $year_of_study = $_POST['year_of_study'];
+    $semester = $_POST['semester'];
     $lecturer_id = !empty($_POST['lecturer_id']) ? $_POST['lecturer_id'] : NULL;
     $total_weeks = $_POST['total_weeks'];
     
-    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssiisi", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study);
+    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("sssiisis", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester);
     
     if ($stmt->execute()) {
         $success_message = "Course created successfully!";
@@ -129,6 +132,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_course'])) {
         $error_message = "Error creating course: " . $conn->error;
     }
     $stmt->close();
+}
+
+// Handle course deletion
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_course'])) {
+    $course_id = (int)$_POST['course_id'];
+    
+    // Temporarily disable foreign key checks to allow cascading delete
+    $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+    
+    // Find all tables with course_id column and delete related records
+    $db_name = $conn->query("SELECT DATABASE()")->fetch_row()[0];
+    $tables_query = $conn->query("
+        SELECT TABLE_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = '$db_name' 
+        AND COLUMN_NAME = 'course_id' 
+        AND TABLE_NAME != 'vle_courses'
+    ");
+    
+    while ($table_row = $tables_query->fetch_assoc()) {
+        $table = $table_row['TABLE_NAME'];
+        $stmt = $conn->prepare("DELETE FROM `$table` WHERE course_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("i", $course_id);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+    
+    // Delete the course
+    $stmt = $conn->prepare("DELETE FROM vle_courses WHERE course_id = ?");
+    $stmt->bind_param("i", $course_id);
+    
+    if ($stmt->execute()) {
+        $success_message = "Course deleted successfully!";
+    } else {
+        $error_message = "Error deleting course: " . $conn->error;
+    }
+    $stmt->close();
+    
+    // Re-enable foreign key checks
+    $conn->query("SET FOREIGN_KEY_CHECKS = 1");
 }
 
 // Handle bulk student enrollment by program
@@ -319,7 +364,7 @@ while ($row = $result->fetch_assoc()) {
     $courses[] = $row;
 }
 
-$conn->close();
+// Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
 ?>
 
 <!DOCTYPE html>
@@ -330,24 +375,52 @@ $conn->close();
     <title>Manage Courses - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <style>
+        .card-header-courses {
+            background: var(--vle-gradient-primary) !important;
+            border: none;
+            color: white;
+        }
+        .card-header-template {
+            background: var(--vle-gradient-success) !important;
+            border: none;
+            color: white;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-speedometer2"></i> Admin Dashboard
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-                <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
+<body>
+    <?php 
+    $breadcrumbs = [['title' => 'Manage Courses']];
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+        <!-- Page Header -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="vle-page-title"><i class="bi bi-book me-2"></i>Manage Courses</h2>
+                <p class="text-muted mb-0">Create courses, manage enrollments, and assign students by program</p>
+            </div>
+            <div class="btn-group" role="group">
+                <a href="?download_template" class="btn btn-success">
+                    <i class="bi bi-download"></i> Download Template
+                </a>
+                <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#uploadTemplateModal">
+                    <i class="bi bi-upload"></i> Upload Template
+                </button>
+                <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#addCourseModal">
+                    <i class="bi bi-plus-circle"></i> Add New Course
+                </button>
             </div>
         </div>
-    </nav>
-
-    <div class="container-fluid mt-4">
+        
         <!-- Success/Error Messages -->
         <?php if ($success_message): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <div class="alert vle-alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle"></i> <?php echo $success_message; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -358,28 +431,6 @@ $conn->close();
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
-
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2><i class="bi bi-book-half text-warning"></i> Manage Courses</h2>
-                        <p class="text-muted">Create courses, manage enrollments, and assign students by program</p>
-                    </div>
-                    <div class="btn-group" role="group">
-                        <a href="?download_template" class="btn btn-success btn-lg">
-                            <i class="bi bi-download"></i> Download Template
-                        </a>
-                        <button class="btn btn-info btn-lg" data-bs-toggle="modal" data-bs-target="#uploadTemplateModal">
-                            <i class="bi bi-upload"></i> Upload Template
-                        </button>
-                        <button class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#addCourseModal">
-                            <i class="bi bi-plus-circle"></i> Add New Course
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- Courses List -->
         <div class="card shadow-sm">
@@ -435,7 +486,9 @@ $conn->close();
                                         <td><?php echo htmlspecialchars($course['course_name']); ?></td>
                                         <td><small><?php echo htmlspecialchars($course['program_of_study'] ?? 'N/A'); ?></small></td>
                                         <td>
-                                            <?php if (isset($course['year_of_study'])): ?>
+                                            <?php if (isset($course['year_of_study']) && isset($course['semester'])): ?>
+                                                <span class="badge bg-info">Year <?php echo $course['year_of_study']; ?> Semester <?php echo str_replace('One', '1', str_replace('Two', '2', $course['semester'])); ?></span>
+                                            <?php elseif (isset($course['year_of_study'])): ?>
                                                 <span class="badge bg-info">Year <?php echo $course['year_of_study']; ?></span>
                                             <?php else: ?>
                                                 <span class="badge bg-secondary">N/A</span>
@@ -453,6 +506,25 @@ $conn->close();
                                         </td>
                                         <td>
                                             <div class="btn-group" role="group">
+                                                <!-- Edit/Delete Dropdown -->
+                                                <div class="btn-group" role="group">
+                                                    <button type="button" class="btn btn-sm btn-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Edit or Delete Course">
+                                                        <i class="bi bi-gear"></i>
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        <li>
+                                                            <a class="dropdown-item" href="edit_course.php?id=<?php echo $course['course_id']; ?>">
+                                                                <i class="bi bi-pencil-square text-primary me-2"></i>Edit Course
+                                                            </a>
+                                                        </li>
+                                                        <li><hr class="dropdown-divider"></li>
+                                                        <li>
+                                                            <a class="dropdown-item text-danger" href="#" onclick="confirmDeleteCourse(<?php echo $course['course_id']; ?>, '<?php echo addslashes($course['course_name']); ?>', <?php echo $course['enrolled_students']; ?>)">
+                                                                <i class="bi bi-trash me-2"></i>Delete Course
+                                                            </a>
+                                                        </li>
+                                                    </ul>
+                                                </div>
                                                 <button class="btn btn-sm btn-warning" 
                                                         onclick="openAllocateStudentsModal(<?php echo $course['course_id']; ?>, '<?php echo addslashes($course['course_code']); ?>', '<?php echo addslashes($course['course_name']); ?>', '<?php echo addslashes($course['program_of_study'] ?? ''); ?>', <?php echo $course['year_of_study'] ?? 0; ?>)"
                                                         title="Allocate students to access course content">
@@ -573,6 +645,14 @@ $conn->close();
                                     <option value="2">Year 2</option>
                                     <option value="3">Year 3</option>
                                     <option value="4">Year 4</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-calendar"></i> Semester *</label>
+                                <select class="form-select" name="semester" required>
+                                    <option value="">Select semester...</option>
+                                    <option value="One">Semester One</option>
+                                    <option value="Two">Semester Two</option>
                                 </select>
                             </div>
                         </div>
@@ -712,6 +792,49 @@ $conn->close();
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Course Confirmation Modal -->
+    <div class="modal fade" id="deleteCourseModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash"></i> Delete Course</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="delete_course" value="1">
+                        <input type="hidden" name="course_id" id="deleteCourseId">
+                        
+                        <div class="text-center mb-3">
+                            <i class="bi bi-exclamation-triangle text-danger" style="font-size: 4rem;"></i>
+                        </div>
+                        
+                        <p class="text-center fs-5">Are you sure you want to delete the course:</p>
+                        <p class="text-center fw-bold fs-4 text-danger" id="deleteCourseName"></p>
+                        
+                        <div class="alert alert-warning d-none" id="deleteWarning">
+                            <i class="bi bi-people-fill"></i> <strong>Warning:</strong> This course has <span id="deleteEnrolledCount" class="fw-bold"></span> enrolled student(s). 
+                            All enrollments will be removed.
+                        </div>
+                        
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-circle"></i> <strong>This action cannot be undone!</strong> 
+                            All course content, materials, and enrollment records will be permanently deleted.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash"></i> Delete Course
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1068,6 +1191,22 @@ $conn->close();
                 .catch(error => {
                     document.getElementById('enrolledStudentsList').innerHTML = '<div class="alert alert-danger">Error loading students</div>';
                 });
+        }
+        
+        function confirmDeleteCourse(courseId, courseName, enrolledCount) {
+            document.getElementById('deleteCourseId').value = courseId;
+            document.getElementById('deleteCourseName').textContent = courseName;
+            document.getElementById('deleteEnrolledCount').textContent = enrolledCount;
+            
+            // Show warning if students are enrolled
+            const warningDiv = document.getElementById('deleteWarning');
+            if (enrolledCount > 0) {
+                warningDiv.classList.remove('d-none');
+            } else {
+                warningDiv.classList.add('d-none');
+            }
+            
+            new bootstrap.Modal(document.getElementById('deleteCourseModal')).show();
         }
     </script>
 </body>

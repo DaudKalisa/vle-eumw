@@ -54,5 +54,4 @@ $data['installment_4_paid'] = $data['installment_4'];
 echo json_encode($data);
 
 $stmt->close();
-$conn->close();
 ?>

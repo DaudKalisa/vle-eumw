@@ -1,3 +1,6 @@
+    <div class="container mt-2 mb-2">
+        <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+    </div>
 <?php
 // edit_assignment.php - Edit Assignment
 require_once '../includes/auth.php';
@@ -41,17 +44,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Assignment</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-<div class="container mt-5">
+<?php include 'header_nav.php'; ?>
+<div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+    <div class="mb-3">
+        <button class="btn btn-outline-secondary" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+    </div>
     <div class="row justify-content-center">
         <div class="col-md-8">
             <div class="card shadow">

@@ -38,17 +38,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Update failed.';
     }
 }
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Content</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
-<body>
-<div class="container mt-5">
+<body class="bg-light">
+<?php include 'header_nav.php'; ?>
+<div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+    <div class="mb-3">
+        <button class="btn btn-outline-secondary" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+    </div>
     <h2>Edit Content</h2>
     <?php if (!empty($success)): ?>
         <div class="alert alert-success"><?php echo $success; ?></div>

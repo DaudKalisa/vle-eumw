@@ -27,6 +27,5 @@ if ($result->num_rows > 0) {
     echo "⚠️  Database 'university_portal' not found - will be created on first access\n";
 }
 
-$conn->close();
 echo "\n✅ System ready!\n";
 ?>

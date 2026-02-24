@@ -1,0 +1,806 @@
+/**
+ * VLE System - Global Theme CSS
+ * Unified styling for all pages across the system
+ * Based on Admin Dashboard design with Exploits University branding
+ */
+
+/* Import Theme Colors */
+@import url('themes.css');
+
+/* ============================================
+   CSS Variables - System-wide Theme
+   ============================================ */
+:root {
+    /* Primary Colors - Navy Blue Theme (Exploits University) */
+    --vle-primary: #1e3c72;
+    --vle-primary-light: #2a5298;
+    --vle-primary-dark: #152a52;
+    --vle-primary-rgb: 30, 60, 114;
+    
+    /* Accent Colors */
+    --vle-accent: #667eea;
+    --vle-accent-light: #7c8ff0;
+    --vle-accent-dark: #5269d4;
+    
+    /* Secondary Gradients */
+    --vle-gradient-primary: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    --vle-gradient-accent: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --vle-gradient-success: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+    --vle-gradient-warning: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+    --vle-gradient-danger: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+    --vle-gradient-info: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --vle-gradient-purple: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --vle-gradient-pink: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --vle-gradient-teal: linear-gradient(135deg, #14b8a6 0%, #a7f3d0 100%);
+    --vle-gradient-orange: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    
+    /* Status Colors */
+    --vle-success: #10b981;
+    --vle-warning: #f59e0b;
+    --vle-danger: #ef4444;
+    --vle-info: #06b6d4;
+    
+    /* Neutral Colors */
+    --vle-bg: #f0f4f8;
+    --vle-bg-light: #f8fafc;
+    --vle-card-bg: #ffffff;
+    --vle-text: #1e293b;
+    --vle-text-muted: #64748b;
+    --vle-text-light: #94a3b8;
+    --vle-border: #e2e8f0;
+    --vle-border-light: #f1f5f9;
+    
+    /* Shadows */
+    --vle-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --vle-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --vle-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --vle-shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.1);
+    --vle-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --vle-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    
+    /* Border Radius */
+    --vle-radius-sm: 6px;
+    --vle-radius: 10px;
+    --vle-radius-lg: 14px;
+    --vle-radius-xl: 18px;
+    --vle-radius-full: 9999px;
+    
+    /* Transitions */
+    --vle-transition: all 0.3s ease;
+    --vle-transition-fast: all 0.15s ease;
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+* {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--vle-bg);
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    color: var(--vle-text);
+    line-height: 1.6;
+}
+
+/* ============================================
+   Navigation - Unified Header
+   ============================================ */
+.vle-navbar {
+    background: var(--vle-gradient-primary);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 1050;
+    box-shadow: var(--vle-shadow);
+}
+
+.vle-navbar .navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: white !important;
+    font-weight: 700;
+    padding: 10px 0;
+}
+
+.vle-navbar .navbar-brand img {
+    height: 38px;
+    width: auto;
+}
+
+.vle-navbar .nav-link {
+    color: rgba(255, 255, 255, 0.85) !important;
+    font-weight: 500;
+    padding: 16px 14px !important;
+    transition: var(--vle-transition-fast);
+    font-size: 0.9rem;
+}
+
+.vle-navbar .nav-link:hover,
+.vle-navbar .nav-link.active {
+    color: white !important;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.vle-navbar .dropdown-menu {
+    border: none;
+    box-shadow: var(--vle-shadow-lg);
+    border-radius: var(--vle-radius);
+    padding: 8px 0;
+}
+
+.vle-navbar .dropdown-item {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    transition: var(--vle-transition-fast);
+}
+
+.vle-navbar .dropdown-item:hover {
+    background: var(--vle-bg);
+}
+
+.vle-navbar .dropdown-item i {
+    width: 20px;
+}
+
+/* ============================================
+   Page Header / Breadcrumb
+   ============================================ */
+.vle-page-header {
+    background: var(--vle-card-bg);
+    border-bottom: 1px solid var(--vle-border);
+    padding: 16px 0;
+}
+
+.vle-page-header .breadcrumb {
+    margin-bottom: 0;
+    background: none;
+    padding: 0;
+}
+
+.vle-page-header .breadcrumb-item a {
+    color: var(--vle-primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.vle-page-header .breadcrumb-item.active {
+    color: var(--vle-text-muted);
+}
+
+.vle-page-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--vle-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vle-page-title i {
+    opacity: 0.8;
+}
+
+/* ============================================
+   Cards - Unified Styling
+   ============================================ */
+.vle-card {
+    background: var(--vle-card-bg);
+    border-radius: var(--vle-radius-lg);
+    box-shadow: var(--vle-shadow-sm);
+    border: none;
+    transition: var(--vle-transition);
+    overflow: hidden;
+}
+
+.vle-card:hover {
+    box-shadow: var(--vle-shadow);
+}
+
+.vle-card-header {
+    background: var(--vle-gradient-primary);
+    color: white;
+    padding: 16px 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+}
+
+.vle-card-header.gradient-accent { background: var(--vle-gradient-accent); }
+.vle-card-header.gradient-success { background: var(--vle-gradient-success); }
+.vle-card-header.gradient-warning { background: var(--vle-gradient-warning); }
+.vle-card-header.gradient-danger { background: var(--vle-gradient-danger); }
+.vle-card-header.gradient-info { background: var(--vle-gradient-info); }
+.vle-card-header.gradient-purple { background: var(--vle-gradient-purple); }
+.vle-card-header.gradient-pink { background: var(--vle-gradient-pink); }
+.vle-card-header.gradient-teal { background: var(--vle-gradient-teal); }
+
+.vle-card-body {
+    padding: 20px;
+}
+
+/* ============================================
+   Stat Cards
+   ============================================ */
+.vle-stat-card {
+    background: var(--vle-card-bg);
+    border-radius: var(--vle-radius);
+    padding: 20px;
+    text-align: center;
+    box-shadow: var(--vle-shadow-sm);
+    transition: var(--vle-transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.vle-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--vle-gradient-primary);
+}
+
+.vle-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--vle-shadow-md);
+}
+
+.vle-stat-card .stat-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    font-size: 1.4rem;
+    color: white;
+    background: var(--vle-gradient-primary);
+}
+
+.vle-stat-card .stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--vle-text);
+    margin-bottom: 4px;
+}
+
+.vle-stat-card .stat-label {
+    font-size: 0.8rem;
+    color: var(--vle-text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Gradient Variations */
+.vle-stat-card.primary::before, .vle-stat-card.primary .stat-icon { background: var(--vle-gradient-primary); }
+.vle-stat-card.accent::before, .vle-stat-card.accent .stat-icon { background: var(--vle-gradient-accent); }
+.vle-stat-card.success::before, .vle-stat-card.success .stat-icon { background: var(--vle-gradient-success); }
+.vle-stat-card.warning::before, .vle-stat-card.warning .stat-icon { background: var(--vle-gradient-warning); }
+.vle-stat-card.danger::before, .vle-stat-card.danger .stat-icon { background: var(--vle-gradient-danger); }
+.vle-stat-card.info::before, .vle-stat-card.info .stat-icon { background: var(--vle-gradient-info); }
+.vle-stat-card.purple::before, .vle-stat-card.purple .stat-icon { background: var(--vle-gradient-purple); }
+.vle-stat-card.pink::before, .vle-stat-card.pink .stat-icon { background: var(--vle-gradient-pink); }
+.vle-stat-card.teal::before, .vle-stat-card.teal .stat-icon { background: var(--vle-gradient-teal); }
+
+/* ============================================
+   Buttons - Unified
+   ============================================ */
+.btn-vle-primary {
+    background: var(--vle-gradient-primary);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--vle-radius-sm);
+    font-weight: 600;
+    transition: var(--vle-transition);
+}
+
+.btn-vle-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--vle-shadow);
+    color: white;
+    opacity: 0.95;
+}
+
+.btn-vle-accent {
+    background: var(--vle-gradient-accent);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--vle-radius-sm);
+    font-weight: 600;
+    transition: var(--vle-transition);
+}
+
+.btn-vle-accent:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--vle-shadow);
+    color: white;
+}
+
+.btn-vle-success {
+    background: var(--vle-gradient-success);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--vle-radius-sm);
+    font-weight: 600;
+    transition: var(--vle-transition);
+}
+
+.btn-vle-success:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--vle-shadow);
+    color: white;
+}
+
+.btn-vle-warning {
+    background: var(--vle-gradient-warning);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--vle-radius-sm);
+    font-weight: 600;
+    transition: var(--vle-transition);
+}
+
+.btn-vle-warning:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--vle-shadow);
+    color: white;
+}
+
+.btn-vle-outline {
+    background: transparent;
+    border: 2px solid var(--vle-primary);
+    color: var(--vle-primary);
+    padding: 8px 18px;
+    border-radius: var(--vle-radius-sm);
+    font-weight: 600;
+    transition: var(--vle-transition);
+}
+
+.btn-vle-outline:hover {
+    background: var(--vle-primary);
+    color: white;
+}
+
+/* ============================================
+   Tables - Unified
+   ============================================ */
+.vle-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.vle-table thead th {
+    background: var(--vle-bg);
+    color: var(--vle-text);
+    font-weight: 600;
+    padding: 14px 16px;
+    border-bottom: 2px solid var(--vle-border);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+
+.vle-table tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--vle-border-light);
+    vertical-align: middle;
+}
+
+.vle-table tbody tr:hover {
+    background: var(--vle-bg-light);
+}
+
+.vle-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ============================================
+   Forms - Unified
+   ============================================ */
+.vle-form-control {
+    border: 1px solid var(--vle-border);
+    border-radius: var(--vle-radius-sm);
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    transition: var(--vle-transition-fast);
+}
+
+.vle-form-control:focus {
+    border-color: var(--vle-primary);
+    box-shadow: 0 0 0 3px rgba(var(--vle-primary-rgb), 0.15);
+    outline: none;
+}
+
+.vle-form-label {
+    font-weight: 600;
+    color: var(--vle-text);
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+}
+
+.vle-form-select {
+    border: 1px solid var(--vle-border);
+    border-radius: var(--vle-radius-sm);
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    transition: var(--vle-transition-fast);
+    background-color: white;
+}
+
+.vle-form-select:focus {
+    border-color: var(--vle-primary);
+    box-shadow: 0 0 0 3px rgba(var(--vle-primary-rgb), 0.15);
+    outline: none;
+}
+
+/* ============================================
+   Badges - Unified
+   ============================================ */
+.vle-badge {
+    padding: 5px 12px;
+    border-radius: var(--vle-radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.vle-badge-primary {
+    background: rgba(var(--vle-primary-rgb), 0.1);
+    color: var(--vle-primary);
+}
+
+.vle-badge-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--vle-success);
+}
+
+.vle-badge-warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--vle-warning);
+}
+
+.vle-badge-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--vle-danger);
+}
+
+.vle-badge-info {
+    background: rgba(6, 182, 212, 0.1);
+    color: var(--vle-info);
+}
+
+/* ============================================
+   Alerts - Unified
+   ============================================ */
+.vle-alert {
+    border-radius: var(--vle-radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: none;
+}
+
+.vle-alert-success {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    color: #065f46;
+}
+
+.vle-alert-warning {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    color: #92400e;
+}
+
+.vle-alert-danger {
+    background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+    color: #991b1b;
+}
+
+.vle-alert-info {
+    background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);
+    color: #155e75;
+}
+
+/* ============================================
+   Section Titles
+   ============================================ */
+.vle-section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--vle-text);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--vle-border);
+}
+
+.vle-section-title i {
+    color: var(--vle-primary);
+}
+
+/* ============================================
+   Content Container
+   ============================================ */
+.vle-content {
+    padding: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+    .vle-content {
+        padding: 16px;
+    }
+}
+
+/* ============================================
+   Quick Action Items
+   ============================================ */
+.vle-action-item {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--vle-bg);
+    border-radius: var(--vle-radius-sm);
+    margin-bottom: 8px;
+    text-decoration: none;
+    color: var(--vle-text);
+    transition: var(--vle-transition);
+}
+
+.vle-action-item:last-child {
+    margin-bottom: 0;
+}
+
+.vle-action-item:hover {
+    background: var(--vle-border);
+    color: var(--vle-text);
+    text-decoration: none;
+    transform: translateX(4px);
+}
+
+.vle-action-item .action-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: var(--vle-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 14px;
+    font-size: 1.1rem;
+    color: white;
+    flex-shrink: 0;
+}
+
+.vle-action-item .action-info {
+    flex: 1;
+}
+
+.vle-action-item .action-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 2px;
+}
+
+.vle-action-item .action-desc {
+    font-size: 0.8rem;
+    color: var(--vle-text-muted);
+}
+
+.vle-action-item .action-arrow {
+    color: var(--vle-text-muted);
+    margin-left: 8px;
+}
+
+/* ============================================
+   Empty State
+   ============================================ */
+.vle-empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--vle-text-muted);
+}
+
+.vle-empty-state i {
+    font-size: 3rem;
+    opacity: 0.3;
+    margin-bottom: 16px;
+}
+
+.vle-empty-state h5 {
+    font-weight: 600;
+    color: var(--vle-text);
+    margin-bottom: 8px;
+}
+
+.vle-empty-state p {
+    font-size: 0.9rem;
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+.bg-gradient-primary { background: var(--vle-gradient-primary) !important; }
+.bg-gradient-accent { background: var(--vle-gradient-accent) !important; }
+.bg-gradient-success { background: var(--vle-gradient-success) !important; }
+.bg-gradient-warning { background: var(--vle-gradient-warning) !important; }
+.bg-gradient-danger { background: var(--vle-gradient-danger) !important; }
+.bg-gradient-info { background: var(--vle-gradient-info) !important; }
+.bg-gradient-purple { background: var(--vle-gradient-purple) !important; }
+.bg-gradient-pink { background: var(--vle-gradient-pink) !important; }
+.bg-gradient-teal { background: var(--vle-gradient-teal) !important; }
+.bg-gradient-orange { background: var(--vle-gradient-orange) !important; }
+
+.text-primary-vle { color: var(--vle-primary) !important; }
+.text-accent { color: var(--vle-accent) !important; }
+.text-success-vle { color: var(--vle-success) !important; }
+.text-warning-vle { color: var(--vle-warning) !important; }
+.text-danger-vle { color: var(--vle-danger) !important; }
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+@media (max-width: 992px) {
+    .vle-navbar .nav-link {
+        padding: 10px 14px !important;
+    }
+    
+    .container-fluid {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+}
+
+@media (max-width: 768px) {
+    .vle-stat-card {
+        padding: 16px;
+    }
+    
+    .vle-stat-card .stat-icon {
+        width: 48px;
+        height: 48px;
+        font-size: 1.2rem;
+    }
+    
+    .vle-stat-card .stat-value {
+        font-size: 1.5rem;
+    }
+    
+    .vle-card-body {
+        padding: 16px;
+    }
+    
+    .vle-page-title {
+        font-size: 1.25rem;
+    }
+    
+    /* Enhanced mobile table responsiveness */
+    .table-responsive {
+        font-size: 0.85rem;
+    }
+    
+    .table td, .table th {
+        padding: 0.5rem;
+    }
+    
+    /* Stack cards on mobile */
+    .card-body {
+        padding: 1rem;
+    }
+    
+    /* Button adjustments */
+    .btn-group-mobile {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .btn-group-mobile .btn {
+        width: 100%;
+    }
+}
+
+@media (max-width: 576px) {
+    /* Extra small devices */
+    .vle-navbar .navbar-brand span {
+        display: none;
+    }
+    
+    .vle-navbar .navbar-brand img {
+        margin-right: 0;
+    }
+    
+    .vle-page-title {
+        font-size: 1.1rem;
+    }
+    
+    .vle-stat-card .stat-value {
+        font-size: 1.25rem;
+    }
+    
+    .vle-stat-card .stat-label {
+        font-size: 0.75rem;
+    }
+    
+    /* Hide certain columns on very small screens */
+    .d-xs-none {
+        display: none !important;
+    }
+    
+    /* Full width forms on mobile */
+    .form-control, .form-select {
+        font-size: 16px; /* Prevent iOS zoom */
+    }
+    
+    /* Modal adjustments for mobile */
+    .modal-dialog {
+        margin: 0.5rem;
+    }
+    
+    .modal-body {
+        padding: 1rem;
+    }
+}
+
+/* ============================================
+   Scrollbar Styling
+   ============================================ */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--vle-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--vle-text-muted);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vle-text);
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    .vle-navbar,
+    .vle-page-header,
+    .btn {
+        display: none !important;
+    }
+    
+    body {
+        background: white;
+    }
+    
+    .vle-card {
+        box-shadow: none;
+        border: 1px solid #ddd;
+    }
+}

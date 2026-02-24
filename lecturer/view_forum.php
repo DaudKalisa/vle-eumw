@@ -1,6 +1,8 @@
+    <?php include 'lecturer_navbar.php'; ?>
 <?php
 // view_forum.php - View forum posts
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
 
 $conn = getDbConnection();
@@ -85,12 +87,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_post'])) {
         $stmt = $conn->prepare("INSERT INTO vle_forum_posts (forum_id, parent_post_id, user_id, title, content) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("iiiss", $forum_id, $parent_id, $user['user_id'], $title, $content);
         $stmt->execute();
+        
+        // Send notification if this is a reply
+        if ($parent_id && isEmailEnabled()) {
+            // Get parent post author
+            $parent_stmt = $conn->prepare("
+                SELECT p.*, u.email, 
+                       CASE WHEN u.role = 'student' THEN s.full_name WHEN u.role = 'lecturer' THEN l.full_name ELSE u.username END as author_name,
+                       CASE WHEN u.role = 'student' THEN s.email WHEN u.role = 'lecturer' THEN l.email ELSE u.email END as author_email
+                FROM vle_forum_posts p
+                JOIN users u ON p.user_id = u.user_id
+                LEFT JOIN students s ON u.related_student_id = s.student_id
+                LEFT JOIN lecturers l ON u.related_lecturer_id = l.lecturer_id
+                WHERE p.post_id = ?
+            ");
+            $parent_stmt->bind_param("i", $parent_id);
+            $parent_stmt->execute();
+            $parent_post = $parent_stmt->get_result()->fetch_assoc();
+            
+            if ($parent_post && $parent_post['author_email'] && $parent_post['user_id'] != $user['user_id']) {
+                $replier_name = $user['display_name'] ?? $user['username'];
+                sendDiscussionReplyEmail(
+                    $parent_post['author_email'],
+                    $parent_post['author_name'],
+                    $replier_name,
+                    $forum['course_name'],
+                    $forum['title'],
+                    $content,
+                    $forum_id
+                );
+            }
+        }
+        
         header("Location: view_forum.php?forum_id=$forum_id");
         exit();
     }
 }
 
-$conn->close();
 ?>
 
 <!DOCTYPE html>

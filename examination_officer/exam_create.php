@@ -125,14 +125,14 @@ $breadcrumbs = [['url' => 'manage_exams.php', 'title' => 'Examinations'], ['titl
                                 </div>
                                 <div class="col-md-8">
                                     <label class="form-label">Exam Name <span class="text-danger">*</span></label>
-                                    <input type="text" name="exam_name" class="form-control" required placeholder="e.g. Final Examination - Computer Science" value="<?= htmlspecialchars($_POST['exam_name'] ?? '') ?>">
+                                    <input type="text" name="exam_name" class="form-control" required placeholder="e.g. End-Semester Examination - Computer Science" value="<?= htmlspecialchars($_POST['exam_name'] ?? '') ?>">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Exam Type</label>
                                     <select name="exam_type" class="form-select">
                                         <option value="quiz">Quiz</option>
-                                        <option value="mid_term">Mid-Term Exam</option>
-                                        <option value="final" selected>Final Exam</option>
+                                        <option value="mid_term">Mid-Semester Exam</option>
+                                        <option value="final" selected>End-Semester Examination</option>
                                         <option value="assignment">Assignment</option>
                                     </select>
                                 </div>

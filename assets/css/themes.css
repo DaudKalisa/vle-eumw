@@ -1,0 +1,139 @@
+/**
+ * VLE System - Color Themes
+ * 4 Theme Options for User Customization
+ */
+
+/* ============================================
+   Theme 1: Default Navy Blue (Exploits University)
+   ============================================ */
+[data-theme="navy"], :root {
+    --vle-primary: #1e3c72;
+    --vle-primary-light: #2a5298;
+    --vle-primary-dark: #152a52;
+    --vle-primary-rgb: 30, 60, 114;
+    --vle-accent: #667eea;
+    --vle-accent-light: #7c8ff0;
+    --vle-accent-dark: #5269d4;
+    --vle-gradient-primary: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    --vle-gradient-accent: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --theme-name: "Navy Blue";
+}
+
+/* ============================================
+   Theme 2: Emerald Green
+   ============================================ */
+[data-theme="emerald"] {
+    --vle-primary: #047857;
+    --vle-primary-light: #059669;
+    --vle-primary-dark: #065f46;
+    --vle-primary-rgb: 4, 120, 87;
+    --vle-accent: #10b981;
+    --vle-accent-light: #34d399;
+    --vle-accent-dark: #059669;
+    --vle-gradient-primary: linear-gradient(135deg, #047857 0%, #059669 100%);
+    --vle-gradient-accent: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+    --theme-name: "Emerald Green";
+}
+
+/* ============================================
+   Theme 3: Royal Purple
+   ============================================ */
+[data-theme="purple"] {
+    --vle-primary: #5b21b6;
+    --vle-primary-light: #7c3aed;
+    --vle-primary-dark: #4c1d95;
+    --vle-primary-rgb: 91, 33, 182;
+    --vle-accent: #8b5cf6;
+    --vle-accent-light: #a78bfa;
+    --vle-accent-dark: #7c3aed;
+    --vle-gradient-primary: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
+    --vle-gradient-accent: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+    --theme-name: "Royal Purple";
+}
+
+/* ============================================
+   Theme 4: Sunset Orange
+   ============================================ */
+[data-theme="orange"] {
+    --vle-primary: #c2410c;
+    --vle-primary-light: #ea580c;
+    --vle-primary-dark: #9a3412;
+    --vle-primary-rgb: 194, 65, 12;
+    --vle-accent: #f97316;
+    --vle-accent-light: #fb923c;
+    --vle-accent-dark: #ea580c;
+    --vle-gradient-primary: linear-gradient(135deg, #c2410c 0%, #ea580c 100%);
+    --vle-gradient-accent: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
+    --theme-name: "Sunset Orange";
+}
+
+/* ============================================
+   Theme Selector Styles
+   ============================================ */
+.theme-option {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.theme-option:hover {
+    background-color: var(--vle-bg);
+}
+
+.theme-option.active {
+    background-color: var(--vle-bg);
+}
+
+.theme-option.active::after {
+    content: '\F26E';
+    font-family: 'bootstrap-icons';
+    margin-left: auto;
+    color: var(--vle-success);
+}
+
+.theme-color-preview {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    margin-right: 10px;
+    border: 2px solid rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.theme-color-navy {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+}
+
+.theme-color-emerald {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+}
+
+.theme-color-purple {
+    background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
+}
+
+.theme-color-orange {
+    background: linear-gradient(135deg, #c2410c 0%, #ea580c 100%);
+}
+
+/* Theme Submenu Styling */
+.dropdown-submenu {
+    position: relative;
+}
+
+.dropdown-submenu .dropdown-menu {
+    top: 0;
+    left: 100%;
+    margin-left: 0.1rem;
+    margin-top: -0.5rem;
+}
+
+@media (max-width: 991.98px) {
+    .dropdown-submenu .dropdown-menu {
+        left: 0;
+        top: 100%;
+        margin-left: 1rem;
+    }
+}

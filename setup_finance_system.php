@@ -223,8 +223,6 @@ echo "<li>View student finance records and process payments</li>";
 echo "<li>Students can only access content based on payment percentage</li>";
 echo "</ol>";
 
-$conn->close();
-
 echo '<br><a href="admin/dashboard.php" class="btn btn-primary">Go to Admin Dashboard</a>';
 echo ' <a href="login.php" class="btn btn-success">Login as Finance User</a>';
 ?>

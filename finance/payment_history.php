@@ -130,6 +130,7 @@ $totals = $stmt->get_result()->fetch_assoc();
                                     <th>Reference</th>
                                     <th class="no-print">Recorded By</th>
                                     <th class="no-print">Notes</th>
+                                    <th class="no-print">Receipt</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -156,13 +157,19 @@ $totals = $stmt->get_result()->fetch_assoc();
                                                 <small class="text-muted">-</small>
                                             <?php endif; ?>
                                         </td>
+                                        <td class="no-print">
+                                            <a href="payment_receipt.php?id=<?php echo $trans['transaction_id']; ?>&type=transaction" 
+                                               target="_blank" class="btn btn-sm btn-outline-success" title="Print Receipt">
+                                                <i class="bi bi-printer"></i>
+                                            </a>
+                                        </td>
                                     </tr>
                                 <?php endwhile; ?>
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
                                     <td colspan="3" class="text-end"><strong>Total:</strong></td>
-                                    <td colspan="5"><strong class="text-success">K<?php echo number_format($totals['total'] ?? 0); ?></strong></td>
+                                    <td colspan="6"><strong class="text-success">K<?php echo number_format($totals['total'] ?? 0); ?></strong></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -188,4 +195,4 @@ $totals = $stmt->get_result()->fetch_assoc();
 </body>
 </html>
 
-<?php $conn->close(); ?>
+<?php  ?>

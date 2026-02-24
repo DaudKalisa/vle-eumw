@@ -1,3 +1,4 @@
+
 <?php
 // forum.php - Course forums for lecturers
 require_once '../includes/auth.php';
@@ -44,12 +45,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_forum'])) {
 }
 
 $user = getCurrentUser();
-$conn->close();
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forums - VLE System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+</head>
+<body>
+    <?php 
+    $currentPage = 'forum';
+    $pageTitle = 'Forums';
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="vle-content">
+            </div>
+        </div>
+    </nav>
+    <!-- Centered Back Button in Header -->
+    <div class="w-100 d-flex justify-content-center align-items-center" style="position:relative;top:-10px;z-index:1051;">
+        <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();">
+            <i class="bi bi-arrow-left"></i> Back
+        </button>
+    </div>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Course Forums - VLE System</title>
@@ -60,7 +87,7 @@ $conn->close();
         <div class="card shadow">
             <div class="card-header">
                 <h4>Forums for <?php echo htmlspecialchars($course['course_name']); ?></h4>
-                <a href="dashboard.php?course_id=<?php echo $course_id; ?>" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+
             </div>
             <div class="card-body">
                 <!-- Create New Forum -->
