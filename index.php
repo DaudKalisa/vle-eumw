@@ -154,7 +154,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(13,27,74,.82) 0%, rgba(27,58,123,.65) 50%, rgba(13,27,74,.75) 100%);
+            background: linear-gradient(135deg, rgba(13,27,74,.25) 0%, rgba(27,58,123,.20) 50%, rgba(13,27,74,.25) 100%);
         }
         .eu-hero .carousel-caption {
             inset: 0;
@@ -167,7 +167,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         .eu-hero .hero-inner { max-width: 850px; margin: 0 auto; }
         .eu-hero .hero-badge {
             display: inline-block;
-            background: rgba(232,163,23,.2);
+            background: rgba(13,27,74,.65);
             border: 1px solid var(--eu-accent);
             color: var(--eu-accent);
             padding: 6px 20px;
@@ -177,21 +177,23 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             letter-spacing: 1px;
             text-transform: uppercase;
             margin-bottom: 1.2rem;
+            backdrop-filter: blur(6px);
         }
         .eu-hero h1 {
             font-size: clamp(2rem, 5vw, 3.8rem);
             font-weight: 900;
             line-height: 1.1;
             margin-bottom: 1rem;
-            text-shadow: 0 2px 15px rgba(0,0,0,.3);
+            text-shadow: 0 3px 20px rgba(0,0,0,.7), 0 1px 4px rgba(0,0,0,.5);
         }
         .eu-hero .hero-sub {
             font-size: clamp(1rem, 2vw, 1.3rem);
-            color: rgba(255,255,255,.85);
+            color: #fff;
             margin-bottom: 2rem;
             max-width: 650px;
             margin-left: auto;
             margin-right: auto;
+            text-shadow: 0 2px 12px rgba(0,0,0,.6), 0 1px 3px rgba(0,0,0,.4);
         }
         .eu-hero .btn-hero-primary {
             background: var(--eu-accent);
@@ -280,6 +282,67 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         }
         .eu-feature-card h5 { font-weight: 700; color: var(--eu-primary); margin-bottom: .5rem; }
         .eu-feature-card p { font-size: .9rem; color: var(--eu-text-muted); margin: 0; }
+
+        /* ─── Quick Action Cards (image-backed) ── */
+        .eu-action-card {
+            position: relative;
+            border-radius: var(--eu-radius);
+            overflow: hidden;
+            height: 280px;
+            display: flex;
+            align-items: flex-end;
+            text-decoration: none;
+            transition: var(--eu-transition);
+            box-shadow: 0 8px 30px rgba(0,0,0,.15);
+        }
+        .eu-action-card:hover { transform: translateY(-8px); box-shadow: 0 16px 50px rgba(0,0,0,.25); }
+        .eu-action-card img {
+            position: absolute;
+            inset: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transition: var(--eu-transition);
+        }
+        .eu-action-card:hover img { transform: scale(1.06); }
+        .eu-action-card .action-overlay {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            padding: 2rem 1.5rem 1.5rem;
+            background: linear-gradient(0deg, rgba(13,27,74,.88) 0%, rgba(13,27,74,.55) 60%, transparent 100%);
+            color: #fff;
+        }
+        .eu-action-card .action-overlay h4 {
+            font-weight: 800;
+            font-size: 1.3rem;
+            margin-bottom: .3rem;
+            text-shadow: 0 2px 8px rgba(0,0,0,.3);
+        }
+        .eu-action-card .action-overlay p {
+            font-size: .85rem;
+            opacity: .85;
+            margin-bottom: .8rem;
+        }
+        .eu-action-card .action-btn-inner {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            padding: .5rem 1.4rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: .85rem;
+            transition: var(--eu-transition);
+        }
+        .eu-action-card .btn-gold { background: var(--eu-accent); color: var(--eu-primary); }
+        .eu-action-card:hover .btn-gold { background: var(--eu-accent-hover); }
+        .eu-action-card .btn-white { background: #fff; color: var(--eu-primary); }
+        .eu-action-card:hover .btn-white { background: var(--eu-light); }
+        .eu-action-card .btn-green { background: #10b981; color: #fff; }
+        .eu-action-card:hover .btn-green { background: #059669; }
+        @media (max-width: 767px) {
+            .eu-action-card { height: 220px; }
+            .eu-action-card .action-overlay h4 { font-size: 1.1rem; }
+        }
 
         /* ─── Why Section ──────────────────────── */
         .eu-why { background: var(--eu-light); }
@@ -426,6 +489,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                 <a href="#programmes" class="nav-link-custom">Programmes</a>
                 <a href="#campus" class="nav-link-custom">Campus</a>
                 <a href="https://exploitsmw.com" target="_blank" class="nav-link-custom">Main Website</a>
+                <a href="https://apply.exploitsonline.com" target="_blank" class="btn ms-2" style="background:var(--eu-accent);color:var(--eu-primary);border:none;padding:.55rem 1.5rem;border-radius:50px;font-weight:700;transition:var(--eu-transition);"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
                 <a href="login.php" class="btn btn-login ms-2"><i class="bi bi-box-arrow-in-right me-1"></i> Login</a>
             </div>
             <button class="btn d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileNav" style="font-size:1.5rem"><i class="bi bi-list"></i></button>
@@ -444,6 +508,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             <a href="#campus" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-building me-2"></i>Campus</a>
             <a href="https://exploitsmw.com" target="_blank" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-globe me-2"></i>Main Website</a>
             <hr>
+            <a href="https://apply.exploitsonline.com" target="_blank" class="btn w-100 mb-2" style="background:var(--eu-accent);color:var(--eu-primary);font-weight:700;border-radius:50px;"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
             <a href="login.php" class="btn btn-login w-100"><i class="bi bi-box-arrow-in-right me-1"></i> Login to VLE</a>
         </div>
     </div>
@@ -469,6 +534,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Transforming higher education through innovative Open, Distance and e-Learning across Malawi and beyond.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-mortarboard"></i> Access VLE</a>
+                                <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-primary" style="background:#10b981;color:#fff;"><i class="bi bi-pencil-square"></i> Apply Now</a>
                                 <a href="learn_more.php" class="btn-hero-outline"><i class="bi bi-play-circle"></i> Learn More</a>
                             </div>
                         </div>
@@ -484,6 +550,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
                                 <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-outline"><i class="bi bi-pencil-square"></i> Apply</a>
                             </div>
                         </div>
                     </div>
@@ -583,8 +650,51 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         </div>
     </div>
 
-    <!-- Features / About Section -->
+    <!-- Quick Actions — image-backed cards -->
     <section class="eu-section" id="about">
+        <div class="container">
+            <div class="text-center">
+                <h2 class="eu-section-title">Get Started</h2>
+                <div class="eu-accent-line"></div>
+                <p class="eu-section-sub">Access your learning portal, explore our programmes, or apply for admission at Exploits University Malawi.</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-lg-4 col-md-6">
+                    <a href="login.php" class="eu-action-card">
+                        <img src="pictures/Slider-3.jpg" alt="Student Login">
+                        <div class="action-overlay">
+                            <h4><i class="bi bi-mortarboard me-2"></i>Student Login</h4>
+                            <p>Access courses, assignments, exams and academic resources</p>
+                            <span class="action-btn-inner btn-gold"><i class="bi bi-box-arrow-in-right"></i> Login to VLE</span>
+                        </div>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <a href="#programmes" class="eu-action-card">
+                        <img src="pictures/Slider-5.png" alt="View Programmes">
+                        <div class="action-overlay">
+                            <h4><i class="bi bi-journal-text me-2"></i>View Programmes</h4>
+                            <p>Undergraduate, Postgraduate, Professional & Short Courses</p>
+                            <span class="action-btn-inner btn-white"><i class="bi bi-arrow-down-circle"></i> Explore</span>
+                        </div>
+                    </a>
+                </div>
+                <div class="col-lg-4 col-md-12">
+                    <a href="https://apply.exploitsonline.com" target="_blank" class="eu-action-card">
+                        <img src="pictures/Slider-2.png" alt="Apply Now">
+                        <div class="action-overlay">
+                            <h4><i class="bi bi-pencil-square me-2"></i>Apply Now</h4>
+                            <p>Start your application for the upcoming intake today</p>
+                            <span class="action-btn-inner btn-green"><i class="bi bi-send"></i> Apply Online</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="eu-section" style="background: var(--eu-light);">
         <div class="container">
             <div class="text-center">
                 <h2 class="eu-section-title">Why Choose Our VLE?</h2>
@@ -699,7 +809,10 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         <div class="container">
             <h2>Ready to Start Your Learning Journey?</h2>
             <p class="mb-4" style="max-width:500px;margin:0 auto;">Login to access your courses, submit assignments, take examinations and track your academic progress.</p>
-            <a href="login.php" class="btn btn-cta"><i class="bi bi-box-arrow-in-right me-2"></i>Login to VLE</a>
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+                <a href="login.php" class="btn btn-cta"><i class="bi bi-box-arrow-in-right me-2"></i>Login to VLE</a>
+                <a href="https://apply.exploitsonline.com" target="_blank" class="btn" style="background:#fff;color:var(--eu-primary);padding:.9rem 2.8rem;border-radius:50px;font-weight:700;border:none;font-size:1.05rem;"><i class="bi bi-pencil-square me-2"></i>Apply Now</a>
+            </div>
         </div>
     </section>
 

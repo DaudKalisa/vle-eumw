@@ -27,313 +27,293 @@ if (isset($_SESSION['login_error'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#1e3c72">
-    <title>VLE System – Login</title>
+    <meta name="theme-color" content="#0d1b4a">
+    <title>Login — Exploits University Malawi VLE</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="pictures/Logo.png">
 
     <style>
-        * {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            box-sizing: border-box;
+        :root {
+            --eu-primary: #0d1b4a;
+            --eu-secondary: #1b3a7b;
+            --eu-accent: #e8a317;
+            --eu-accent-hover: #c88b0f;
+            --eu-light: #f0f4ff;
+            --eu-radius: 16px;
+            --eu-transition: all .35s cubic-bezier(.4,0,.2,1);
         }
-
+        *, *::before, *::after { box-sizing: border-box; }
         body {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #667eea 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
             position: relative;
             overflow: hidden;
         }
 
-        /* Background decorative elements */
-        body::before {
+        /* Full-screen background image */
+        .login-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+        }
+        .login-bg img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+        .login-bg::after {
             content: '';
             position: absolute;
-            top: -50%;
-            right: -30%;
-            width: 80%;
-            height: 150%;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 50%;
-            pointer-events: none;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(13,27,74,.25) 0%, rgba(27,58,123,.20) 50%, rgba(13,27,74,.25) 100%);
         }
 
-        body::after {
-            content: '';
-            position: absolute;
-            bottom: -40%;
-            left: -20%;
-            width: 60%;
-            height: 120%;
-            background: rgba(255, 255, 255, 0.02);
-            border-radius: 50%;
-            pointer-events: none;
-        }
-
-        .login-container {
-            width: 100%;
-            max-width: 440px;
+        /* Glass card */
+        .login-wrapper {
             position: relative;
-            z-index: 1;
+            z-index: 10;
+            width: 100%;
+            max-width: 460px;
+            margin: 20px;
         }
 
         .login-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            background: rgba(255,255,255,.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--eu-radius);
+            box-shadow: 0 25px 60px rgba(0,0,0,.3), 0 0 0 1px rgba(255,255,255,.15);
             overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
+        /* Header */
         .login-header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            padding: 32px 28px;
+            background: var(--eu-primary);
+            padding: 2rem 2rem 1.8rem;
             text-align: center;
             position: relative;
         }
-
         .login-header::after {
             content: '';
             position: absolute;
             bottom: 0;
-            left: 0;
-            right: 0;
+            left: 0; right: 0;
             height: 4px;
-            background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+            background: linear-gradient(90deg, var(--eu-accent), #f5d76e, var(--eu-accent));
         }
-
         .login-logo {
-            width: 100px;
-            height: 100px;
+            width: 80px; height: 80px;
             object-fit: contain;
-            margin-bottom: 16px;
-            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+            margin-bottom: 14px;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,.2));
         }
-
         .login-header h4 {
-            color: white;
-            font-weight: 700;
-            font-size: 1.4rem;
-            margin-bottom: 6px;
+            color: #fff;
+            font-weight: 800;
+            font-size: 1.25rem;
+            margin-bottom: 4px;
         }
-
         .login-header p {
-            color: rgba(255, 255, 255, 0.85);
-            font-size: 0.9rem;
+            color: var(--eu-accent);
+            font-size: .78rem;
             margin: 0;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
         }
 
+        /* Body */
         .login-body {
-            padding: 32px 28px;
+            padding: 2rem;
         }
-
         .form-label {
             font-weight: 600;
-            color: #1e293b;
-            font-size: 0.9rem;
-            margin-bottom: 8px;
+            color: var(--eu-primary);
+            font-size: .88rem;
+            margin-bottom: 6px;
         }
-
         .form-control {
             border: 2px solid #e2e8f0;
             border-radius: 10px;
             padding: 12px 16px;
-            font-size: 0.95rem;
-            transition: all 0.3s ease;
-            background: #f8fafc;
+            font-size: .95rem;
+            transition: var(--eu-transition);
+            background: rgba(248,250,252,.8);
         }
-
         .form-control:focus {
-            border-color: #1e3c72;
-            box-shadow: 0 0 0 4px rgba(30, 60, 114, 0.1);
-            background: white;
+            border-color: var(--eu-accent);
+            box-shadow: 0 0 0 4px rgba(232,163,23,.15);
+            background: #fff;
         }
-
-        .form-control::placeholder {
-            color: #94a3b8;
-        }
+        .form-control::placeholder { color: #94a3b8; }
 
         .input-group-text {
-            background: #f8fafc;
+            background: rgba(248,250,252,.8);
             border: 2px solid #e2e8f0;
             border-right: none;
             border-radius: 10px 0 0 10px;
-            color: #64748b;
+            color: var(--eu-secondary);
         }
-
         .input-group .form-control {
             border-left: none;
             border-radius: 0 10px 10px 0;
         }
-
         .input-group:focus-within .input-group-text {
-            border-color: #1e3c72;
-            color: #1e3c72;
+            border-color: var(--eu-accent);
+            color: var(--eu-accent);
         }
 
-        .btn-login {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        /* Login Button */
+        .btn-login-main {
+            background: var(--eu-primary);
             border: none;
             padding: 14px 28px;
             font-size: 1rem;
-            font-weight: 600;
-            border-radius: 10px;
-            color: white;
+            font-weight: 700;
+            border-radius: 50px;
+            color: #fff;
             width: 100%;
-            transition: all 0.3s ease;
+            transition: var(--eu-transition);
             position: relative;
             overflow: hidden;
         }
-
-        .btn-login::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transition: left 0.5s ease;
-        }
-
-        .btn-login:hover {
+        .btn-login-main:hover {
+            background: var(--eu-secondary);
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px -8px rgba(30, 60, 114, 0.5);
+            box-shadow: 0 8px 25px rgba(13,27,74,.4);
+            color: #fff;
         }
 
-        .btn-login:hover::before {
-            left: 100%;
-        }
-
-        .btn-login:active {
-            transform: translateY(0);
-        }
-
+        /* Footer links */
         .login-footer {
             text-align: center;
-            padding-top: 20px;
+            padding-top: 1.2rem;
             border-top: 1px solid #e2e8f0;
-            margin-top: 24px;
+            margin-top: 1.5rem;
         }
-
         .login-footer a {
-            color: #1e3c72;
+            color: var(--eu-primary);
             text-decoration: none;
             font-weight: 500;
-            font-size: 0.9rem;
-            transition: color 0.2s ease;
+            font-size: .88rem;
+            transition: var(--eu-transition);
         }
+        .login-footer a:hover { color: var(--eu-accent); }
 
-        .login-footer a:hover {
-            color: #667eea;
-            text-decoration: underline;
+        /* Portal buttons */
+        .portal-links {
+            display: flex;
+            gap: 10px;
+            margin-top: 14px;
         }
-
         .btn-portal {
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 6px;
-            padding: 10px 20px;
-            border-radius: 8px;
+            padding: 10px 16px;
+            border-radius: 50px;
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: .82rem;
             text-decoration: none;
-            transition: all 0.3s ease;
+            transition: var(--eu-transition);
             flex: 1;
-        }
-
-        .btn-portal-student {
-            background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
-            color: white;
             border: none;
         }
-
-        .btn-portal-student:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-            color: white;
+        .btn-portal-apply {
+            background: var(--eu-accent);
+            color: var(--eu-primary);
         }
-
+        .btn-portal-apply:hover {
+            background: var(--eu-accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 14px rgba(232,163,23,.4);
+            color: var(--eu-primary);
+        }
         .btn-portal-website {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
+            background: var(--eu-primary);
+            color: #fff;
         }
-
         .btn-portal-website:hover {
+            background: var(--eu-secondary);
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-            color: white;
+            box-shadow: 0 4px 14px rgba(13,27,74,.3);
+            color: #fff;
         }
 
+        /* Alerts */
         .alert {
             border-radius: 10px;
             border: none;
-            padding: 14px 18px;
-            font-size: 0.9rem;
+            padding: 12px 16px;
+            font-size: .88rem;
             display: flex;
             align-items: center;
             gap: 10px;
         }
-
         .alert-danger {
-            background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+            background: linear-gradient(135deg, #fef2f2, #fecaca);
             color: #991b1b;
         }
-
         .alert-warning {
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            background: linear-gradient(135deg, #fffbeb, #fef3c7);
             color: #92400e;
         }
 
-        .portal-links {
-            display: flex;
-            gap: 10px;
-            margin-top: 16px;
+        /* Back to home */
+        .back-home {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: rgba(255,255,255,.9);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: .88rem;
+            margin-bottom: 1rem;
+            padding: 8px 18px;
+            border-radius: 50px;
+            background: rgba(13,27,74,.5);
+            backdrop-filter: blur(8px);
+            transition: var(--eu-transition);
+        }
+        .back-home:hover {
+            background: rgba(13,27,74,.7);
+            color: var(--eu-accent);
         }
 
         /* Responsive */
         @media (max-width: 480px) {
-            .login-body {
-                padding: 24px 20px;
-            }
-
-            .login-header {
-                padding: 24px 20px;
-            }
-
-            .login-logo {
-                width: 80px;
-                height: 80px;
-            }
-
-            .login-header h4 {
-                font-size: 1.2rem;
-            }
-
-            .portal-links {
-                flex-direction: column;
-            }
+            .login-body { padding: 1.5rem; }
+            .login-header { padding: 1.5rem; }
+            .login-logo { width: 65px; height: 65px; }
+            .login-header h4 { font-size: 1.1rem; }
+            .portal-links { flex-direction: column; }
         }
     </style>
 </head>
 
 <body>
-    <div class="login-container">
+    <!-- Background Image -->
+    <div class="login-bg">
+        <img src="pictures/Slider-1.jpg" alt="Exploits University Campus">
+    </div>
+
+    <div class="login-wrapper">
+        <a href="index.php" class="back-home"><i class="bi bi-arrow-left"></i> Back to Home</a>
+
         <div class="login-card">
             <div class="login-header">
-                <img src="assets/img/logo.png" alt="VLE Logo" class="login-logo">
-                <h4>Virtual Learning Environment</h4>
-                <p>Exploits University of Malawi</p>
+                <img src="pictures/Logo.png" alt="Exploits University Logo" class="login-logo">
+                <h4>Exploits University Malawi</h4>
+                <p>Virtual Learning Environment</p>
             </div>
 
             <div class="login-body">
@@ -368,7 +348,7 @@ if (isset($_SESSION['login_error'])) {
                                placeholder="Enter your password" required>
                     </div>
 
-                    <button type="submit" class="btn btn-login">
+                    <button type="submit" class="btn btn-login-main">
                         <i class="bi bi-box-arrow-in-right me-2"></i> Sign In
                     </button>
                 </form>
@@ -378,11 +358,11 @@ if (isset($_SESSION['login_error'])) {
                         <i class="bi bi-key me-1"></i> Forgot Password?
                     </a>
                     <div class="portal-links">
-                        <a href="https://unisoft.idias.mw/" class="btn-portal btn-portal-student" target="_blank" rel="noopener">
-                            <i class="bi bi-mortarboard"></i> Student Portal
+                        <a href="https://apply.exploitsonline.com" class="btn-portal btn-portal-apply" target="_blank" rel="noopener">
+                            <i class="bi bi-pencil-square"></i> Apply Now
                         </a>
                         <a href="https://www.exploitsmw.com" class="btn-portal btn-portal-website" target="_blank" rel="noopener">
-                            <i class="bi bi-globe"></i> Visit Us
+                            <i class="bi bi-globe"></i> Visit Website
                         </a>
                     </div>
                 </div>
