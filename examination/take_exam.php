@@ -185,7 +185,7 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
         .question-nav-btn.answered { background: #198754; color: #fff; border-color: #198754; }
         .question-card { display: none; }
         .question-card.active { display: block; }
-        .camera-feed { position: fixed; bottom: 15px; right: 15px; width: 180px; height: 135px; border-radius: 10px; overflow: hidden; border: 3px solid var(--vle-primary); z-index: 1060; box-shadow: var(--vle-shadow-lg); }
+        .camera-feed { position: fixed; bottom: 15px; left: 15px; width: 180px; height: 135px; border-radius: 10px; overflow: hidden; border: 3px solid var(--vle-primary); z-index: 1060; box-shadow: var(--vle-shadow-lg); }
         .camera-feed video { width: 100%; height: 100%; object-fit: cover; }
         .camera-feed .camera-status { position: absolute; top: 5px; left: 5px; font-size: 0.65rem; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 6px; border-radius: 4px; }
         .camera-feed .recording-dot { display: inline-block; width: 8px; height: 8px; background: #dc3545; border-radius: 50%; animation: blink-dot 1s infinite; margin-right: 4px; }
