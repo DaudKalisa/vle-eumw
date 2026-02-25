@@ -13,12 +13,14 @@ if (isset($_GET['download_template'])) {
     
     $output = fopen('php://output', 'w');
     
-    // Header row
+    // Header row - Module Code is optional (will be auto-generated if missing)
     fputcsv($output, ['Module Code', 'Module Name', 'Program of Study', 'Year of Study', 'Semester', 'Credits', 'Description']);
     
-    // Sample rows
+    // Sample rows with various formats that work
     fputcsv($output, ['CS101', 'Introduction to Computer Science', 'Bachelors of Computer Science', '1', 'One', '3', 'Introduction to programming concepts']);
-    fputcsv($output, ['CS102', 'Programming Fundamentals', 'Bachelors of Computer Science', '1', 'Two', '4', 'Fundamentals of programming']);
+    fputcsv($output, ['BBA4102', 'Corporate Strategy and Planning', 'Bachelor of Business Administration', '4', 'One', '4', 'Corporate Strategy and Planning']);
+    fputcsv($output, ['CS201', 'Data Structures', 'Bachelors of Computer Science', 'Year 2', 'Sem One', '4', 'Data structures and algorithms']);
+    fputcsv($output, ['', 'Web Development', 'Bachelors of Computer Science', '3', '2', '3', 'Module code will be auto-generated']);
     
     fclose($output);
     exit();
@@ -61,6 +63,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $semester_raw = trim($data[4]);
                             $credits = (int)$data[5];
                             $description = isset($data[6]) ? trim($data[6]) : '';
+                            
+                            // Auto-generate module code if empty
+                            if (empty($module_code)) {
+                                $program_words = preg_split('/\s+/', preg_replace('/[^a-zA-Z\s]/', '', $program_of_study));
+                                $acronym = '';
+                                foreach ($program_words as $word) {
+                                    if (strlen($word) > 2) {
+                                        $acronym .= strtoupper($word[0]);
+                                    }
+                                }
+                                if (empty($acronym)) $acronym = 'MOD';
+                                $module_code = $acronym . rand(1000, 9999);
+                            }
                         } else {
                             // No Module Code column - auto-generate from module name
                             if (count($data) < 5) {
