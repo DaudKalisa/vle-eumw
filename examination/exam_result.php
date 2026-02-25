@@ -88,7 +88,15 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
                 <h2 class="vle-page-title"><i class="bi bi-trophy me-2"></i>Examination Result</h2>
                 <p class="text-muted mb-0"><?= htmlspecialchars($result['exam_name']) ?></p>
             </div>
-            <a href="exams.php?tab=completed" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+            <div class="d-flex gap-2">
+                <a href="download_report.php?result_id=<?= $result_id ?>&type=single" target="_blank" class="btn btn-primary">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>Download Report
+                </a>
+                <a href="download_report.php?type=transcript" target="_blank" class="btn btn-outline-success">
+                    <i class="bi bi-mortarboard me-1"></i>Full Transcript
+                </a>
+                <a href="exams.php?tab=completed" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+            </div>
         </div>
 
         <!-- Result Card -->

@@ -30,6 +30,7 @@ $nav_items = [
     ['url' => 'question_bank.php', 'icon' => 'bi-collection', 'title' => 'Questions'],
     ['url' => 'exam_tokens.php', 'icon' => 'bi-key', 'title' => 'Tokens'],
     ['url' => 'exam_results.php', 'icon' => 'bi-graph-up', 'title' => 'Results'],
+    ['url' => 'exam_reports.php', 'icon' => 'bi-file-earmark-bar-graph', 'title' => 'Reports'],
     ['url' => 'monitoring.php', 'icon' => 'bi-camera-video', 'title' => 'Monitoring'],
 ];
 
