@@ -330,7 +330,7 @@ header("X-XSS-Protection: 1; mode=block");
             <div class="d-none d-lg-flex align-items-center gap-1">
                 <a href="index.php" class="nav-link-custom">Home</a>
                 <a href="programmes.php" class="nav-link-custom active-link">Programmes</a>
-                <a href="index.php#campus" class="nav-link-custom">Campus</a>
+                <a href="campus.php" class="nav-link-custom">Campus</a>
                 <a href="https://exploitsmw.com" target="_blank" class="nav-link-custom">Main Website</a>
                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn btn-login ms-2" style="background:linear-gradient(135deg,#10b981,#059669);"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
                 <a href="login.php" class="btn btn-login ms-1"><i class="bi bi-box-arrow-in-right me-1"></i> Login</a>
@@ -348,7 +348,7 @@ header("X-XSS-Protection: 1; mode=block");
         <div class="offcanvas-body">
             <a href="index.php" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-house me-2"></i>Home</a>
             <a href="programmes.php" class="d-block py-2 text-decoration-none fw-500" style="color:var(--eu-secondary);"><i class="bi bi-book me-2"></i>Programmes</a>
-            <a href="index.php#campus" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-building me-2"></i>Campus</a>
+            <a href="campus.php" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-building me-2"></i>Campus</a>
             <a href="https://exploitsmw.com" target="_blank" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-globe me-2"></i>Main Website</a>
             <hr>
             <a href="https://apply.exploitsonline.com" target="_blank" class="btn w-100 mb-2" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:50px;font-weight:600;padding:.55rem 1.8rem;"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>

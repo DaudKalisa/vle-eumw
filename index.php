@@ -448,7 +448,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             <div class="d-none d-lg-flex align-items-center gap-1">
                 <a href="#about" class="nav-link-custom">About</a>
                 <a href="programmes.php" class="nav-link-custom">Programmes</a>
-                <a href="#campus" class="nav-link-custom">Campus</a>
+                <a href="campus.php" class="nav-link-custom">Campus</a>
                 <a href="https://exploitsmw.com" target="_blank" class="nav-link-custom">Main Website</a>
                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn btn-login ms-2" style="background:linear-gradient(135deg,#10b981,#059669);"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
                 <a href="login.php" class="btn btn-login ms-1"><i class="bi bi-box-arrow-in-right me-1"></i> Login</a>
@@ -466,7 +466,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         <div class="offcanvas-body">
             <a href="#about" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-info-circle me-2"></i>About</a>
             <a href="programmes.php" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-book me-2"></i>Programmes</a>
-            <a href="#campus" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-building me-2"></i>Campus</a>
+            <a href="campus.php" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-building me-2"></i>Campus</a>
             <a href="https://exploitsmw.com" target="_blank" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-globe me-2"></i>Main Website</a>
             <hr>
             <a href="https://apply.exploitsonline.com" target="_blank" class="btn w-100 mb-2" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:50px;font-weight:600;padding:.55rem 1.8rem;"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
@@ -694,23 +694,32 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             </div>
             <div class="row g-4">
                 <div class="col-lg-4 col-md-6">
-                    <div class="eu-campus-card">
-                        <div style="overflow:hidden"><img src="pictures/Slider-1.jpg" alt="Main Campus"></div>
-                        <div class="campus-overlay"><h6>Main Campus</h6><small>Lilongwe, Malawi</small></div>
-                    </div>
+                    <a href="campus.php#blantyre" class="text-decoration-none">
+                        <div class="eu-campus-card">
+                            <div style="overflow:hidden"><img src="pictures/Slider-4.jpg" alt="Blantyre Campus"></div>
+                            <div class="campus-overlay"><h6>Blantyre Campus <i class="bi bi-arrow-right-short"></i></h6><small>Flagship — Commercial City</small></div>
+                        </div>
+                    </a>
                 </div>
                 <div class="col-lg-4 col-md-6">
-                    <div class="eu-campus-card">
-                        <div style="overflow:hidden"><img src="pictures/Slider-4.jpg" alt="Learning Centre"></div>
-                        <div class="campus-overlay"><h6>Learning Centre</h6><small>Blantyre, Malawi</small></div>
-                    </div>
+                    <a href="campus.php#lilongwe" class="text-decoration-none">
+                        <div class="eu-campus-card">
+                            <div style="overflow:hidden"><img src="pictures/Slider-1.jpg" alt="Lilongwe Campus"></div>
+                            <div class="campus-overlay"><h6>Lilongwe Campus <i class="bi bi-arrow-right-short"></i></h6><small>Capital City</small></div>
+                        </div>
+                    </a>
                 </div>
                 <div class="col-lg-4 col-md-6">
-                    <div class="eu-campus-card">
-                        <div style="overflow:hidden"><img src="pictures/Slider-3.jpg" alt="Student Hub"></div>
-                        <div class="campus-overlay"><h6>Northern Campus</h6><small>Mzuzu, Malawi</small></div>
-                    </div>
+                    <a href="campus.php#mzuzu" class="text-decoration-none">
+                        <div class="eu-campus-card">
+                            <div style="overflow:hidden"><img src="pictures/Slider-3.jpg" alt="Mzuzu Campus"></div>
+                            <div class="campus-overlay"><h6>Mzuzu Campus <i class="bi bi-arrow-right-short"></i></h6><small>Northern Region</small></div>
+                        </div>
+                    </a>
                 </div>
+            </div>
+            <div class="text-center mt-4">
+                <a href="campus.php" class="btn btn-login"><i class="bi bi-building me-1"></i> View All Campuses &amp; Bank Details</a>
             </div>
         </div>
     </section>
