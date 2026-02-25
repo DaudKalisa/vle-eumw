@@ -8,19 +8,42 @@ $conn = getDbConnection();
 
 // Handle template download
 if (isset($_GET['download_template'])) {
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="modules_template.csv"');
+    // Get programs from database for the template
+    $template_programs = [];
+    $prog_result = $conn->query("SELECT department_name FROM departments ORDER BY department_name");
+    while ($row = $prog_result->fetch_assoc()) {
+        $template_programs[] = $row['department_name'];
+    }
+    
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="modules_upload_template.csv"');
+    // UTF-8 BOM for Excel compatibility
+    echo chr(0xEF) . chr(0xBB) . chr(0xBF);
     
     $output = fopen('php://output', 'w');
     
-    // Header row - Module Code is optional (will be auto-generated if missing)
+    // Header row
     fputcsv($output, ['Module Code', 'Module Name', 'Program of Study', 'Year of Study', 'Semester', 'Credits', 'Description']);
     
-    // Sample rows with various formats that work
-    fputcsv($output, ['CS101', 'Introduction to Computer Science', 'Bachelors of Computer Science', '1', 'One', '3', 'Introduction to programming concepts']);
-    fputcsv($output, ['BBA4102', 'Corporate Strategy and Planning', 'Bachelor of Business Administration', '4', 'One', '4', 'Corporate Strategy and Planning']);
-    fputcsv($output, ['CS201', 'Data Structures', 'Bachelors of Computer Science', 'Year 2', 'Sem One', '4', 'Data structures and algorithms']);
-    fputcsv($output, ['', 'Web Development', 'Bachelors of Computer Science', '3', '2', '3', 'Module code will be auto-generated']);
+    // Instructions row (will be skipped during upload)
+    fputcsv($output, ['--- INSTRUCTIONS ---', '--- FILL IN YOUR MODULES BELOW (delete these instruction rows first) ---', '', '', '', '', '']);
+    fputcsv($output, ['Required (or leave blank to auto-generate)', 'Required', 'Required - Must match a program in the system', 'Required: 1, 2, 3, or 4', 'Required: One or Two', 'Required: number', 'Optional']);
+    fputcsv($output, ['', '', '', '', '', '', '']);
+    
+    // Sample rows showing proper format
+    $sample_program = !empty($template_programs) ? $template_programs[0] : 'Information Technology';
+    fputcsv($output, ['IT101', 'Introduction to Computing', $sample_program, '1', 'One', '3', 'Fundamentals of computer systems']);
+    fputcsv($output, ['IT102', 'Programming Fundamentals', $sample_program, '1', 'Two', '4', 'Basic programming concepts']);
+    if (count($template_programs) > 1) {
+        fputcsv($output, ['BA201', 'Organizational Behavior', $template_programs[1], '2', 'One', '3', 'Study of organizational behaviour']);
+    }
+    
+    // Add a programs reference sheet
+    fputcsv($output, ['', '', '', '', '', '', '']);
+    fputcsv($output, ['--- AVAILABLE PROGRAMS ---', '', '', '', '', '', '']);
+    foreach ($template_programs as $prog) {
+        fputcsv($output, ['', '', $prog, '', '', '', '']);
+    }
     
     fclose($output);
     exit();
@@ -41,175 +64,205 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors = [];
                 
                 if (($handle = fopen($file_tmp, 'r')) !== false) {
-                    // Try to detect delimiter (comma or tab)
+                    // Strip UTF-8 BOM if present
+                    $bom = fread($handle, 3);
+                    if ($bom !== chr(0xEF) . chr(0xBB) . chr(0xBF)) {
+                        rewind($handle);
+                    }
+                    
+                    // Detect delimiter
                     $first_line = fgets($handle);
                     rewind($handle);
+                    // Re-skip BOM
+                    $bom = fread($handle, 3);
+                    if ($bom !== chr(0xEF) . chr(0xBB) . chr(0xBF)) rewind($handle);
+                    
                     $delimiter = ',';
                     if (substr_count($first_line, "\t") > substr_count($first_line, ",")) {
                         $delimiter = "\t";
                     }
                     
-                    // Read header row to detect column mapping
+                    // Read header row
                     $header = fgetcsv($handle, 0, $delimiter);
                     if (!$header) {
                         $error = "Could not read CSV header row.";
                     } else {
-                    // Clean header values
-                    $header_clean = array_map(function($h) { 
-                        return strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', $h))); 
-                    }, $header);
-                    
-                    // Map columns by header name (flexible matching)
-                    $col_map = [
-                        'code' => -1,
-                        'name' => -1,
-                        'program' => -1,
-                        'year' => -1,
-                        'semester' => -1,
-                        'credits' => -1,
-                        'description' => -1,
-                    ];
-                    
-                    foreach ($header_clean as $i => $h) {
-                        if (strpos($h, 'code') !== false && strpos($h, 'module') !== false) {
-                            $col_map['code'] = $i;
-                        } elseif (strpos($h, 'module') !== false && (strpos($h, 'name') !== false || $col_map['name'] === -1)) {
-                            $col_map['name'] = $i;
-                        } elseif (strpos($h, 'program') !== false || strpos($h, 'programme') !== false) {
-                            $col_map['program'] = $i;
-                        } elseif (strpos($h, 'year') !== false) {
-                            $col_map['year'] = $i;
-                        } elseif (strpos($h, 'sem') !== false) {
-                            $col_map['semester'] = $i;
-                        } elseif (strpos($h, 'credit') !== false) {
-                            $col_map['credits'] = $i;
-                        } elseif (strpos($h, 'desc') !== false) {
-                            $col_map['description'] = $i;
-                        }
-                    }
-                    
-                    // Fallback: If name column wasn't matched but we have headers, try first column
-                    if ($col_map['name'] === -1 && count($header_clean) >= 5) {
-                        // Assume order: name, program, year, semester, credits, description
-                        $offset = 0;
-                        if ($col_map['code'] !== -1) $offset = 1;
-                        $col_map['name'] = $offset;
-                        $col_map['program'] = $offset + 1;
-                        $col_map['year'] = $offset + 2;
-                        $col_map['semester'] = $offset + 3;
-                        $col_map['credits'] = $offset + 4;
-                        if (isset($header_clean[$offset + 5])) $col_map['description'] = $offset + 5;
-                    }
-                    
-                    while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
-                        // Skip empty rows
-                        if (empty(array_filter($data, function($v) { return trim($v) !== ''; }))) {
-                            continue;
+                        // Clean header values
+                        $header_clean = array_map(function($h) { 
+                            return strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', $h))); 
+                        }, $header);
+                        
+                        // Smart column mapping by header name
+                        $col_map = ['code' => -1, 'name' => -1, 'program' => -1, 'year' => -1, 'semester' => -1, 'credits' => -1, 'description' => -1];
+                        
+                        foreach ($header_clean as $i => $h) {
+                            if ((strpos($h, 'code') !== false && strpos($h, 'module') !== false) || $h === 'module code' || $h === 'code') {
+                                $col_map['code'] = $i;
+                            } elseif (strpos($h, 'name') !== false || (strpos($h, 'module') !== false && $col_map['name'] === -1)) {
+                                if ($col_map['name'] === -1) $col_map['name'] = $i;
+                            } elseif (strpos($h, 'program') !== false || strpos($h, 'programme') !== false || strpos($h, 'course') !== false) {
+                                $col_map['program'] = $i;
+                            } elseif (strpos($h, 'year') !== false) {
+                                $col_map['year'] = $i;
+                            } elseif (strpos($h, 'sem') !== false) {
+                                $col_map['semester'] = $i;
+                            } elseif (strpos($h, 'credit') !== false) {
+                                $col_map['credits'] = $i;
+                            } elseif (strpos($h, 'desc') !== false) {
+                                $col_map['description'] = $i;
+                            }
                         }
                         
-                        // Extract values using column map, clean trailing commas
-                        $clean = function($idx) use ($data) {
-                            if ($idx < 0 || !isset($data[$idx])) return '';
-                            return rtrim(trim($data[$idx]), ',');
-                        };
+                        // Fallback: positional mapping if headers not recognized
+                        if ($col_map['name'] === -1 && count($header_clean) >= 5) {
+                            $offset = ($col_map['code'] !== -1) ? 1 : 0;
+                            $col_map['name'] = $offset;
+                            $col_map['program'] = $offset + 1;
+                            $col_map['year'] = $offset + 2;
+                            $col_map['semester'] = $offset + 3;
+                            $col_map['credits'] = $offset + 4;
+                            if (isset($header_clean[$offset + 5])) $col_map['description'] = $offset + 5;
+                        }
                         
-                        $module_code = strtoupper($clean($col_map['code']));
-                        $module_name = $clean($col_map['name']);
-                        $program_of_study = $clean($col_map['program']);
-                        $year_raw = $clean($col_map['year']);
-                        $semester_raw = $clean($col_map['semester']);
-                        $credits = (int)$clean($col_map['credits']);
-                        $description = $clean($col_map['description']);
+                        $row_num = 1;
+                        $duplicate_count = 0;
                         
-                        // Auto-generate module code if empty or not provided
-                        if (empty($module_code)) {
-                            $program_words = preg_split('/\s+/', preg_replace('/[^a-zA-Z\s]/', '', $program_of_study));
-                            $acronym = '';
-                            foreach ($program_words as $word) {
-                                if (strlen($word) > 2) {
-                                    $acronym .= strtoupper($word[0]);
+                        while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
+                            $row_num++;
+                            
+                            // Skip empty rows
+                            $non_empty = array_filter($data, function($v) { return trim($v) !== ''; });
+                            if (empty($non_empty)) continue;
+                            
+                            // Skip instruction/reference rows
+                            $first_val = strtolower(trim($data[0] ?? ''));
+                            if (strpos($first_val, '---') !== false || strpos($first_val, 'instruction') !== false || 
+                                strpos($first_val, 'required') !== false || strpos($first_val, 'available program') !== false) {
+                                continue;
+                            }
+                            
+                            // Extract values using column map
+                            $clean = function($idx) use ($data) {
+                                if ($idx < 0 || !isset($data[$idx])) return '';
+                                return rtrim(trim($data[$idx]), ',');
+                            };
+                            
+                            $module_code = strtoupper($clean($col_map['code']));
+                            $module_name = $clean($col_map['name']);
+                            $program_of_study = $clean($col_map['program']);
+                            $year_raw = $clean($col_map['year']);
+                            $semester_raw = $clean($col_map['semester']);
+                            $credits = (int)$clean($col_map['credits']);
+                            $description = $clean($col_map['description']);
+                            
+                            // Skip rows with no module name (reference rows, etc.)
+                            if (empty($module_name) || strtolower($module_name) === 'required') continue;
+                            
+                            // Skip rows where module name looks like instructions
+                            if (strpos(strtolower($module_name), 'fill in') !== false || strpos(strtolower($module_name), 'instruction') !== false) continue;
+                            
+                            // Auto-generate module code if empty
+                            if (empty($module_code)) {
+                                $prog_words = preg_split('/\s+/', preg_replace('/[^a-zA-Z\s]/', '', $program_of_study));
+                                $acr = '';
+                                foreach ($prog_words as $w) {
+                                    if (strlen($w) > 2) $acr .= strtoupper($w[0]);
+                                }
+                                if (empty($acr)) $acr = 'MOD';
+                                // Use year + 3-digit sequence for uniqueness
+                                $module_code = $acr . $year_raw . sprintf('%03d', $row_num);
+                            }
+                            
+                            // Parse year - flexible
+                            $year_of_study = 0;
+                            $year_clean = strtolower(trim($year_raw));
+                            if (is_numeric($year_clean)) {
+                                $year_of_study = (int)$year_clean;
+                            } else {
+                                $year_table = [
+                                    'first' => 1, '1st' => 1, 'one' => 1, 'year 1' => 1, 'year1' => 1,
+                                    'second' => 2, '2nd' => 2, 'two' => 2, 'year 2' => 2, 'year2' => 2,
+                                    'third' => 3, '3rd' => 3, 'three' => 3, 'year 3' => 3, 'year3' => 3,
+                                    'fourth' => 4, '4th' => 4, 'four' => 4, 'year 4' => 4, 'year4' => 4,
+                                ];
+                                if (isset($year_table[$year_clean])) {
+                                    $year_of_study = $year_table[$year_clean];
+                                } elseif (preg_match('/(\d)/', $year_raw, $m)) {
+                                    $year_of_study = (int)$m[1];
                                 }
                             }
-                            if (empty($acronym)) $acronym = 'MOD';
-                            $module_code = $acronym . rand(1000, 9999);
-                        }
-                        
-                        // Parse year of study - handle various formats
-                        $year_of_study = 0;
-                        if (is_numeric($year_raw)) {
-                            $year_of_study = (int)$year_raw;
-                        } else {
-                            // Handle text formats like "First", "1st", "Year 1", etc.
-                            $year_map = [
-                                'first' => 1, '1st' => 1, 'one' => 1, 'year 1' => 1, 'year1' => 1, 'i' => 1,
-                                'second' => 2, '2nd' => 2, 'two' => 2, 'year 2' => 2, 'year2' => 2, 'ii' => 2,
-                                'third' => 3, '3rd' => 3, 'three' => 3, 'year 3' => 3, 'year3' => 3, 'iii' => 3,
-                                'fourth' => 4, '4th' => 4, 'four' => 4, 'year 4' => 4, 'year4' => 4, 'iv' => 4,
-                            ];
-                            $year_lower = strtolower($year_raw);
-                            if (isset($year_map[$year_lower])) {
-                                $year_of_study = $year_map[$year_lower];
-                            } elseif (preg_match('/(\d)/', $year_raw, $matches)) {
-                                // Extract first digit found
-                                $year_of_study = (int)$matches[1];
+                            
+                            // Parse semester - flexible
+                            $semester = '';
+                            $sem_clean = strtolower(trim($semester_raw));
+                            if (strpos($sem_clean, 'one') !== false || strpos($sem_clean, '1') !== false || 
+                                $sem_clean === 'first' || $sem_clean === '1st' || $sem_clean === 'i') {
+                                $semester = 'One';
+                            } elseif (strpos($sem_clean, 'two') !== false || strpos($sem_clean, '2') !== false || 
+                                     $sem_clean === 'second' || $sem_clean === '2nd' || $sem_clean === 'ii') {
+                                $semester = 'Two';
+                            }
+                            
+                            // Validate required fields
+                            if (empty($module_name) || empty($program_of_study)) {
+                                $errors[] = "Row $row_num: Missing module name or program";
+                                $skipped++;
+                                continue;
+                            }
+                            
+                            if (!in_array($year_of_study, [1, 2, 3, 4])) {
+                                $errors[] = "Row $row_num: Invalid year '$year_raw' for '$module_name' (use 1, 2, 3, or 4)";
+                                $skipped++;
+                                continue;
+                            }
+                            
+                            if (!in_array($semester, ['One', 'Two'])) {
+                                $errors[] = "Row $row_num: Invalid semester '$semester_raw' for '$module_name' (use One or Two)";
+                                $skipped++;
+                                continue;
+                            }
+                            
+                            if ($credits < 1) $credits = 3; // Default credits
+                            
+                            // Check for duplicate before insert
+                            $check = $conn->prepare("SELECT module_id FROM modules WHERE module_code = ? OR (module_name = ? AND program_of_study = ? AND year_of_study = ? AND semester = ?)");
+                            $check->bind_param("sssis", $module_code, $module_name, $program_of_study, $year_of_study, $semester);
+                            $check->execute();
+                            if ($check->get_result()->num_rows > 0) {
+                                $duplicate_count++;
+                                $skipped++;
+                                continue;
+                            }
+                            
+                            // Insert
+                            $stmt = $conn->prepare("INSERT INTO modules (module_code, module_name, program_of_study, year_of_study, semester, credits, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                            $stmt->bind_param("sssisss", $module_code, $module_name, $program_of_study, $year_of_study, $semester, $credits, $description);
+                            
+                            if ($stmt->execute()) {
+                                $uploaded++;
+                            } else {
+                                $skipped++;
+                                $errors[] = "Row $row_num: Failed to add '$module_name'";
                             }
                         }
                         
-                        // Parse semester - handle various formats
-                        $semester = '';
-                        $semester_lower = strtolower(trim($semester_raw));
-                        // Check for semester one patterns
-                        if (in_array($semester_lower, ['one', '1', 'first', '1st', 'i', 'sem 1', 'semester 1', 'sem1', 'sem one', 'semester one'])) {
-                            $semester = 'One';
-                        } elseif (in_array($semester_lower, ['two', '2', 'second', '2nd', 'ii', 'sem 2', 'semester 2', 'sem2', 'sem two', 'semester two'])) {
-                            $semester = 'Two';
-                        } elseif (in_array($semester_raw, ['One', 'Two'])) {
-                            $semester = $semester_raw;
-                        } elseif (strpos($semester_lower, 'one') !== false || strpos($semester_lower, '1') !== false) {
-                            $semester = 'One';
-                        } elseif (strpos($semester_lower, 'two') !== false || strpos($semester_lower, '2') !== false) {
-                            $semester = 'Two';
-                        }
+                        fclose($handle);
                         
-                        // Validate
-                        if (empty($module_code) || empty($module_name) || empty($program_of_study)) {
-                            $skipped++;
-                            continue;
+                        // Build result message
+                        $success = "<strong>Upload complete!</strong> $uploaded module(s) added successfully.";
+                        if ($skipped > 0) {
+                            $skip_detail = [];
+                            if ($duplicate_count > 0) $skip_detail[] = "$duplicate_count duplicate(s)";
+                            $other_skipped = $skipped - $duplicate_count;
+                            if ($other_skipped > 0) $skip_detail[] = "$other_skipped with errors";
+                            $success .= " $skipped skipped (" . implode(', ', $skip_detail) . ").";
                         }
-                        
-                        if (!in_array($year_of_study, [1, 2, 3, 4])) {
-                            $errors[] = "Invalid year for module $module_code (got '$year_raw', must be 1-4)";
-                            $skipped++;
-                            continue;
+                        if (!empty($errors)) {
+                            $error = '<strong>Details:</strong><br>' . implode('<br>', array_slice($errors, 0, 10));
+                            if (count($errors) > 10) {
+                                $error .= '<br>... and ' . (count($errors) - 10) . ' more errors.';
+                            }
                         }
-                        
-                        if (!in_array($semester, ['One', 'Two'])) {
-                            $errors[] = "Invalid semester for module $module_code (got '$semester_raw', must be 'One', 'Two', '1', or '2')";
-                            $skipped++;
-                            continue;
-                        }
-                        
-                        // Insert
-                        $stmt = $conn->prepare("INSERT INTO modules (module_code, module_name, program_of_study, year_of_study, semester, credits, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->bind_param("sssisss", $module_code, $module_name, $program_of_study, $year_of_study, $semester, $credits, $description);
-                        
-                        if ($stmt->execute()) {
-                            $uploaded++;
-                        } else {
-                            $skipped++;
-                            $errors[] = "Failed to add module $module_code (might already exist)";
-                        }
-                    }
-                    
-                    fclose($handle);
-                    
-                    $success = "Upload complete! $uploaded module(s) added, $skipped skipped.";
-                    if (!empty($errors)) {
-                        $error = implode('<br>', array_slice($errors, 0, 5));
-                        if (count($errors) > 5) {
-                            $error .= '<br>... and ' . (count($errors) - 5) . ' more errors.';
-                        }
-                    }
                     } // end header check
                 } else {
                     $error = "Failed to read CSV file.";
@@ -406,36 +459,116 @@ $unique_programs = count(array_unique(array_column($modules, 'program_of_study')
             </div>
         </div>
 
-        <!-- Upload from Template Section -->
-        <div class="card vle-card mb-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Bulk Upload Modules</h5>
+        <!-- Bulk Upload Section - Redesigned -->
+        <div class="card vle-card mb-4 border-0 shadow">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-2"></i>Bulk Upload Modules</h5>
+                <span class="badge bg-light text-success">CSV Import</span>
             </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
-                        <form method="POST" enctype="multipart/form-data" class="d-flex align-items-end gap-2">
-                            <div class="flex-grow-1">
-                                <label for="template_file" class="form-label">Upload CSV File</label>
-                                <input type="file" class="form-control" id="template_file" name="template_file" 
-                                       accept=".csv" required>
-                                <small class="text-muted">Upload a CSV file with columns: Module Code, Module Name, Program of Study, Year of Study, Semester, Credits, Description</small>
+            <div class="card-body p-4">
+                <div class="row g-4">
+                    <!-- Step 1: Download Template -->
+                    <div class="col-lg-4">
+                        <div class="border rounded-3 p-3 h-100 bg-light">
+                            <div class="d-flex align-items-center mb-3">
+                                <span class="badge bg-success rounded-circle me-2" style="width:28px;height:28px;line-height:18px;font-size:14px;">1</span>
+                                <h6 class="mb-0 fw-bold">Download Template</h6>
                             </div>
-                            <div>
-                                <button type="submit" name="upload_template" class="btn btn-success">
-                                    <i class="bi bi-upload"></i> Upload
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                    <div class="col-md-4 text-end">
-                        <label class="form-label">Need a template?</label>
-                        <div>
-                            <a href="?download_template=1" class="btn btn-outline-success">
-                                <i class="bi bi-download"></i> Download CSV Template
+                            <p class="text-muted small mb-3">Get the CSV template with all available programs pre-filled. Fill in your modules and upload.</p>
+                            <a href="?download_template=1" class="btn btn-success w-100">
+                                <i class="bi bi-download me-1"></i> Download Template
                             </a>
                         </div>
-                        <small class="text-muted">Download a sample CSV file with example data</small>
+                    </div>
+                    
+                    <!-- Step 2: Fill Template -->
+                    <div class="col-lg-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="d-flex align-items-center mb-3">
+                                <span class="badge bg-primary rounded-circle me-2" style="width:28px;height:28px;line-height:18px;font-size:14px;">2</span>
+                                <h6 class="mb-0 fw-bold">Fill Your Modules</h6>
+                            </div>
+                            <div class="small">
+                                <table class="table table-sm table-bordered mb-2" style="font-size:11px;">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Column</th>
+                                            <th>Format</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td>Module Code</td><td class="text-muted">Optional (auto-generated)</td></tr>
+                                        <tr><td>Module Name</td><td><strong>Required</strong></td></tr>
+                                        <tr><td>Program</td><td><strong>Required</strong> - exact name</td></tr>
+                                        <tr><td>Year</td><td><code>1</code>, <code>2</code>, <code>3</code>, or <code>4</code></td></tr>
+                                        <tr><td>Semester</td><td><code>One</code> or <code>Two</code></td></tr>
+                                        <tr><td>Credits</td><td>Number (default: 3)</td></tr>
+                                        <tr><td>Description</td><td class="text-muted">Optional</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 3: Upload -->
+                    <div class="col-lg-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="d-flex align-items-center mb-3">
+                                <span class="badge bg-warning text-dark rounded-circle me-2" style="width:28px;height:28px;line-height:18px;font-size:14px;">3</span>
+                                <h6 class="mb-0 fw-bold">Upload CSV File</h6>
+                            </div>
+                            <form method="POST" enctype="multipart/form-data">
+                                <div class="mb-3">
+                                    <label for="template_file" class="form-label small text-muted">Select your filled CSV file</label>
+                                    <input type="file" class="form-control" id="template_file" name="template_file" accept=".csv" required>
+                                </div>
+                                <button type="submit" name="upload_template" class="btn btn-warning w-100 fw-bold">
+                                    <i class="bi bi-cloud-arrow-up me-1"></i> Upload & Import
+                                </button>
+                                <div class="mt-2">
+                                    <small class="text-muted"><i class="bi bi-info-circle"></i> Duplicates are auto-skipped. Flexible formats accepted.</small>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quick Format Reference (collapsible) -->
+                <div class="mt-3">
+                    <a class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" href="#formatHelp" role="button">
+                        <i class="bi bi-question-circle me-1"></i> Accepted Format Examples
+                    </a>
+                    <div class="collapse mt-2" id="formatHelp">
+                        <div class="card card-body bg-light small">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <strong>Year of Study:</strong>
+                                    <ul class="mb-1">
+                                        <li><code>1</code>, <code>2</code>, <code>3</code>, <code>4</code></li>
+                                        <li><code>Year 1</code>, <code>Year 2</code>, etc.</li>
+                                        <li><code>First</code>, <code>Second</code>, etc.</li>
+                                        <li><code>1st</code>, <code>2nd</code>, etc.</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Semester:</strong>
+                                    <ul class="mb-1">
+                                        <li><code>One</code> or <code>Two</code></li>
+                                        <li><code>1</code> or <code>2</code></li>
+                                        <li><code>Sem One</code>, <code>Sem Two</code></li>
+                                        <li><code>Semester 1</code>, <code>Semester 2</code></li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Module Code:</strong>
+                                    <ul class="mb-1">
+                                        <li>Enter your own: <code>BBA4102</code></li>
+                                        <li>Or leave blank to auto-generate</li>
+                                        <li>Generated from program acronym + numbers</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
