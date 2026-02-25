@@ -4,11 +4,11 @@
  * Update these values with your actual hosting credentials
  */
 
-// Database Configuration - UPDATE THESE VALUES
-define('DB_HOST', 'sqlXXX.infinityfree.net');  // Get from cPanel MySQL Databases section
-define('DB_USER', 'epizXXXX_username');        // Your MySQL username from cPanel
-define('DB_PASS', 'your_database_password');   // Password you set for database user
-define('DB_NAME', 'epizXXXX_vle');            // Your database name from cPanel
+// Database Configuration - Production
+define('DB_HOST', 'localhost');
+define('DB_USER', 'u615976264_vleadmin');
+define('DB_PASS', 'Vle-admin2026');
+define('DB_NAME', 'u615976264_portal');
 define('DB_CHARSET', 'utf8mb4');
 
 // Site Configuration
