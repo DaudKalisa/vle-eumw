@@ -39,22 +39,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors = [];
                 
                 if (($handle = fopen($file_tmp, 'r')) !== false) {
-                    // Skip header row
+                    // Read header row to detect format
                     $header = fgetcsv($handle);
+                    $header_lower = array_map(function($h) { return strtolower(trim($h)); }, $header);
+                    
+                    // Detect if Module Code column exists
+                    $has_module_code = in_array('module code', $header_lower) || 
+                                       (isset($header_lower[0]) && strpos($header_lower[0], 'code') !== false);
                     
                     while (($data = fgetcsv($handle)) !== false) {
-                        if (count($data) < 6) {
-                            $skipped++;
-                            continue;
+                        // Adjust column indexes based on whether Module Code exists
+                        if ($has_module_code) {
+                            if (count($data) < 6) {
+                                $skipped++;
+                                continue;
+                            }
+                            $module_code = strtoupper(trim($data[0]));
+                            $module_name = trim($data[1]);
+                            $program_of_study = trim($data[2]);
+                            $year_raw = trim($data[3]);
+                            $semester_raw = trim($data[4]);
+                            $credits = (int)$data[5];
+                            $description = isset($data[6]) ? trim($data[6]) : '';
+                        } else {
+                            // No Module Code column - auto-generate from module name
+                            if (count($data) < 5) {
+                                $skipped++;
+                                continue;
+                            }
+                            $module_name = trim($data[0]);
+                            $program_of_study = trim($data[1]);
+                            $year_raw = trim($data[2]);
+                            $semester_raw = trim($data[3]);
+                            $credits = (int)$data[4];
+                            $description = isset($data[5]) ? trim($data[5]) : '';
+                            
+                            // Auto-generate module code from program acronym + year + sequence
+                            $program_words = preg_split('/\s+/', preg_replace('/[^a-zA-Z\s]/', '', $program_of_study));
+                            $acronym = '';
+                            foreach ($program_words as $word) {
+                                if (strlen($word) > 2) { // Skip small words like "of", "in"
+                                    $acronym .= strtoupper($word[0]);
+                                }
+                            }
+                            if (empty($acronym)) $acronym = 'MOD';
+                            
+                            // Generate unique code with random suffix
+                            $module_code = $acronym . rand(1000, 9999);
                         }
                         
-                        $module_code = strtoupper(trim($data[0]));
-                        $module_name = trim($data[1]);
-                        $program_of_study = trim($data[2]);
-                        $year_raw = trim($data[3]);
-                        $semester_raw = trim($data[4]);
-                        $credits = (int)$data[5];
-                        $description = isset($data[6]) ? trim($data[6]) : '';
+                        // Remove trailing commas from values
+                        $module_code = rtrim($module_code, ',');
+                        $module_name = rtrim($module_name, ',');
+                        $program_of_study = rtrim($program_of_study, ',');
+                        $year_raw = rtrim($year_raw, ',');
+                        $semester_raw = rtrim($semester_raw, ',');
+                        $description = rtrim($description, ',');
                         
                         // Parse year of study - handle various formats
                         $year_of_study = 0;
@@ -79,13 +119,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // Parse semester - handle various formats
                         $semester = '';
-                        $semester_lower = strtolower($semester_raw);
-                        if (in_array($semester_lower, ['one', '1', 'first', '1st', 'i', 'sem 1', 'semester 1', 'sem1'])) {
+                        $semester_lower = strtolower(trim($semester_raw));
+                        // Check for semester one patterns
+                        if (in_array($semester_lower, ['one', '1', 'first', '1st', 'i', 'sem 1', 'semester 1', 'sem1', 'sem one', 'semester one'])) {
                             $semester = 'One';
-                        } elseif (in_array($semester_lower, ['two', '2', 'second', '2nd', 'ii', 'sem 2', 'semester 2', 'sem2'])) {
+                        } elseif (in_array($semester_lower, ['two', '2', 'second', '2nd', 'ii', 'sem 2', 'semester 2', 'sem2', 'sem two', 'semester two'])) {
                             $semester = 'Two';
                         } elseif (in_array($semester_raw, ['One', 'Two'])) {
                             $semester = $semester_raw;
+                        } elseif (strpos($semester_lower, 'one') !== false || strpos($semester_lower, '1') !== false) {
+                            $semester = 'One';
+                        } elseif (strpos($semester_lower, 'two') !== false || strpos($semester_lower, '2') !== false) {
+                            $semester = 'Two';
                         }
                         
                         // Validate
