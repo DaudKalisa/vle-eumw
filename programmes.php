@@ -513,6 +513,30 @@ header("X-XSS-Protection: 1; mode=block");
                     </div>
                 </div>
 
+                <!-- Health Systems Management -->
+                <div class="col-lg-4 col-md-6">
+                    <div class="prog-card">
+                        <div class="prog-card-header">
+                            <div class="prog-icon icon-undergrad"><i class="bi bi-heart-pulse"></i></div>
+                            <span class="prog-level badge-undergrad">Bachelor's Degree</span>
+                            <h5>Bachelor of Health Systems Management</h5>
+                            <div class="prog-abbr">BHSM</div>
+                        </div>
+                        <div class="prog-card-body">
+                            <p>Acquire essential competencies in health policy, hospital administration, public health planning, health economics, quality assurance and health information systems to lead and manage healthcare organisations effectively.</p>
+                            <ul class="prog-details">
+                                <li><i class="bi bi-clock"></i> Duration: 4 Years</li>
+                                <li><i class="bi bi-mortarboard"></i> Mode: ODeL (Online)</li>
+                                <li><i class="bi bi-bookmark-star"></i> NCHE Accredited</li>
+                            </ul>
+                        </div>
+                        <div class="prog-card-footer d-flex justify-content-between align-items-center">
+                            <a href="https://apply.exploitsonline.com" target="_blank" class="btn-apply-sm"><i class="bi bi-pencil-square"></i> Apply Now</a>
+                            <small class="text-muted">Intake Open</small>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </section>
@@ -793,6 +817,7 @@ header("X-XSS-Protection: 1; mode=block");
                             <small class="d-block text-muted"><i class="bi bi-dot"></i> Logistics &amp; Supply Chain Management</small>
                             <small class="d-block text-muted"><i class="bi bi-dot"></i> Information Technology</small>
                             <small class="d-block text-muted"><i class="bi bi-dot"></i> Human Resources Management</small>
+                            <small class="d-block text-muted"><i class="bi bi-dot"></i> Health Systems Management</small>
                         </div>
                     </div>
                 </div>
@@ -818,6 +843,7 @@ header("X-XSS-Protection: 1; mode=block");
                             <small class="d-block text-muted"><i class="bi bi-dot"></i> Logistics &amp; Supply Chain Management</small>
                             <small class="d-block text-muted"><i class="bi bi-dot"></i> Information Technology</small>
                             <small class="d-block text-muted"><i class="bi bi-dot"></i> Human Resources Management</small>
+                            <small class="d-block text-muted"><i class="bi bi-dot"></i> Health Systems Management</small>
                         </div>
                     </div>
                 </div>

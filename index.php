@@ -672,7 +672,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                     <div class="eu-accent-line" style="margin: .8rem 0 1.5rem;"></div>
                     <p class="text-muted mb-4">Exploits University Malawi offers NCHE-accredited programmes through Open, Distance and e-Learning (ODLE), making quality higher education accessible to all Malawians.</p>
                     <ul class="eu-check-list">
-                        <li><i class="bi bi-check-circle-fill"></i> <div><strong>Undergraduate Degrees</strong> — Business, Education, IT, Social Sciences</div></li>
+                        <li><i class="bi bi-check-circle-fill"></i> <div><strong>Undergraduate Degrees</strong> — Business, Health Systems, IT, Logistics, Community Development, HR</div></li>
                         <li><i class="bi bi-check-circle-fill"></i> <div><strong>Postgraduate Programmes</strong> — MBA, Masters, Professional Certificates</div></li>
                         <li><i class="bi bi-check-circle-fill"></i> <div><strong>Professional Courses</strong> — Short courses and industry certifications</div></li>
                         <li><i class="bi bi-check-circle-fill"></i> <div><strong>Flexible Scheduling</strong> — Study at your own pace, from anywhere</div></li>
