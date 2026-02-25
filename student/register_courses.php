@@ -18,6 +18,25 @@ if (!$student) {
     die("Student record not found!");
 }
 
+// Resolve program name: if program is numeric/empty, look up from departments table
+if (empty($student['program']) || is_numeric($student['program'])) {
+    $dept_id = !empty($student['department']) ? $student['department'] : $student['program'];
+    if ($dept_id) {
+        $dept_stmt = $conn->prepare("SELECT department_name FROM departments WHERE department_id = ?");
+        $dept_stmt->bind_param("i", $dept_id);
+        $dept_stmt->execute();
+        $dept_result = $dept_stmt->get_result()->fetch_assoc();
+        if ($dept_result) {
+            $student['program'] = $dept_result['department_name'];
+        } else {
+            $student['program'] = 'Not Assigned';
+        }
+        $dept_stmt->close();
+    } else {
+        $student['program'] = 'Not Assigned';
+    }
+}
+
 $success = '';
 $error = '';
 

@@ -234,7 +234,7 @@ $user = getCurrentUser();
                         </p>
                         <p class="mb-2">
                             <strong>Department:</strong><br>
-                            <?php echo htmlspecialchars($student['program'] ?? 'Not Set'); ?>
+                            <?php echo htmlspecialchars($student['department_name'] ?? 'Not Set'); ?>
                         </p>
                         <p class="mb-2">
                             <strong>Campus:</strong><br>
