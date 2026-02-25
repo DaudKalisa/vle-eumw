@@ -41,75 +41,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors = [];
                 
                 if (($handle = fopen($file_tmp, 'r')) !== false) {
-                    // Read header row to detect format
-                    $header = fgetcsv($handle);
-                    $header_lower = array_map(function($h) { return strtolower(trim($h)); }, $header);
+                    // Try to detect delimiter (comma or tab)
+                    $first_line = fgets($handle);
+                    rewind($handle);
+                    $delimiter = ',';
+                    if (substr_count($first_line, "\t") > substr_count($first_line, ",")) {
+                        $delimiter = "\t";
+                    }
                     
-                    // Detect if Module Code column exists
-                    $has_module_code = in_array('module code', $header_lower) || 
-                                       (isset($header_lower[0]) && strpos($header_lower[0], 'code') !== false);
+                    // Read header row to detect column mapping
+                    $header = fgetcsv($handle, 0, $delimiter);
+                    if (!$header) {
+                        $error = "Could not read CSV header row.";
+                    } else {
+                    // Clean header values
+                    $header_clean = array_map(function($h) { 
+                        return strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', $h))); 
+                    }, $header);
                     
-                    while (($data = fgetcsv($handle)) !== false) {
-                        // Adjust column indexes based on whether Module Code exists
-                        if ($has_module_code) {
-                            if (count($data) < 6) {
-                                $skipped++;
-                                continue;
-                            }
-                            $module_code = strtoupper(trim($data[0]));
-                            $module_name = trim($data[1]);
-                            $program_of_study = trim($data[2]);
-                            $year_raw = trim($data[3]);
-                            $semester_raw = trim($data[4]);
-                            $credits = (int)$data[5];
-                            $description = isset($data[6]) ? trim($data[6]) : '';
-                            
-                            // Auto-generate module code if empty
-                            if (empty($module_code)) {
-                                $program_words = preg_split('/\s+/', preg_replace('/[^a-zA-Z\s]/', '', $program_of_study));
-                                $acronym = '';
-                                foreach ($program_words as $word) {
-                                    if (strlen($word) > 2) {
-                                        $acronym .= strtoupper($word[0]);
-                                    }
-                                }
-                                if (empty($acronym)) $acronym = 'MOD';
-                                $module_code = $acronym . rand(1000, 9999);
-                            }
-                        } else {
-                            // No Module Code column - auto-generate from module name
-                            if (count($data) < 5) {
-                                $skipped++;
-                                continue;
-                            }
-                            $module_name = trim($data[0]);
-                            $program_of_study = trim($data[1]);
-                            $year_raw = trim($data[2]);
-                            $semester_raw = trim($data[3]);
-                            $credits = (int)$data[4];
-                            $description = isset($data[5]) ? trim($data[5]) : '';
-                            
-                            // Auto-generate module code from program acronym + year + sequence
+                    // Map columns by header name (flexible matching)
+                    $col_map = [
+                        'code' => -1,
+                        'name' => -1,
+                        'program' => -1,
+                        'year' => -1,
+                        'semester' => -1,
+                        'credits' => -1,
+                        'description' => -1,
+                    ];
+                    
+                    foreach ($header_clean as $i => $h) {
+                        if (strpos($h, 'code') !== false && strpos($h, 'module') !== false) {
+                            $col_map['code'] = $i;
+                        } elseif (strpos($h, 'module') !== false && (strpos($h, 'name') !== false || $col_map['name'] === -1)) {
+                            $col_map['name'] = $i;
+                        } elseif (strpos($h, 'program') !== false || strpos($h, 'programme') !== false) {
+                            $col_map['program'] = $i;
+                        } elseif (strpos($h, 'year') !== false) {
+                            $col_map['year'] = $i;
+                        } elseif (strpos($h, 'sem') !== false) {
+                            $col_map['semester'] = $i;
+                        } elseif (strpos($h, 'credit') !== false) {
+                            $col_map['credits'] = $i;
+                        } elseif (strpos($h, 'desc') !== false) {
+                            $col_map['description'] = $i;
+                        }
+                    }
+                    
+                    // Fallback: If name column wasn't matched but we have headers, try first column
+                    if ($col_map['name'] === -1 && count($header_clean) >= 5) {
+                        // Assume order: name, program, year, semester, credits, description
+                        $offset = 0;
+                        if ($col_map['code'] !== -1) $offset = 1;
+                        $col_map['name'] = $offset;
+                        $col_map['program'] = $offset + 1;
+                        $col_map['year'] = $offset + 2;
+                        $col_map['semester'] = $offset + 3;
+                        $col_map['credits'] = $offset + 4;
+                        if (isset($header_clean[$offset + 5])) $col_map['description'] = $offset + 5;
+                    }
+                    
+                    while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
+                        // Skip empty rows
+                        if (empty(array_filter($data, function($v) { return trim($v) !== ''; }))) {
+                            continue;
+                        }
+                        
+                        // Extract values using column map, clean trailing commas
+                        $clean = function($idx) use ($data) {
+                            if ($idx < 0 || !isset($data[$idx])) return '';
+                            return rtrim(trim($data[$idx]), ',');
+                        };
+                        
+                        $module_code = strtoupper($clean($col_map['code']));
+                        $module_name = $clean($col_map['name']);
+                        $program_of_study = $clean($col_map['program']);
+                        $year_raw = $clean($col_map['year']);
+                        $semester_raw = $clean($col_map['semester']);
+                        $credits = (int)$clean($col_map['credits']);
+                        $description = $clean($col_map['description']);
+                        
+                        // Auto-generate module code if empty or not provided
+                        if (empty($module_code)) {
                             $program_words = preg_split('/\s+/', preg_replace('/[^a-zA-Z\s]/', '', $program_of_study));
                             $acronym = '';
                             foreach ($program_words as $word) {
-                                if (strlen($word) > 2) { // Skip small words like "of", "in"
+                                if (strlen($word) > 2) {
                                     $acronym .= strtoupper($word[0]);
                                 }
                             }
                             if (empty($acronym)) $acronym = 'MOD';
-                            
-                            // Generate unique code with random suffix
                             $module_code = $acronym . rand(1000, 9999);
                         }
-                        
-                        // Remove trailing commas from values
-                        $module_code = rtrim($module_code, ',');
-                        $module_name = rtrim($module_name, ',');
-                        $program_of_study = rtrim($program_of_study, ',');
-                        $year_raw = rtrim($year_raw, ',');
-                        $semester_raw = rtrim($semester_raw, ',');
-                        $description = rtrim($description, ',');
                         
                         // Parse year of study - handle various formats
                         $year_of_study = 0;
@@ -187,6 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $error .= '<br>... and ' . (count($errors) - 5) . ' more errors.';
                         }
                     }
+                    } // end header check
                 } else {
                     $error = "Failed to read CSV file.";
                 }
