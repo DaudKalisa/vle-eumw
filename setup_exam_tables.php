@@ -41,7 +41,7 @@ $sql_exams = "CREATE TABLE IF NOT EXISTS exams (
     shuffle_options TINYINT(1) DEFAULT 1,
     show_results TINYINT(1) DEFAULT 1,
     allow_review TINYINT(1) DEFAULT 0,
-    require_camera TINYINT(1) DEFAULT 0,
+    require_camera TINYINT(1) DEFAULT 1,
     require_token TINYINT(1) DEFAULT 0,
     is_active TINYINT(1) DEFAULT 1,
     created_by INT NULL,
@@ -67,7 +67,7 @@ $alter_statements = [
     "ALTER TABLE exams ADD COLUMN IF NOT EXISTS shuffle_options TINYINT(1) DEFAULT 1",
     "ALTER TABLE exams ADD COLUMN IF NOT EXISTS show_results TINYINT(1) DEFAULT 1",
     "ALTER TABLE exams ADD COLUMN IF NOT EXISTS allow_review TINYINT(1) DEFAULT 0",
-    "ALTER TABLE exams ADD COLUMN IF NOT EXISTS require_camera TINYINT(1) DEFAULT 0",
+    "ALTER TABLE exams ADD COLUMN IF NOT EXISTS require_camera TINYINT(1) DEFAULT 1",
     "ALTER TABLE exams ADD COLUMN IF NOT EXISTS require_token TINYINT(1) DEFAULT 0",
     "ALTER TABLE exams ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 1",
     "ALTER TABLE exams ADD COLUMN IF NOT EXISTS created_by INT NULL",
@@ -77,6 +77,10 @@ $alter_statements = [
 foreach ($alter_statements as $sql) {
     $conn->query($sql); // Ignore errors as columns may already exist
 }
+
+// Enable camera invigilation for ALL existing exams
+$conn->query("UPDATE exams SET require_camera = 1 WHERE require_camera = 0");
+echo "<p style='color:green;'>✓ Camera invigilation enabled for all exams</p>";
 
 // Create Exam Questions Table
 $sql_questions = "CREATE TABLE IF NOT EXISTS exam_questions (

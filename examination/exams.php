@@ -256,9 +256,7 @@ $breadcrumbs = [['title' => 'Examinations']];
 
                             <!-- Security indicators -->
                             <div class="mb-3">
-                                <?php if ($exam['require_camera']): ?>
-                                    <span class="badge bg-warning text-dark me-1"><i class="bi bi-camera-video me-1"></i>Camera Required</span>
-                                <?php endif; ?>
+                                <span class="badge bg-danger me-1"><i class="bi bi-camera-video-fill me-1"></i>Camera Invigilation</span>
                                 <?php if ($exam['require_token']): ?>
                                     <span class="badge bg-info text-dark me-1"><i class="bi bi-key me-1"></i>Token Required</span>
                                 <?php endif; ?>
@@ -334,9 +332,7 @@ $breadcrumbs = [['title' => 'Examinations']];
                                 <div class="col-6"><small class="text-muted">Questions:</small><br><strong><?= $exam['question_count'] ?></strong></div>
                                 <div class="col-6"><small class="text-muted">Total Marks:</small><br><strong><?= $exam['total_marks'] ?></strong></div>
                             </div>
-                            <?php if ($exam['require_camera']): ?>
-                                <span class="badge bg-warning text-dark me-1"><i class="bi bi-camera-video me-1"></i>Camera</span>
-                            <?php endif; ?>
+                            <span class="badge bg-danger me-1"><i class="bi bi-camera-video-fill me-1"></i>Camera Invigilation</span>
                             <?php if ($exam['require_token']): ?>
                                 <span class="badge bg-info text-dark me-1"><i class="bi bi-key me-1"></i>Token</span>
                             <?php endif; ?>

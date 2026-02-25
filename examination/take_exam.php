@@ -142,6 +142,12 @@ if ($exam && $session_id > 0 && !$error && !isset($need_token)) {
     }
 }
 
+// CAMERA INVIGILATION: Always enforce camera for exam integrity
+// Even if the exam was created without require_camera, we force it ON for all exams
+if ($exam) {
+    $exam['require_camera'] = 1;
+}
+
 $page_title = "Take Exam";
 $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => 'Take Exam']];
 ?>
@@ -182,6 +188,27 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
         .camera-feed { position: fixed; bottom: 15px; right: 15px; width: 180px; height: 135px; border-radius: 10px; overflow: hidden; border: 3px solid var(--vle-primary); z-index: 1060; box-shadow: var(--vle-shadow-lg); }
         .camera-feed video { width: 100%; height: 100%; object-fit: cover; }
         .camera-feed .camera-status { position: absolute; top: 5px; left: 5px; font-size: 0.65rem; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 6px; border-radius: 4px; }
+        .camera-feed .recording-dot { display: inline-block; width: 8px; height: 8px; background: #dc3545; border-radius: 50%; animation: blink-dot 1s infinite; margin-right: 4px; }
+        @keyframes blink-dot { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+        /* Camera Pre-Check Overlay */
+        .camera-precheck-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 3000;
+            background: linear-gradient(135deg, #0d1b2a, #1b2838);
+            color: #fff; display: flex; align-items: center; justify-content: center;
+            flex-direction: column; text-align: center;
+        }
+        .camera-precheck-overlay .precheck-icon {
+            width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255,255,255,0.1); display: flex; align-items: center;
+            justify-content: center; margin: 0 auto 30px; font-size: 3rem;
+            animation: pulse-cam 2s infinite;
+        }
+        @keyframes pulse-cam { 0%,100%{box-shadow:0 0 0 0 rgba(13,110,253,0.5);} 50%{box-shadow:0 0 0 20px rgba(13,110,253,0);} }
+        .camera-precheck-overlay .preview-box {
+            width: 320px; height: 240px; border-radius: 12px; overflow: hidden;
+            border: 3px solid #0d6efd; margin: 20px auto; background: #000;
+        }
+        .camera-precheck-overlay .preview-box video { width: 100%; height: 100%; object-fit: cover; }
         .violation-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 2000; background: rgba(220,53,69,0.95); color: #fff; display: none; align-items: center; justify-content: center; flex-direction: column; }
         .option-label { display: block; padding: 12px 15px; border: 2px solid var(--vle-border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: var(--vle-transition); }
         .option-label:hover { border-color: var(--vle-primary); background: rgba(30,60,114,0.05); }
@@ -263,6 +290,56 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body></html>
 <?php exit; endif; ?>
+
+<!-- ===== CAMERA PRE-CHECK OVERLAY ===== -->
+<div class="camera-precheck-overlay" id="cameraPrecheckOverlay">
+    <div id="cameraRequestStep">
+        <div class="precheck-icon">
+            <i class="bi bi-camera-video"></i>
+        </div>
+        <h2 class="mb-3">Camera Required for Invigilation</h2>
+        <p class="text-white-50 mb-4" style="max-width: 500px;">
+            This examination requires your camera to be active throughout the entire exam 
+            for invigilation purposes. Periodic snapshots will be captured and reviewed by 
+            your examination officer.
+        </p>
+        <div class="preview-box mb-3" id="previewBox">
+            <video id="previewVideo" autoplay muted playsinline style="display:none;"></video>
+            <div id="previewPlaceholder" class="d-flex align-items-center justify-content-center h-100">
+                <div>
+                    <i class="bi bi-camera-video-off display-4 text-muted"></i>
+                    <p class="text-muted mt-2 mb-0">Camera preview will appear here</p>
+                </div>
+            </div>
+        </div>
+        <div id="cameraPermissionStatus" class="mb-4">
+            <div class="spinner-border spinner-border-sm text-info me-2" role="status"></div>
+            <span class="text-info">Requesting camera access...</span>
+        </div>
+        <button class="btn btn-primary btn-lg px-5" id="proceedToExamBtn" disabled onclick="proceedToExam()">
+            <i class="bi bi-play-circle me-2"></i>Proceed to Examination
+        </button>
+        <div class="mt-3" id="cameraDeniedBlock" style="display:none;">
+            <div class="alert alert-danger d-inline-block" style="max-width:500px;">
+                <i class="bi bi-exclamation-octagon me-2"></i>
+                <strong>Camera access was denied!</strong><br>
+                You must allow camera access to take this examination. Please:
+                <ol class="text-start mt-2 mb-2">
+                    <li>Click the camera icon in your browser's address bar</li>
+                    <li>Select "Allow" for camera access</li>
+                    <li>Click "Retry Camera" below</li>
+                </ol>
+            </div>
+            <br>
+            <button class="btn btn-warning mt-2" onclick="retryCameraAccess()">
+                <i class="bi bi-arrow-clockwise me-2"></i>Retry Camera Access
+            </button>
+            <a href="exams.php" class="btn btn-outline-light mt-2 ms-2">
+                <i class="bi bi-arrow-left me-2"></i>Go Back
+            </a>
+        </div>
+    </div>
+</div>
 
 <!-- ===== EXAM INTERFACE ===== -->
 
@@ -418,14 +495,12 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
     </div>
 </div>
 
-<!-- Camera Feed -->
-<?php if ($exam['require_camera']): ?>
-<div class="camera-feed" id="cameraFeed">
+<!-- Camera Feed (Always active for invigilation) -->
+<div class="camera-feed" id="cameraFeed" style="display:none;">
     <video id="cameraVideo" autoplay muted playsinline></video>
-    <div class="camera-status"><i class="bi bi-record-circle"></i> REC</div>
+    <div class="camera-status"><span class="recording-dot"></span> REC</div>
 </div>
 <canvas id="snapshotCanvas" style="display:none;"></canvas>
-<?php endif; ?>
 
 <!-- Violation Overlay -->
 <div class="violation-overlay" id="violationOverlay">
@@ -466,8 +541,8 @@ const SESSION_ID = <?= $session_id ?>;
 const EXAM_ID = <?= $exam_id ?>;
 const TOTAL_QUESTIONS = <?= count($questions) ?>;
 const TIME_REMAINING = <?= $time_remaining ?? 0 ?>;
-const REQUIRE_CAMERA = <?= $exam['require_camera'] ? 'true' : 'false' ?>;
-const SNAPSHOT_INTERVAL = 45000; // Camera capture every 45 seconds
+const REQUIRE_CAMERA = true; // Camera is ALWAYS required for invigilation
+const SNAPSHOT_INTERVAL = 30000; // Camera capture every 30 seconds
 const BASE_URL = '';
 
 let currentQuestion = 0;
@@ -654,45 +729,119 @@ function logMonitoring(eventType, eventData) {
     }).catch(err => console.error('Log failed:', err));
 }
 
-// ===== CAMERA INVIGILATION =====
-if (REQUIRE_CAMERA) {
-    async function initCamera() {
-        try {
-            cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
-            document.getElementById('cameraVideo').srcObject = cameraStream;
-            if (document.getElementById('cameraStatus')) document.getElementById('cameraStatus').textContent = 'Camera active';
-            // Start periodic snapshots
-            captureSnapshot();
-            setInterval(captureSnapshot, SNAPSHOT_INTERVAL);
-        } catch(err) {
-            console.error('Camera error:', err);
+// ===== CAMERA INVIGILATION (Always Active) =====
+let cameraReady = false;
+let preCheckStream = null;
+
+// Pre-check: Request camera access before exam loads
+async function requestCameraPreCheck() {
+    const statusEl = document.getElementById('cameraPermissionStatus');
+    const deniedBlock = document.getElementById('cameraDeniedBlock');
+    const proceedBtn = document.getElementById('proceedToExamBtn');
+    const previewVideo = document.getElementById('previewVideo');
+    const previewPlaceholder = document.getElementById('previewPlaceholder');
+    
+    try {
+        preCheckStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 320, height: 240, facingMode: 'user' }, 
+            audio: false 
+        });
+        
+        // Show preview
+        previewVideo.srcObject = preCheckStream;
+        previewVideo.style.display = 'block';
+        if (previewPlaceholder) previewPlaceholder.style.display = 'none';
+        
+        // Update status
+        statusEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-2"></i><span class="text-success">Camera active - You are being recorded</span>';
+        proceedBtn.disabled = false;
+        deniedBlock.style.display = 'none';
+        cameraReady = true;
+        
+        // Log camera granted
+        logMonitoring('camera_snapshot', { type: 'camera_granted', timestamp: new Date().toISOString() });
+        
+    } catch(err) {
+        console.error('Camera pre-check error:', err);
+        statusEl.innerHTML = '<i class="bi bi-x-circle-fill text-danger me-2"></i><span class="text-danger">Camera access denied</span>';
+        deniedBlock.style.display = 'block';
+        proceedBtn.disabled = true;
+        cameraReady = false;
+        
+        logMonitoring('violation', { type: 'camera_denied', error: err.message });
+    }
+}
+
+function retryCameraAccess() {
+    // Stop any existing stream
+    if (preCheckStream) {
+        preCheckStream.getTracks().forEach(t => t.stop());
+        preCheckStream = null;
+    }
+    document.getElementById('cameraPermissionStatus').innerHTML = 
+        '<div class="spinner-border spinner-border-sm text-info me-2" role="status"></div><span class="text-info">Retrying camera access...</span>';
+    document.getElementById('cameraDeniedBlock').style.display = 'none';
+    requestCameraPreCheck();
+}
+
+function proceedToExam() {
+    if (!cameraReady) return;
+    
+    // Hide pre-check overlay
+    document.getElementById('cameraPrecheckOverlay').style.display = 'none';
+    
+    // Transfer stream to exam camera feed
+    const cameraFeed = document.getElementById('cameraFeed');
+    const examVideo = document.getElementById('cameraVideo');
+    
+    if (preCheckStream) {
+        cameraStream = preCheckStream;
+        examVideo.srcObject = cameraStream;
+        cameraFeed.style.display = 'block';
+        
+        if (document.getElementById('cameraStatus')) {
+            document.getElementById('cameraStatus').textContent = 'Camera active';
+            document.getElementById('cameraStatus').className = 'mt-1 text-success';
+        }
+        
+        // Start periodic snapshots
+        captureSnapshot();
+        setInterval(captureSnapshot, SNAPSHOT_INTERVAL);
+        
+        // Monitor camera stream - if it stops, show violation
+        cameraStream.getVideoTracks()[0].onended = function() {
+            logMonitoring('violation', { type: 'camera_stopped', timestamp: new Date().toISOString() });
+            showViolation('Your camera has been disconnected! This is a serious violation. Please reconnect your camera immediately.');
             if (document.getElementById('cameraStatus')) {
-                document.getElementById('cameraStatus').textContent = 'Camera denied!';
+                document.getElementById('cameraStatus').textContent = 'Camera LOST!';
                 document.getElementById('cameraStatus').className = 'mt-1 text-danger';
             }
-            logMonitoring('violation', { type: 'camera_denied', error: err.message });
-        }
+        };
     }
-
-    function captureSnapshot() {
-        if (!cameraStream) return;
-        const video = document.getElementById('cameraVideo');
-        const canvas = document.getElementById('snapshotCanvas');
-        canvas.width = 320;
-        canvas.height = 240;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, 320, 240);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        
-        fetch('upload_snapshot.php', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: SESSION_ID, image: dataUrl })
-        }).catch(err => console.error('Snapshot upload failed:', err));
-    }
-
-    initCamera();
+    
+    // Request fullscreen
+    enterFullscreen();
 }
+
+function captureSnapshot() {
+    if (!cameraStream) return;
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('snapshotCanvas');
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, 320, 240);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    
+    fetch('upload_snapshot.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ session_id: SESSION_ID, image: dataUrl })
+    }).catch(err => console.error('Snapshot upload failed:', err));
+}
+
+// Start camera pre-check immediately
+requestCameraPreCheck();
 
 // ===== PERIODIC SESSION UPDATE =====
 setInterval(function() {
