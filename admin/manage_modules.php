@@ -51,10 +51,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $module_code = strtoupper(trim($data[0]));
                         $module_name = trim($data[1]);
                         $program_of_study = trim($data[2]);
-                        $year_of_study = (int)$data[3];
-                        $semester = trim($data[4]);
+                        $year_raw = trim($data[3]);
+                        $semester_raw = trim($data[4]);
                         $credits = (int)$data[5];
                         $description = isset($data[6]) ? trim($data[6]) : '';
+                        
+                        // Parse year of study - handle various formats
+                        $year_of_study = 0;
+                        if (is_numeric($year_raw)) {
+                            $year_of_study = (int)$year_raw;
+                        } else {
+                            // Handle text formats like "First", "1st", "Year 1", etc.
+                            $year_map = [
+                                'first' => 1, '1st' => 1, 'one' => 1, 'year 1' => 1, 'year1' => 1, 'i' => 1,
+                                'second' => 2, '2nd' => 2, 'two' => 2, 'year 2' => 2, 'year2' => 2, 'ii' => 2,
+                                'third' => 3, '3rd' => 3, 'three' => 3, 'year 3' => 3, 'year3' => 3, 'iii' => 3,
+                                'fourth' => 4, '4th' => 4, 'four' => 4, 'year 4' => 4, 'year4' => 4, 'iv' => 4,
+                            ];
+                            $year_lower = strtolower($year_raw);
+                            if (isset($year_map[$year_lower])) {
+                                $year_of_study = $year_map[$year_lower];
+                            } elseif (preg_match('/(\d)/', $year_raw, $matches)) {
+                                // Extract first digit found
+                                $year_of_study = (int)$matches[1];
+                            }
+                        }
+                        
+                        // Parse semester - handle various formats
+                        $semester = '';
+                        $semester_lower = strtolower($semester_raw);
+                        if (in_array($semester_lower, ['one', '1', 'first', '1st', 'i', 'sem 1', 'semester 1', 'sem1'])) {
+                            $semester = 'One';
+                        } elseif (in_array($semester_lower, ['two', '2', 'second', '2nd', 'ii', 'sem 2', 'semester 2', 'sem2'])) {
+                            $semester = 'Two';
+                        } elseif (in_array($semester_raw, ['One', 'Two'])) {
+                            $semester = $semester_raw;
+                        }
                         
                         // Validate
                         if (empty($module_code) || empty($module_name) || empty($program_of_study)) {
@@ -63,13 +95,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         
                         if (!in_array($year_of_study, [1, 2, 3, 4])) {
-                            $errors[] = "Invalid year for module $module_code (must be 1-4)";
+                            $errors[] = "Invalid year for module $module_code (got '$year_raw', must be 1-4)";
                             $skipped++;
                             continue;
                         }
                         
                         if (!in_array($semester, ['One', 'Two'])) {
-                            $errors[] = "Invalid semester for module $module_code (must be 'One' or 'Two')";
+                            $errors[] = "Invalid semester for module $module_code (got '$semester_raw', must be 'One', 'Two', '1', or '2')";
                             $skipped++;
                             continue;
                         }
