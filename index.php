@@ -447,7 +447,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             </a>
             <div class="d-none d-lg-flex align-items-center gap-1">
                 <a href="#about" class="nav-link-custom">About</a>
-                <a href="#programmes" class="nav-link-custom">Programmes</a>
+                <a href="programmes.php" class="nav-link-custom">Programmes</a>
                 <a href="#campus" class="nav-link-custom">Campus</a>
                 <a href="https://exploitsmw.com" target="_blank" class="nav-link-custom">Main Website</a>
                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn btn-login ms-2" style="background:linear-gradient(135deg,#10b981,#059669);"><i class="bi bi-pencil-square me-1"></i> Apply Now</a>
@@ -465,7 +465,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         </div>
         <div class="offcanvas-body">
             <a href="#about" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-info-circle me-2"></i>About</a>
-            <a href="#programmes" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-book me-2"></i>Programmes</a>
+            <a href="programmes.php" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-book me-2"></i>Programmes</a>
             <a href="#campus" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-building me-2"></i>Campus</a>
             <a href="https://exploitsmw.com" target="_blank" class="d-block py-2 text-decoration-none text-dark fw-500"><i class="bi bi-globe me-2"></i>Main Website</a>
             <hr>
@@ -495,7 +495,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Transforming higher education through innovative Open, Distance and e-Learning across Malawi and beyond.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
-                                <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="programmes.php" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
                                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-apply"><i class="bi bi-pencil-square"></i> Apply Now</a>
                             </div>
                         </div>
@@ -510,7 +510,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Flexible online programmes designed for working professionals, school leavers and lifelong learners in Malawi.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
-                                <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="programmes.php" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
                                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-apply"><i class="bi bi-pencil-square"></i> Apply Now</a>
                             </div>
                         </div>
@@ -525,7 +525,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Access lectures, assignments, examinations and academic resources from your computer or mobile device.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
-                                <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="programmes.php" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
                                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-apply"><i class="bi bi-pencil-square"></i> Apply Now</a>
                             </div>
                         </div>
@@ -540,7 +540,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">With campuses in Lilongwe, Blantyre, Mzuzu and beyond — quality education is never far away.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
-                                <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="programmes.php" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
                                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-apply"><i class="bi bi-pencil-square"></i> Apply Now</a>
                             </div>
                         </div>
@@ -555,7 +555,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Join thousands of graduates who are shaping Malawi's future through quality education and dedication.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
-                                <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="programmes.php" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
                                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-apply"><i class="bi bi-pencil-square"></i> Apply Now</a>
                             </div>
                         </div>
@@ -570,7 +570,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                             <p class="hero-sub">Digital library, online examinations, live classrooms and collaborative learning — all in one platform.</p>
                             <div class="d-flex gap-3 justify-content-center flex-wrap">
                                 <a href="login.php" class="btn-hero-primary"><i class="bi bi-box-arrow-in-right"></i> Student Login</a>
-                                <a href="#programmes" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
+                                <a href="programmes.php" class="btn-hero-outline"><i class="bi bi-journal-text"></i> View Programmes</a>
                                 <a href="https://apply.exploitsonline.com" target="_blank" class="btn-hero-apply"><i class="bi bi-pencil-square"></i> Apply Now</a>
                             </div>
                         </div>
@@ -592,26 +592,26 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
             <div class="row text-center g-3">
                 <div class="col-6 col-md-3">
                     <div class="stat-item">
-                        <div class="stat-num">5,000+</div>
-                        <div class="stat-label">Active Students</div>
+                        <div class="stat-num">13,500+</div>
+                        <div class="stat-label">Active Students and Alumni</div>
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
                     <div class="stat-item">
-                        <div class="stat-num">50+</div>
+                        <div class="stat-num">14+</div>
                         <div class="stat-label">Programmes</div>
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
                     <div class="stat-item">
-                        <div class="stat-num">4</div>
+                        <div class="stat-num">3</div>
                         <div class="stat-label">Campuses</div>
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
                     <div class="stat-item">
                         <div class="stat-num">100%</div>
-                        <div class="stat-label">Online Access</div>
+                        <div class="stat-label">ODeL Online Access</div>
                     </div>
                 </div>
             </div>
@@ -678,7 +678,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                         <li><i class="bi bi-check-circle-fill"></i> <div><strong>Flexible Scheduling</strong> — Study at your own pace, from anywhere</div></li>
                         <li><i class="bi bi-check-circle-fill"></i> <div><strong>NCHE ODLE Compliant</strong> — Meeting national quality assurance standards</div></li>
                     </ul>
-                    <a href="https://exploitsmw.com" target="_blank" class="btn btn-login mt-3"><i class="bi bi-arrow-right me-1"></i> Explore Programmes</a>
+                    <a href="programmes.php" class="btn btn-login mt-3"><i class="bi bi-arrow-right me-1"></i> Explore Programmes</a>
                 </div>
             </div>
         </div>
@@ -762,10 +762,10 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                 <div class="col-lg-2 col-md-6">
                     <h6>Study</h6>
                     <ul>
-                        <li><a href="https://exploitsmw.com" target="_blank">Undergraduate</a></li>
-                        <li><a href="https://exploitsmw.com" target="_blank">Postgraduate</a></li>
-                        <li><a href="https://exploitsmw.com" target="_blank">Short Courses</a></li>
-                        <li><a href="https://exploitsmw.com" target="_blank">Professional</a></li>
+                        <li><a href="programmes.php#undergraduate">Undergraduate</a></li>
+                        <li><a href="programmes.php#postgraduate">Postgraduate</a></li>
+                        <li><a href="programmes.php#professional">Short Courses</a></li>
+                        <li><a href="programmes.php#professional">Professional</a></li>
                     </ul>
                 </div>
                 <div class="col-lg-2 col-md-6">
