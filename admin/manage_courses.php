@@ -6,6 +6,12 @@ requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
+// Auto-add semester column if missing
+$col_check = $conn->query("SHOW COLUMNS FROM vle_courses LIKE 'semester'");
+if ($col_check && $col_check->num_rows === 0) {
+    $conn->query("ALTER TABLE vle_courses ADD COLUMN semester ENUM('One','Two') DEFAULT 'One' AFTER year_of_study");
+}
+
 $success_message = '';
 $error_message = '';
 
