@@ -7,7 +7,7 @@
 require_once '../includes/auth.php';
 require_once '../includes/email.php';
 requireLogin();
-requireRole(['staff', 'admin', 'super_admin']);
+requireRole(['staff', 'admin', 'super_admin', 'odl_coordinator']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();

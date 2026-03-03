@@ -54,6 +54,18 @@ if ($columns->num_rows > 0) {
     $stats['lecturer_users'] = $stats['lecturers'];
 }
 
+// Count pending student invite registrations
+$table_check_invites = $conn->query("SHOW TABLES LIKE 'student_invite_registrations'");
+if ($table_check_invites && $table_check_invites->num_rows > 0) {
+    $result = $conn->query("SELECT COUNT(*) as count FROM student_invite_registrations WHERE status = 'pending'");
+    $stats['pending_student_invites'] = $result ? $result->fetch_assoc()['count'] : 0;
+    $result = $conn->query("SELECT COUNT(*) as count FROM student_registration_invites WHERE is_active = 1");
+    $stats['active_invite_links'] = $result ? $result->fetch_assoc()['count'] : 0;
+} else {
+    $stats['pending_student_invites'] = 0;
+    $stats['active_invite_links'] = 0;
+}
+
 // Count finance users from finance_users table
 $table_check = $conn->query("SHOW TABLES LIKE 'finance_users'");
 if ($table_check->num_rows > 0) {
@@ -882,6 +894,16 @@ if ($result) {
                 <div class="card-title">All Users</div>
                 <div class="card-subtitle">Manage accounts</div>
             </a>
+            <a href="student_invite_links.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #7c3aed, #6d28d9);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);"><i class="bi bi-link-45deg"></i></div>
+                <div class="card-title">Invite Links</div>
+                <div class="card-subtitle"><?php echo $stats['active_invite_links']; ?> active</div>
+            </a>
+            <a href="approve_student_accounts.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0ea5e9, #0284c7);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);"><i class="bi bi-person-check-fill"></i></div>
+                <div class="card-title">Approve Students</div>
+                <div class="card-subtitle"><?php echo $stats['pending_student_invites']; ?> pending</div>
+            </a>
             <a href="manage_examination_officers.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #ec4899, #db2777);">
                 <div class="card-icon" style="background: linear-gradient(135deg, #ec4899, #db2777);"><i class="bi bi-shield-check"></i></div>
                 <div class="card-title">Exam Officers</div>
@@ -942,6 +964,22 @@ if ($result) {
                 <div class="list-content">
                     <div class="list-title">All Users</div>
                     <div class="list-subtitle">Manage all system accounts</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="student_invite_links.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);"><i class="bi bi-link-45deg"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Invite Links</div>
+                    <div class="list-subtitle"><?php echo $stats['active_invite_links']; ?> active invite links</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="approve_student_accounts.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);"><i class="bi bi-person-check-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Approve Students</div>
+                    <div class="list-subtitle"><?php echo $stats['pending_student_invites']; ?> pending approvals</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
