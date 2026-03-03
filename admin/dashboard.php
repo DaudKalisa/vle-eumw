@@ -85,10 +85,6 @@ if ($result) {
     }
 }
 
-// Active modules count
-$result = $conn->query("SELECT COUNT(*) as count FROM modules");
-$stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
-
 ?>
 
 <!DOCTYPE html>
@@ -116,59 +112,69 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
             background: #f0f4f8;
         }
         
-        /* Welcome Card */
+        /* Welcome Card - Larger & More Prominent */
         .welcome-card {
             background: var(--admin-gradient);
-            border-radius: 20px;
-            padding: 1.5rem;
+            border-radius: 24px;
+            padding: 2rem;
             color: white;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+            margin-bottom: 2rem;
+            box-shadow: 0 15px 50px rgba(102, 126, 234, 0.35);
         }
         .welcome-card .profile-section {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 1.25rem;
         }
         .welcome-card .profile-avatar {
-            width: 60px;
-            height: 60px;
+            width: 72px;
+            height: 72px;
             border-radius: 50%;
             background: rgba(255,255,255,0.2);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             font-weight: 700;
-            border: 3px solid rgba(255,255,255,0.4);
+            border: 4px solid rgba(255,255,255,0.4);
         }
         .welcome-card .welcome-name {
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             font-weight: 700;
             margin: 0;
         }
+        @media (min-width: 992px) {
+            .welcome-card .welcome-name {
+                font-size: 2rem;
+            }
+            .welcome-card .profile-avatar {
+                width: 80px;
+                height: 80px;
+            }
+        }
         .welcome-card .welcome-role {
             opacity: 0.9;
-            font-size: 0.9rem;
+            font-size: 1rem;
         }
         .welcome-card .welcome-date {
             background: rgba(255,255,255,0.15);
-            padding: 0.5rem 1rem;
+            padding: 0.6rem 1.25rem;
             border-radius: 50px;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             margin-top: 1rem;
             display: inline-block;
         }
         
-        /* Stats Grid - Mobile 2x2 */
+        /* Stats Grid - Mobile 2x2, Larger on Desktop */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 0.75rem;
+            gap: 1rem;
         }
         @media (min-width: 768px) {
             .stats-grid {
                 grid-template-columns: repeat(3, 1fr);
+                gap: 1.25rem;
             }
         }
         @media (min-width: 992px) {
@@ -178,28 +184,28 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
         }
         .stat-card {
             background: white;
-            border-radius: 16px;
-            padding: 1rem;
+            border-radius: 20px;
+            padding: 1.25rem;
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            gap: 1rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
             transition: all 0.3s ease;
             cursor: pointer;
-            border-left: 4px solid var(--accent-color, #667eea);
+            border-left: 5px solid var(--accent-color, #667eea);
         }
         .stat-card:hover {
             transform: var(--card-hover-transform);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+            box-shadow: 0 12px 35px rgba(0,0,0,0.15);
         }
         .stat-card .stat-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.25rem;
+            font-size: 1.5rem;
             color: white;
             flex-shrink: 0;
         }
@@ -208,14 +214,20 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
             min-width: 0;
         }
         .stat-card .stat-value {
-            font-size: 1.25rem;
+            font-size: 1.5rem;
             font-weight: 700;
             display: block;
         }
+        @media (min-width: 992px) {
+            .stat-card .stat-value {
+                font-size: 1.75rem;
+            }
+        }
         .stat-card .stat-label {
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             color: #64748b;
             display: block;
+            font-weight: 500;
         }
         
         /* Quick Actions - Horizontal Scroll on Mobile */
@@ -715,15 +727,6 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
                     <span class="stat-label">Courses</span>
                 </div>
             </a>
-            <a href="manage_modules.php" class="stat-card" style="--accent-color: #8b5cf6; text-decoration: none;">
-                <div class="stat-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
-                    <i class="bi bi-collection-fill"></i>
-                </div>
-                <div class="stat-content">
-                    <span class="stat-value"><?php echo number_format($stats['modules'] ?? 0); ?></span>
-                    <span class="stat-label">Modules</span>
-                </div>
-            </a>
             <a href="#" class="stat-card" style="--accent-color: #06b6d4; text-decoration: none;">
                 <div class="stat-icon" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">
                     <i class="bi bi-diagram-3-fill"></i>
@@ -760,6 +763,18 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
                     <i class="bi bi-person-plus-fill"></i>
                 </div>
                 <span>Add Student</span>
+            </a>
+            <a href="student_invite_links.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);">
+                    <i class="bi bi-link-45deg"></i>
+                </div>
+                <span>Invite Links</span>
+            </a>
+            <a href="approve_student_accounts.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);">
+                    <i class="bi bi-person-check-fill"></i>
+                </div>
+                <span>Approve Students</span>
             </a>
             <a href="manage_lecturers.php?action=add" class="action-btn">
                 <div class="action-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
@@ -808,6 +823,18 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
                     <i class="bi bi-shield-lock-fill"></i>
                 </div>
                 <span>Admins</span>
+            </a>
+            <a href="database_manager.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #059669, #047857);">
+                    <i class="bi bi-database-gear"></i>
+                </div>
+                <span>Backup DB</span>
+            </a>
+            <a href="#" class="action-btn" data-bs-toggle="modal" data-bs-target="#fileManagerLoginModal">
+                <div class="action-icon" style="background: linear-gradient(135deg, #f97316, #c2410c);">
+                    <i class="bi bi-folder2-open"></i>
+                </div>
+                <span>File Manager</span>
             </a>
         </div>
         
@@ -952,11 +979,6 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
                 <div class="card-title">Programs</div>
                 <div class="card-subtitle">Academic programs</div>
             </a>
-            <a href="manage_modules.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #ec4899, #db2777);">
-                <div class="card-icon" style="background: linear-gradient(135deg, #ec4899, #db2777);"><i class="bi bi-collection-fill"></i></div>
-                <div class="card-title">Modules</div>
-                <div class="card-subtitle"><?php echo $stats['modules'] ?? 0; ?> modules</div>
-            </a>
         </div>
         <div class="management-list mb-4" id="academicList">
             <a href="manage_faculties.php" class="list-item">
@@ -980,14 +1002,6 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
                 <div class="list-content">
                     <div class="list-title">Programs</div>
                     <div class="list-subtitle">Academic programs</div>
-                </div>
-                <i class="bi bi-chevron-right list-arrow"></i>
-            </a>
-            <a href="manage_modules.php" class="list-item">
-                <div class="list-icon" style="background: linear-gradient(135deg, #ec4899, #db2777);"><i class="bi bi-collection-fill"></i></div>
-                <div class="list-content">
-                    <div class="list-title">Modules</div>
-                    <div class="list-subtitle"><?php echo $stats['modules'] ?? 0; ?> course modules</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
@@ -1149,6 +1163,35 @@ $stats['modules'] = $result ? $result->fetch_assoc()['count'] : 0;
             </div>
         </div>
     </main>
+    
+    <!-- File Manager Login Modal -->
+    <div class="modal fade" id="fileManagerLoginModal" tabindex="-1" aria-labelledby="fileManagerLoginModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="fileManagerLoginModalLabel"><i class="bi bi-shield-lock me-2"></i>File Manager Access</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="fileManagerLoginForm" action="file_manager.php" method="POST">
+                    <div class="modal-body">
+                        <div class="alert alert-warning mb-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Warning:</strong> This area allows direct access to system files. Unauthorized modifications may break the system.
+                        </div>
+                        <div class="alert alert-danger d-none" id="fmLoginError"></div>
+                        <div class="mb-3">
+                            <label for="fmPassword" class="form-label">File Manager Password</label>
+                            <input type="password" class="form-control form-control-lg" id="fmPassword" name="fm_password" required autofocus>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger"><i class="bi bi-unlock me-2"></i>Authorize Access</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Mobile Bottom Navigation -->
     <nav class="admin-bottom-nav">
