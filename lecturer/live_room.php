@@ -1244,10 +1244,10 @@ $iceConfigJson = json_encode($iceConfig);
 
     // ── Controls ──
     window.toggleAudio = async function() {
-        const mode = VLERoom.getMediaMode();
         const result = VLERoom.toggleAudio();
 
-        if (result === false && (mode === 'view-only' || mode === 'audio')) {
+        // Auto-request microphone if not available yet
+        if (result === 'needs-upgrade') {
             try {
                 showToast('Requesting microphone access...', 'info');
                 const mediaResult = await VLERoom.requestMedia('audio');
@@ -1255,7 +1255,6 @@ $iceConfigJson = json_encode($iceConfig);
                     localVideo.srcObject = mediaResult.stream;
                     localVideo.style.display = '';
                     selfAvatar.style.display = 'none';
-                    // Update speaker tile if local is pinned
                     if (pinnedSpeakerId === 'local') pinSpeaker('local');
                 }
                 const btn = document.getElementById('btnAudio');
@@ -1265,7 +1264,7 @@ $iceConfigJson = json_encode($iceConfig);
                 show2WayBadge();
                 return;
             } catch (err) {
-                showToast('Microphone access denied: ' + err.message, 'danger');
+                showToast('Microphone access denied. Please allow in browser settings and try again.', 'danger');
                 return;
             }
         }
@@ -1280,7 +1279,8 @@ $iceConfigJson = json_encode($iceConfig);
         const mode = VLERoom.getMediaMode();
         const result = VLERoom.toggleVideo();
 
-        if (result === false && (mode === 'view-only' || mode === 'audio')) {
+        // Auto-request camera if not available yet
+        if (result === 'needs-upgrade') {
             try {
                 showToast('Requesting camera access...', 'info');
                 const mediaResult = await VLERoom.requestMedia(mode === 'view-only' ? 'both' : 'video');
@@ -1302,7 +1302,7 @@ $iceConfigJson = json_encode($iceConfig);
                 show2WayBadge();
                 return;
             } catch (err) {
-                showToast('Camera access denied: ' + err.message, 'danger');
+                showToast('Camera access denied. Please allow in browser settings and try again.', 'danger');
                 return;
             }
         }

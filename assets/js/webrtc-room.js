@@ -895,15 +895,18 @@
     }
 
     // ─── MEDIA CONTROLS ──────────────────────────────────────────
+    /**
+     * Toggle audio. If no localStream (view-only), auto-request mic.
+     * Returns: boolean (new state), or 'upgrading' if async request started.
+     */
     function toggleAudio() {
         if (!localStream) {
-            onError('Microphone is not available. Please allow microphone access and refresh.');
-            return false;
+            // No stream yet — signal caller to request media upgrade
+            return 'needs-upgrade';
         }
         const audioTracks = localStream.getAudioTracks();
         if (audioTracks.length === 0) {
-            onError('No microphone detected.');
-            return false;
+            return 'needs-upgrade';
         }
         isAudioOn = !isAudioOn;
         audioTracks.forEach(t => { t.enabled = isAudioOn; });
@@ -911,15 +914,17 @@
         return isAudioOn;
     }
 
+    /**
+     * Toggle video. If no localStream (view-only), auto-request camera.
+     * Returns: boolean (new state), or 'needs-upgrade' if async request needed.
+     */
     function toggleVideo() {
         if (!localStream) {
-            onError('Camera is not available. Please allow camera access and refresh.');
-            return false;
+            return 'needs-upgrade';
         }
         const videoTracks = localStream.getVideoTracks();
         if (videoTracks.length === 0) {
-            onError('No camera detected. You joined with audio only.');
-            return false;
+            return 'needs-upgrade';
         }
         isVideoOn = !isVideoOn;
         videoTracks.forEach(t => { t.enabled = isVideoOn; });
