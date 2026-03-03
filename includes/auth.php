@@ -133,6 +133,10 @@ function login($username_email, $password) {
 
     // Check if input is username or email
     $stmt = $conn->prepare("SELECT * FROM users WHERE username = ? OR email = ?");
+    if (!$stmt) {
+        error_log("Login prepare failed: " . $conn->error);
+        return ['success' => false, 'message' => 'Login service error. DB: ' . $conn->error];
+    }
     $stmt->bind_param("ss", $username_email, $username_email);
     $stmt->execute();
     $result = $stmt->get_result();
