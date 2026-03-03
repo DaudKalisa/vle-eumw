@@ -166,7 +166,7 @@ $total_invites = $total_q ? $total_q->fetch_assoc()['cnt'] : 0;
 $total_pages = max(1, ceil($total_invites / $per_page));
 
 $invites = [];
-$q = $conn->query("SELECT i.*, u.display_name as creator_name,
+$q = $conn->query("SELECT i.*, u.username as creator_name,
     (SELECT COUNT(*) FROM student_invite_registrations r WHERE r.invite_id = i.invite_id) as reg_count,
     (SELECT COUNT(*) FROM student_invite_registrations r WHERE r.invite_id = i.invite_id AND r.status = 'pending') as pending_count
     FROM student_registration_invites i

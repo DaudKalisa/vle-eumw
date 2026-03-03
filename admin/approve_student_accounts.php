@@ -244,7 +244,7 @@ $total_pages = max(1, ceil($total_regs / $per_page));
 
 $registrations = [];
 $q = $conn->query("SELECT r.*, d.department_name, d.department_code,
-    u.display_name as reviewer_name
+    u.username as reviewer_name
     FROM student_invite_registrations r
     LEFT JOIN departments d ON r.department_id = d.department_id
     LEFT JOIN users u ON r.reviewed_by = u.user_id
