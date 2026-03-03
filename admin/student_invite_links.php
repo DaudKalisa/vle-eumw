@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $bind_notes);
         
         if ($stmt->execute()) {
-            $invite_url = (defined('SITE_URL') ? SITE_URL : 'http://localhost/vle-eumw') . '/register_student.php?token=' . $token;
+            $invite_url = getInviteUrl($token);
             $success = "Invite link created successfully!";
             
             // Send email if requested and email is provided
@@ -187,8 +187,19 @@ if ($q) { while ($row = $q->fetch_assoc()) $invites[] = $row; }
 
 // Helper to build the registration URL
 function getInviteUrl($token) {
-    $base = defined('SITE_URL') ? SITE_URL : 'http://localhost/vle-eumw';
-    return $base . '/register_student.php?token=' . $token;
+    // SITE_URL may include /admin when called from this file, so strip subdirectories
+    if (isset($_SERVER['HTTP_HOST'])) {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'];
+        // Get the base path (e.g. /vle-eumw) by finding the project root
+        $script = $_SERVER['SCRIPT_NAME'] ?? '';
+        // Remove /admin/... or any subdir to get project root
+        $base = preg_replace('#/admin/.*$#', '', $script);
+        $root_url = $protocol . '://' . $host . $base;
+    } else {
+        $root_url = 'http://localhost/vle-eumw';
+    }
+    return $root_url . '/register_student.php?token=' . $token;
 }
 
 // Email body builder
