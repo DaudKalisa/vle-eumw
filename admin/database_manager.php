@@ -899,21 +899,14 @@ $truncate_categories = [
                                                     <i class="bi bi-download"></i>
                                                 </button>
                                             </form>
-                                            <form method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this backup?')">
-                                                <input type="hidden" name="action" value="delete">
-                                                <input type="hidden" name="filename" value="<?= htmlspecialchars($backup['filename']) ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                            <form method="POST" class="d-inline" onsubmit="return confirm('This will OVERWRITE your current database. Are you absolutely sure?')">
-                                                <input type="hidden" name="action" value="import">
-                                                <input type="hidden" name="restore_file" value="<?= htmlspecialchars($backup['filename']) ?>">
-                                                <button type="button" class="btn btn-sm btn-outline-warning" title="Restore" 
-                                                        onclick="restoreBackup('<?= htmlspecialchars($backup['filename']) ?>')">
-                                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
+                                                    onclick="openDeleteBackupModal('<?= htmlspecialchars($backup['filename']) ?>', '<?= number_format($backup['size'] / 1024, 2) ?> KB')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-warning" title="Restore"
+                                                    onclick="openRestoreBackupModal('<?= htmlspecialchars($backup['filename']) ?>', '<?= number_format($backup['size'] / 1024, 2) ?> KB')">
+                                                <i class="bi bi-arrow-counterclockwise"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -978,6 +971,92 @@ $truncate_categories = [
                         </div>
                     </div>
                     <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Backup Modal -->
+    <div class="modal fade" id="deleteBackupModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius:16px;border:none;overflow:hidden;">
+                <div class="modal-header" style="background:#dc2626;color:#fff;">
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete Backup</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3">
+                        <i class="bi bi-file-earmark-x" style="font-size:3rem;color:#dc2626;"></i>
+                        <h5 class="mt-2 fw-bold">Confirm Deletion</h5>
+                        <p class="text-muted" style="font-size:0.9rem;">Are you sure you want to delete this backup file?</p>
+                    </div>
+                    <div class="alert alert-light" style="border-radius:10px;border:1px solid #e2e8f0;">
+                        <div class="d-flex justify-content-between mb-1" style="font-size:0.85rem;">
+                            <span><i class="bi bi-file-earmark-code me-1"></i>File:</span>
+                            <strong id="deleteBackupFilename" class="text-truncate ms-2" style="max-width:200px;">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between" style="font-size:0.85rem;">
+                            <span><i class="bi bi-hdd me-1"></i>Size:</span>
+                            <strong id="deleteBackupSize">-</strong>
+                        </div>
+                    </div>
+                    <form method="POST" id="deleteBackupForm">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="filename" id="deleteBackupInput" value="">
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-secondary flex-fill" data-bs-dismiss="modal" style="border-radius:10px;padding:12px;">
+                                <i class="bi bi-x-lg me-1"></i>Cancel
+                            </button>
+                            <button type="submit" class="btn btn-danger flex-fill" id="deleteBackupBtn" style="border-radius:10px;padding:12px;">
+                                <i class="bi bi-trash me-1"></i>Delete Backup
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Backup Modal -->
+    <div class="modal fade" id="restoreBackupModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius:16px;border:none;overflow:hidden;">
+                <div class="modal-header" style="background:#d97706;color:#fff;">
+                    <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-2"></i>Restore Database</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3">
+                        <i class="bi bi-database-up" style="font-size:3rem;color:#d97706;"></i>
+                        <h5 class="mt-2 fw-bold">Confirm Restore</h5>
+                        <p class="text-muted" style="font-size:0.9rem;">This will <strong>overwrite</strong> your entire current database with this backup.</p>
+                    </div>
+                    <div class="alert alert-light" style="border-radius:10px;border:1px solid #e2e8f0;">
+                        <div class="d-flex justify-content-between mb-1" style="font-size:0.85rem;">
+                            <span><i class="bi bi-file-earmark-code me-1"></i>File:</span>
+                            <strong id="restoreBackupFilename" class="text-truncate ms-2" style="max-width:200px;">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between" style="font-size:0.85rem;">
+                            <span><i class="bi bi-hdd me-1"></i>Size:</span>
+                            <strong id="restoreBackupSize">-</strong>
+                        </div>
+                    </div>
+                    <div class="alert alert-danger" style="border-radius:10px;font-size:0.85rem;">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <strong>Warning:</strong> All current data will be replaced. This action cannot be undone!
+                    </div>
+                    <form method="POST" id="restoreBackupForm">
+                        <input type="hidden" name="action" value="restore">
+                        <input type="hidden" name="filename" id="restoreBackupInput" value="">
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-secondary flex-fill" data-bs-dismiss="modal" style="border-radius:10px;padding:12px;">
+                                <i class="bi bi-x-lg me-1"></i>Cancel
+                            </button>
+                            <button type="submit" class="btn btn-warning flex-fill text-white" id="restoreBackupBtn" style="border-radius:10px;padding:12px;">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Restore Now
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -1064,6 +1143,34 @@ $truncate_categories = [
         </div>
     </div>
     <script>
+        // Delete backup modal
+        function openDeleteBackupModal(filename, size) {
+            document.getElementById('deleteBackupInput').value = filename;
+            document.getElementById('deleteBackupFilename').textContent = filename;
+            document.getElementById('deleteBackupSize').textContent = size;
+            new bootstrap.Modal(document.getElementById('deleteBackupModal')).show();
+        }
+
+        document.getElementById('deleteBackupForm').addEventListener('submit', function() {
+            const btn = document.getElementById('deleteBackupBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Deleting...';
+            btn.disabled = true;
+        });
+
+        // Restore backup modal
+        function openRestoreBackupModal(filename, size) {
+            document.getElementById('restoreBackupInput').value = filename;
+            document.getElementById('restoreBackupFilename').textContent = filename;
+            document.getElementById('restoreBackupSize').textContent = size;
+            new bootstrap.Modal(document.getElementById('restoreBackupModal')).show();
+        }
+
+        document.getElementById('restoreBackupForm').addEventListener('submit', function() {
+            const btn = document.getElementById('restoreBackupBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Restoring...';
+            btn.disabled = true;
+        });
+
         // Backup category - simple form submit
         function backupCategory(key) {
             const form = document.createElement('form');
@@ -1175,19 +1282,7 @@ $truncate_categories = [
             btn.disabled = true;
         });
         
-        // Restore from existing backup
-        function restoreBackup(filename) {
-            if (confirm('This will OVERWRITE your current database with the backup: ' + filename + '\n\nAre you absolutely sure?')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="restore">
-                    <input type="hidden" name="filename" value="${filename}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
+
     </script>
 </body>
 </html>
