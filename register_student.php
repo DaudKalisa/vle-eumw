@@ -1,9 +1,10 @@
 <?php
 /**
  * Public Student Registration Form
- * Students access this via an invite link: register_student.php?token=XXXXX
- * No login required. Token-based access.
- * After submission, admin must approve before account is created.
+ * Two modes:
+ *   1. Token-based: register_student.php?token=XXXXX (invite link)
+ *   2. General: register_student.php (open registration, no token needed)
+ * No login required. After submission, admin must approve before account is created.
  */
 require_once 'includes/config.php';
 
@@ -12,11 +13,10 @@ $token = trim($_GET['token'] ?? '');
 $success = '';
 $error = '';
 $invite = null;
+$general_mode = empty($token); // General open registration (no invite link)
 
-// Validate token
-if (empty($token)) {
-    $error = 'Invalid registration link. Please contact your administrator for a valid invite link.';
-} else {
+// Validate token if provided
+if (!$general_mode) {
     $stmt = $conn->prepare("SELECT * FROM student_registration_invites WHERE token = ?");
     $stmt->bind_param("s", $token);
     $stmt->execute();
@@ -45,7 +45,7 @@ if (!$error) {
 }
 
 // Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && $invite) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mode)) {
     $first_name = trim($_POST['first_name'] ?? '');
     $middle_name = trim($_POST['middle_name'] ?? '');
     $last_name = trim($_POST['last_name'] ?? '');

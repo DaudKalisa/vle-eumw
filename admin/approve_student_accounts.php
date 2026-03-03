@@ -407,6 +407,18 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
             </div>
             <div class="card-body">
                 <div class="info-grid mb-3">
+                    <?php if (!empty($reg['student_id_number'])): ?>
+                    <div class="info-item">
+                        <div class="label">Existing Student ID</div>
+                        <div class="value" style="color:#7c3aed;font-weight:600;"><?= htmlspecialchars($reg['student_id_number']) ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!empty($reg['preferred_username'])): ?>
+                    <div class="info-item">
+                        <div class="label">Preferred Username</div>
+                        <div class="value" style="color:#0ea5e9;font-weight:600;"><?= htmlspecialchars($reg['preferred_username']) ?></div>
+                    </div>
+                    <?php endif; ?>
                     <div class="info-item">
                         <div class="label">Department</div>
                         <div class="value"><?= htmlspecialchars($reg['department_name'] ?? 'Not specified') ?></div>
@@ -434,6 +446,10 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
                     <div class="info-item">
                         <div class="label">Entry Type</div>
                         <div class="value"><?= htmlspecialchars($reg['entry_type'] ?? 'NE') ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Year of Registration</div>
+                        <div class="value"><?= htmlspecialchars($reg['year_of_registration'] ?? date('Y')) ?></div>
                     </div>
                     <div class="info-item">
                         <div class="label">Year / Semester</div>

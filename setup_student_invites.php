@@ -54,12 +54,14 @@ if ($conn->query($sql)) {
 // 2. Create student_invite_registrations table to track who registered via invites (with approval workflow)
 $sql2 = "CREATE TABLE IF NOT EXISTS student_invite_registrations (
     registration_id INT AUTO_INCREMENT PRIMARY KEY,
-    invite_id INT NOT NULL,
+    invite_id INT NOT NULL DEFAULT 0 COMMENT '0 = general registration (no invite)',
     student_id VARCHAR(50) DEFAULT NULL COMMENT 'Generated student_id (set on approval)',
+    student_id_number VARCHAR(50) DEFAULT NULL COMMENT 'Existing student ID if transfer/returning',
     user_id INT DEFAULT NULL COMMENT 'The user_id created (set on approval)',
     first_name VARCHAR(100) NOT NULL,
     middle_name VARCHAR(100) DEFAULT NULL,
     last_name VARCHAR(100) NOT NULL,
+    preferred_username VARCHAR(100) DEFAULT NULL COMMENT 'Student preferred username',
     email VARCHAR(150) NOT NULL,
     phone VARCHAR(30) DEFAULT NULL,
     gender VARCHAR(10) DEFAULT NULL,
@@ -69,6 +71,7 @@ $sql2 = "CREATE TABLE IF NOT EXISTS student_invite_registrations (
     program VARCHAR(200) DEFAULT NULL,
     program_type VARCHAR(50) DEFAULT 'degree',
     campus VARCHAR(100) DEFAULT 'Mzuzu Campus',
+    year_of_registration INT DEFAULT NULL,
     year_of_study INT DEFAULT 1,
     semester VARCHAR(10) DEFAULT 'One',
     entry_type VARCHAR(10) DEFAULT 'NE',
@@ -90,6 +93,27 @@ if ($conn->query($sql2)) {
 } else {
     $errors[] = "&#10008; Failed to create registrations tracking table: " . $conn->error;
 }
+
+// Add new columns if table already exists (upgrade path)
+$alter_cols = [
+    "student_id_number VARCHAR(50) DEFAULT NULL COMMENT 'Existing student ID if transfer/returning' AFTER student_id",
+    "preferred_username VARCHAR(100) DEFAULT NULL COMMENT 'Student preferred username' AFTER last_name",
+    "year_of_registration INT DEFAULT NULL AFTER campus"
+];
+foreach ($alter_cols as $col_def) {
+    $col_name = explode(' ', trim($col_def))[0];
+    $check = $conn->query("SHOW COLUMNS FROM student_invite_registrations LIKE '$col_name'");
+    if ($check && $check->num_rows === 0) {
+        if ($conn->query("ALTER TABLE student_invite_registrations ADD COLUMN $col_def")) {
+            $messages[] = "&#10004; Added column <code>$col_name</code> to student_invite_registrations";
+        } else {
+            $errors[] = "&#10008; Failed to add column $col_name: " . $conn->error;
+        }
+    }
+}
+
+// Update invite_id default to allow 0 for general registrations
+$conn->query("ALTER TABLE student_invite_registrations MODIFY COLUMN invite_id INT NOT NULL DEFAULT 0");
 
 // Display results
 foreach ($messages as $msg) {
