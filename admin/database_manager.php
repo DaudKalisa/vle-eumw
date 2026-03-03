@@ -16,6 +16,21 @@ if (!is_dir($backup_dir)) {
 $message = '';
 $error = '';
 
+// Schedule config
+$schedule_config_file = '../backups/schedule_config.json';
+if (!defined('INTERNAL_BACKUP_CALL')) define('INTERNAL_BACKUP_CALL', true);
+require_once '../api/scheduled_backup.php';
+$schedule_config = loadScheduleConfig($schedule_config_file);
+
+// Auto-check: run scheduled backup if due (on page load)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $schedule_config['enabled'] && isBackupDue($schedule_config)) {
+    $auto_result = runScheduledBackup($conn, $schedule_config, $backup_dir, $schedule_config_file);
+    if ($auto_result['success']) {
+        $schedule_config = loadScheduleConfig($schedule_config_file); // reload after backup
+        $message = '<i class="bi bi-clock-history me-1"></i>Auto-scheduled backup completed: ' . ($auto_result['filename'] ?? $auto_result['message']);
+    }
+}
+
 // Handle backup request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
@@ -552,6 +567,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 
+    // Save schedule settings
+    if ($_POST['action'] === 'save_schedule') {
+        $new_config = [
+            'enabled' => isset($_POST['schedule_enabled']),
+            'backup_type' => in_array($_POST['backup_type'] ?? '', ['full', 'custom']) ? $_POST['backup_type'] : 'full',
+            'frequency' => in_array($_POST['frequency'] ?? '', ['every_6h', 'every_12h', 'daily', 'weekly']) ? $_POST['frequency'] : 'daily',
+            'retention_count' => max(1, min(20, intval($_POST['retention_count'] ?? 5))),
+            'custom_tables' => isset($_POST['custom_tables']) ? $_POST['custom_tables'] : [],
+            'last_backup' => $schedule_config['last_backup'],
+            'last_backup_file' => $schedule_config['last_backup_file'],
+            'secret_key' => !empty($schedule_config['secret_key']) ? $schedule_config['secret_key'] : bin2hex(random_bytes(16)),
+            'created_at' => $schedule_config['created_at'] ?? date('Y-m-d H:i:s'),
+            'total_backups_run' => $schedule_config['total_backups_run'] ?? 0,
+        ];
+        saveScheduleConfig($schedule_config_file, $new_config);
+        $schedule_config = $new_config;
+        $message = 'Backup schedule settings saved successfully!' . ($new_config['enabled'] ? ' Scheduled backups are <strong>enabled</strong>.' : ' Scheduled backups are <strong>disabled</strong>.');
+    }
+    
+    // Run scheduled backup now (manual trigger)
+    if ($_POST['action'] === 'run_scheduled_now') {
+        if (!defined('INTERNAL_BACKUP_CALL')) define('INTERNAL_BACKUP_CALL', true);
+        $run_result = runScheduledBackup($conn, $schedule_config, $backup_dir, $schedule_config_file);
+        $schedule_config = loadScheduleConfig($schedule_config_file);
+        if ($run_result['success']) {
+            $message = 'Scheduled backup executed: <strong>' . ($run_result['filename'] ?? 'No changes') . '</strong>' 
+                     . (isset($run_result['tables']) ? " ({$run_result['tables']} table(s), " . number_format($run_result['size'] ?? 0) . ' bytes)' : '');
+        } else {
+            $error = 'Scheduled backup failed: ' . $run_result['message'];
+        }
+    }
+
     // Download backup
     if ($_POST['action'] === 'download' && isset($_POST['filename'])) {
         $filename = basename($_POST['filename']);
@@ -684,6 +731,16 @@ while ($row = $result->fetch_assoc()) {
 $db_stats['tables'] = $table_count;
 $db_stats['rows'] = $total_rows;
 $db_stats['size'] = $total_size;
+
+// Count scheduled backups
+$scheduled_backup_count = 0;
+foreach ($backups as $b) {
+    if (strpos($b['filename'], 'scheduled_') === 0) $scheduled_backup_count++;
+}
+
+// Get all table names for custom backup selection
+$all_table_names = array_keys($table_details);
+sort($all_table_names);
 
 // Truncate categories definition (for the UI)
 $truncate_categories = [
@@ -862,8 +919,11 @@ $truncate_categories = [
         
         <!-- Existing Backups -->
         <div class="card mb-4">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-archive me-2"></i>Existing Backups (<?= count($backups) ?>)</h5>
+                <?php if ($scheduled_backup_count > 0): ?>
+                    <span class="badge bg-info"><i class="bi bi-clock me-1"></i><?= $scheduled_backup_count ?> scheduled</span>
+                <?php endif; ?>
             </div>
             <div class="card-body">
                 <?php if (empty($backups)): ?>
@@ -914,6 +974,145 @@ $truncate_categories = [
                         </table>
                     </div>
                 <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Scheduled Backups -->
+        <div class="card mb-4" id="scheduleSection">
+            <div class="card-header bg-indigo text-white d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg, #4f46e5, #7c3aed);">
+                <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Scheduled Backups</h5>
+                <span class="badge bg-light <?= $schedule_config['enabled'] ? 'text-success' : 'text-danger' ?>">
+                    <i class="bi <?= $schedule_config['enabled'] ? 'bi-check-circle-fill' : 'bi-x-circle-fill' ?> me-1"></i>
+                    <?= $schedule_config['enabled'] ? 'Enabled' : 'Disabled' ?>
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- Schedule Settings -->
+                    <div class="col-lg-7">
+                        <form method="POST" id="scheduleForm">
+                            <input type="hidden" name="action" value="save_schedule">
+                            
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="scheduleEnabled" name="schedule_enabled" 
+                                           <?= $schedule_config['enabled'] ? 'checked' : '' ?> style="transform:scale(1.3);">
+                                    <label class="form-check-label fw-bold ms-2" for="scheduleEnabled">Enable Scheduled Backups</label>
+                                </div>
+                                <small class="text-muted">Backups run automatically when an admin visits the Database Manager page.</small>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold"><i class="bi bi-gear me-1"></i>Backup Type</label>
+                                    <select name="backup_type" class="form-select" id="backupTypeSelect">
+                                        <option value="full" <?= $schedule_config['backup_type'] === 'full' ? 'selected' : '' ?>>Full Backup (all tables)</option>
+                                        <option value="custom" <?= $schedule_config['backup_type'] === 'custom' ? 'selected' : '' ?>>Incremental (changed tables only)</option>
+                                    </select>
+                                    <small class="text-muted mt-1 d-block" id="backupTypeDesc">
+                                        <?= $schedule_config['backup_type'] === 'full' ? 'Backs up every table in the database.' : 'Only backs up tables that changed since the last backup.' ?>
+                                    </small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold"><i class="bi bi-calendar3 me-1"></i>Frequency</label>
+                                    <select name="frequency" class="form-select">
+                                        <option value="every_6h" <?= $schedule_config['frequency'] === 'every_6h' ? 'selected' : '' ?>>Every 6 hours</option>
+                                        <option value="every_12h" <?= $schedule_config['frequency'] === 'every_12h' ? 'selected' : '' ?>>Every 12 hours</option>
+                                        <option value="daily" <?= $schedule_config['frequency'] === 'daily' ? 'selected' : '' ?>>Daily</option>
+                                        <option value="weekly" <?= $schedule_config['frequency'] === 'weekly' ? 'selected' : '' ?>>Weekly</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold"><i class="bi bi-stack me-1"></i>Keep Latest Backups</label>
+                                <div class="d-flex align-items-center gap-3">
+                                    <input type="range" name="retention_count" class="form-range flex-grow-1" min="1" max="20" 
+                                           value="<?= $schedule_config['retention_count'] ?>" id="retentionSlider">
+                                    <span class="badge bg-primary fs-6" id="retentionValue" style="min-width:40px;"><?= $schedule_config['retention_count'] ?></span>
+                                </div>
+                                <small class="text-muted">Older scheduled backups will be automatically deleted. Manual backups are not affected.</small>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-save me-1"></i>Save Settings
+                                </button>
+                            </div>
+                        </form>
+                        <form method="POST" class="mt-2 d-inline-block">
+                            <input type="hidden" name="action" value="run_scheduled_now">
+                            <button type="submit" class="btn btn-outline-success" id="runNowBtn">
+                                <i class="bi bi-play-fill me-1"></i>Run Backup Now
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- Schedule Status -->
+                    <div class="col-lg-5">
+                        <div class="card h-100" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+                            <div class="card-body">
+                                <h6 class="fw-bold mb-3"><i class="bi bi-info-circle me-1"></i>Schedule Status</h6>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Status:</span>
+                                    <span class="float-end fw-semibold <?= $schedule_config['enabled'] ? 'text-success' : 'text-danger' ?>">
+                                        <?= $schedule_config['enabled'] ? 'Active' : 'Inactive' ?>
+                                    </span>
+                                </div>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Type:</span>
+                                    <span class="float-end fw-semibold"><?= ucfirst($schedule_config['backup_type']) ?></span>
+                                </div>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Frequency:</span>
+                                    <span class="float-end fw-semibold"><?= str_replace('_', ' ', ucfirst($schedule_config['frequency'])) ?></span>
+                                </div>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Retention:</span>
+                                    <span class="float-end fw-semibold"><?= $schedule_config['retention_count'] ?> backups</span>
+                                </div>
+                                <hr>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Last Backup:</span>
+                                    <span class="float-end fw-semibold">
+                                        <?= $schedule_config['last_backup'] ? date('M d, Y H:i', strtotime($schedule_config['last_backup'])) : 'Never' ?>
+                                    </span>
+                                </div>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Last File:</span>
+                                    <span class="float-end fw-semibold text-truncate" style="max-width:180px;display:inline-block;" title="<?= htmlspecialchars($schedule_config['last_backup_file'] ?? 'None') ?>">
+                                        <?= $schedule_config['last_backup_file'] ? htmlspecialchars(substr($schedule_config['last_backup_file'], 0, 25)) . (strlen($schedule_config['last_backup_file']) > 25 ? '...' : '') : 'None' ?>
+                                    </span>
+                                </div>
+                                <div class="mb-2" style="font-size:0.85rem;">
+                                    <span class="text-muted">Total Runs:</span>
+                                    <span class="float-end fw-semibold"><?= $schedule_config['total_backups_run'] ?? 0 ?></span>
+                                </div>
+                                <?php if ($schedule_config['enabled'] && $schedule_config['last_backup']): 
+                                    $freq_seconds = ['every_6h' => 6*3600, 'every_12h' => 12*3600, 'daily' => 86400, 'weekly' => 604800];
+                                    $next_due = strtotime($schedule_config['last_backup']) + ($freq_seconds[$schedule_config['frequency']] ?? 86400);
+                                ?>
+                                <div class="mb-0" style="font-size:0.85rem;">
+                                    <span class="text-muted">Next Backup:</span>
+                                    <span class="float-end fw-semibold <?= $next_due <= time() ? 'text-warning' : 'text-info' ?>">
+                                        <?= $next_due <= time() ? 'Due now (next page load)' : date('M d, Y H:i', $next_due) ?>
+                                    </span>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($schedule_config['secret_key'])): ?>
+                                <hr>
+                                <div style="font-size:0.75rem;">
+                                    <span class="text-muted d-block mb-1"><i class="bi bi-link-45deg me-1"></i>Cron/External URL:</span>
+                                    <code class="d-block p-2 bg-white rounded" style="font-size:0.7rem;word-break:break-all;border:1px solid #e2e8f0;">
+                                        <?= (defined('SITE_URL') ? SITE_URL : '') ?>/api/scheduled_backup.php?key=<?= htmlspecialchars($schedule_config['secret_key']) ?>
+                                    </code>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1281,7 +1480,35 @@ $truncate_categories = [
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importing...';
             btn.disabled = true;
         });
+
+        // Schedule settings
+        document.getElementById('retentionSlider').addEventListener('input', function() {
+            document.getElementById('retentionValue').textContent = this.value;
+        });
+
+        document.getElementById('backupTypeSelect').addEventListener('change', function() {
+            const desc = document.getElementById('backupTypeDesc');
+            if (this.value === 'full') {
+                desc.textContent = 'Backs up every table in the database.';
+            } else {
+                desc.textContent = 'Only backs up tables that changed since the last backup.';
+            }
+        });
+
+        document.getElementById('scheduleForm').addEventListener('submit', function() {
+            const btn = this.querySelector('button[type=submit]');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+            btn.disabled = true;
+        });
         
+        var runNowBtn = document.getElementById('runNowBtn');
+        if (runNowBtn) {
+            runNowBtn.closest('form').addEventListener('submit', function() {
+                runNowBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Running...';
+                runNowBtn.disabled = true;
+            });
+        }
+
 
     </script>
 </body>
