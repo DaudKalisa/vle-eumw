@@ -62,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
     $semester = trim($_POST['semester'] ?? $invite['semester'] ?? 'One');
     $entry_type = trim($_POST['entry_type'] ?? $invite['entry_type'] ?? 'NE');
     $student_type = trim($_POST['student_type'] ?? 'new_student');
+    $student_id_number = trim($_POST['student_id_number'] ?? '');
     $invite_id = $invite ? $invite['invite_id'] : 0;
 
     // Validation
@@ -114,12 +115,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
     if (!$error) {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '';
         $stmt = $conn->prepare("INSERT INTO student_invite_registrations 
-            (invite_id, first_name, middle_name, last_name, email, phone, gender, national_id, address, 
+            (invite_id, student_id_number, first_name, middle_name, last_name, email, phone, gender, national_id, address, 
              department_id, program, program_type, campus, year_of_study, semester, entry_type, student_type, 
              status, ip_address) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)");
-        $stmt->bind_param("issssssssisssissss", 
-            $invite_id, $first_name, $middle_name, $last_name, $email, $phone, 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)");
+        $bind_student_id_number = $student_id_number ?: null;
+        $stmt->bind_param("isssssssssisssissss", 
+            $invite_id, $bind_student_id_number, $first_name, $middle_name, $last_name, $email, $phone, 
             $gender, $national_id, $address, $department_id, $program, $program_type, 
             $campus, $year_of_study, $semester, $entry_type, $student_type, $ip);
         
@@ -345,6 +347,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
             <?php endif; ?>
 
             <form method="POST" id="regForm">
+                <!-- Student Identification -->
+                <div class="section-title"><i class="bi bi-card-heading"></i> Student Identification</div>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-12">
+                        <label class="form-label">Student ID Number <small class="text-muted">(if you have one already, e.g. transfer/returning student)</small></label>
+                        <input type="text" name="student_id_number" class="form-control"
+                               value="<?= htmlspecialchars($_POST['student_id_number'] ?? '') ?>" placeholder="e.g. CS/24/MZ/NE/0001 (leave blank if new student)">
+                    </div>
+                </div>
+
                 <!-- Personal Information -->
                 <div class="section-title"><i class="bi bi-person-circle"></i> Personal Information</div>
                 <div class="row g-3 mb-4">
