@@ -5,20 +5,47 @@
  * signaling via PHP polling, chat, and UI updates.
  * 
  * No external API needed - pure WebRTC with PHP-based signaling.
+ * Compatible with: Chrome, Firefox, Safari, Edge, iOS Safari, Android
+ * 
+ * TURN server support enables connections from ANY network:
+ * - Mobile data (4G/5G)
+ * - Home WiFi behind NAT
+ * - Corporate/university networks with firewalls
+ * - Different ISPs and countries
  */
 (function () {
     'use strict';
 
     const SIGNAL_API = '../api/webrtc_signal.php';
-    const POLL_INTERVAL = 1500;    // Signal polling (ms)
-    const HEARTBEAT_INTERVAL = 5000;
-    const CHAT_POLL_INTERVAL = 2000;
+    const ICE_CONFIG_API = '../api/ice_config.php';
+    const POLL_INTERVAL = 3000;    // Signal polling (ms) — 3s to stay under free hosting rate limits
+    const HEARTBEAT_INTERVAL = 10000;  // 10s heartbeat — gentler on server
+    const CHAT_POLL_INTERVAL = 4000;   // 4s chat poll
+    const ICE_RESTART_TIMEOUT = 10000;  // Restart ICE after 10s of failure
+    const ICE_CONFIG_CACHE_TTL = 300000; // Cache ICE config for 5 minutes
+    const MEDIA_TIMEOUT = 15000;   // Camera/mic acquisition timeout (ms)
+    const FETCH_TIMEOUT = 15000;   // API fetch timeout (ms)
+    const JOIN_TIMEOUT = 45000;    // Overall join timeout (ms)
 
-    const ICE_SERVERS = [
+    // Track consecutive API failures for exponential backoff
+    let apiFailCount = 0;
+    const MAX_BACKOFF = 15000;
+
+    // Detect iOS/Safari for special handling
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isIOSSafari = isIOS && isSafari;
+
+    // Default STUN-only fallback (used if ICE config API fails)
+    const DEFAULT_ICE_SERVERS = [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' }
     ];
+
+    // Dynamic ICE configuration (fetched from server, includes TURN)
+    let ICE_SERVERS = DEFAULT_ICE_SERVERS;
+    let iceTransportPolicy = 'all';
+    let iceConfigCachedAt = 0;
 
     // ─── STATE ────────────────────────────────────────────────────
     let sessionId = 0;
@@ -55,6 +82,7 @@
     let onPeerMediaStateUpdate = null;
     let onSessionEnded = null;
     let onError = null;
+    let onStatusUpdate = null;  // Status callback for loading overlay
 
     // ─── INITIALIZATION ───────────────────────────────────────────
     function init(config) {
@@ -72,28 +100,167 @@
         onPeerMediaStateUpdate = config.onPeerMediaStateUpdate || function () {};
         onSessionEnded = config.onSessionEnded || function () {};
         onError = config.onError || function (e) { console.error('VLERoom error:', e); };
+        onStatusUpdate = config.onStatusUpdate || function () {};
+    }
+
+    // ─── HELPER: FETCH WITH TIMEOUT ──────────────────────────────
+    /**
+     * Wrapper around fetch() with AbortController timeout.
+     * Prevents API calls from hanging indefinitely on slow servers.
+     */
+    function fetchWithTimeout(url, options, timeout) {
+        timeout = timeout || FETCH_TIMEOUT;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        options = options || {};
+        options.signal = controller.signal;
+        // Always send credentials (cookies) so InfinityFree anti-bot cookie works
+        options.credentials = options.credentials || 'same-origin';
+        return fetch(url, options).finally(() => clearTimeout(timer));
+    }
+
+    /**
+     * Safely parse JSON from a fetch response.
+     * InfinityFree (and similar free hosts) sometimes return HTML challenge
+     * pages instead of JSON. This detects that and returns a fallback.
+     */
+    async function safeJsonParse(response, fallback) {
+        fallback = fallback || { success: false, error: 'Invalid server response' };
+        try {
+            const text = await response.text();
+            // Check if response looks like HTML (InfinityFree anti-bot page)
+            if (text.trim().startsWith('<') || text.trim().startsWith('<!')) {
+                console.warn('[VLERoom] Server returned HTML instead of JSON (possible anti-bot challenge). Retrying...');
+                apiFailCount++;
+                return fallback;
+            }
+            apiFailCount = Math.max(0, apiFailCount - 1); // Decay on success
+            return JSON.parse(text);
+        } catch (e) {
+            console.warn('[VLERoom] JSON parse error:', e.message);
+            apiFailCount++;
+            return fallback;
+        }
+    }
+
+    /**
+     * Get current polling interval with exponential backoff on failures.
+     * Reduces request rate when server is struggling.
+     */
+    function getBackoffInterval(baseInterval) {
+        if (apiFailCount <= 0) return baseInterval;
+        const backoff = Math.min(baseInterval * Math.pow(1.5, apiFailCount), MAX_BACKOFF);
+        return Math.round(backoff);
+    }
+
+    /**
+     * Wrapper around getUserMedia with a timeout.
+     * If camera/mic don't respond within the timeout, rejects.
+     */
+    function getUserMediaWithTimeout(constraints, timeout) {
+        timeout = timeout || MEDIA_TIMEOUT;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                reject(new Error('Camera/microphone request timed out. Please check your device permissions.'));
+            }, timeout);
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => { clearTimeout(timer); resolve(stream); })
+                .catch(err => { clearTimeout(timer); reject(err); });
+        });
+    }
+
+    // ─── ICE SERVER CONFIGURATION ────────────────────────────────
+    /**
+     * Fetch TURN/STUN server configuration from the backend.
+     * This is critical for cross-network connectivity.
+     * Falls back to STUN-only if the API is unavailable.
+     */
+    async function fetchIceConfig() {
+        // Use cached config if still valid
+        if (iceConfigCachedAt > 0 && (Date.now() - iceConfigCachedAt) < ICE_CONFIG_CACHE_TTL) {
+            console.log('[VLERoom] Using cached ICE config');
+            return;
+        }
+
+        try {
+            const res = await fetchWithTimeout(ICE_CONFIG_API, { 
+                method: 'GET',
+                credentials: 'same-origin'
+            }, 8000);
+            const data = await safeJsonParse(res, { success: false });
+            
+            if (data.success && data.iceServers && data.iceServers.length > 0) {
+                ICE_SERVERS = data.iceServers;
+                iceTransportPolicy = data.iceTransportPolicy || 'all';
+                iceConfigCachedAt = Date.now();
+                
+                const turnCount = ICE_SERVERS.filter(s => {
+                    const u = Array.isArray(s.urls) ? s.urls.join(',') : (s.urls || '');
+                    return u.includes('turn:') || u.includes('turns:');
+                }).length;
+                console.log('[VLERoom] ICE config loaded: ' + ICE_SERVERS.length + ' servers (' + turnCount + ' TURN relays)');
+                
+                if (turnCount === 0) {
+                    console.warn('[VLERoom] WARNING: No TURN servers configured! Cross-network connections may fail.');
+                    console.warn('[VLERoom] Configure TURN servers in includes/turn_config.php');
+                }
+            } else {
+                console.warn('[VLERoom] ICE config API returned no servers, using defaults');
+            }
+        } catch (e) {
+            console.warn('[VLERoom] Could not fetch ICE config, using STUN-only fallback:', e.message);
+        }
+    }
+
+    /**
+     * Allow passing ICE config directly (from PHP-injected JSON)
+     * This avoids an extra API call when config is embedded in the page.
+     */
+    function setIceConfig(config) {
+        if (config && config.iceServers && config.iceServers.length > 0) {
+            ICE_SERVERS = config.iceServers;
+            iceTransportPolicy = config.iceTransportPolicy || 'all';
+            iceConfigCachedAt = Date.now();
+            console.log('[VLERoom] ICE config set directly: ' + ICE_SERVERS.length + ' servers');
+        }
     }
 
     // ─── JOIN ROOM ────────────────────────────────────────────────
     let mediaMode = 'full'; // 'full' | 'audio' | 'view-only'
 
     async function joinRoom() {
-        // Try to get camera + mic with graceful fallback
+        // Wrap the entire join in a timeout to prevent infinite hangs
+        const joinPromise = _doJoinRoom();
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Connection timed out. The server may be slow or unreachable. Please try again.')), JOIN_TIMEOUT);
+        });
+        return Promise.race([joinPromise, timeoutPromise]);
+    }
+
+    async function _doJoinRoom() {
+        // Step 1: Fetch TURN/STUN server config (critical for cross-network)
+        onStatusUpdate('Configuring network...');
+        await fetchIceConfig();
+
+        // Step 2: Try to get camera + mic with graceful fallback
+        onStatusUpdate('Requesting camera & microphone...');
         localStream = await acquireMediaStream();
 
-        // Register with signaling server
+        // Step 3: Register with signaling server
+        onStatusUpdate('Joining session...');
         const fd = new FormData();
         fd.append('action', 'join');
         fd.append('session_id', sessionId);
         fd.append('peer_id', myPeerId);
 
         try {
-            const res = await fetch(SIGNAL_API, { method: 'POST', body: fd });
-            const data = await res.json();
+            const res = await fetchWithTimeout(SIGNAL_API, { method: 'POST', body: fd });
+            const data = await safeJsonParse(res);
 
-            if (!data.success) throw new Error(data.error || 'Failed to join room');
+            if (!data.success) throw new Error(data.error || 'Failed to join room. Server may be temporarily unavailable.');
 
             isInRoom = true;
+            onStatusUpdate('Connected! Setting up peers...');
 
             // Connect to existing peers
             if (data.peers && data.peers.length > 0) {
@@ -104,13 +271,14 @@
                 }
             }
 
-            // Start polling
-            pollTimer = setInterval(pollSignals, POLL_INTERVAL);
-            heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
-            chatPollTimer = setInterval(pollChat, CHAT_POLL_INTERVAL);
+            // Start polling with adaptive intervals
+            schedulePolling();
 
             return { stream: localStream, mediaMode: mediaMode };
         } catch (err) {
+            if (err.name === 'AbortError') {
+                throw new Error('Server connection timed out. Please check your internet and try again.');
+            }
             onError('Failed to join room: ' + err.message);
             throw err;
         }
@@ -119,13 +287,49 @@
     /**
      * Graceful media acquisition: camera+mic → mic-only → view-only
      * Ensures the student can ALWAYS join and hear the lecturer
+     * Supports iOS Safari, Android Chrome, and all desktop browsers
      */
     async function acquireMediaStream() {
+        // iOS Safari requires user interaction before media capture
+        if (isIOS) {
+            console.log('[VLERoom] iOS detected - using iOS-optimized media constraints');
+        }
+
+        // Get optimal video constraints based on device
+        function getVideoConstraints() {
+            if (isIOS) {
+                // iOS Safari works better with simpler constraints
+                return {
+                    facingMode: 'user',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                };
+            }
+            return {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user'
+            };
+        }
+
+        // Get optimal audio constraints based on device
+        function getAudioConstraints() {
+            if (isIOS) {
+                // iOS Safari has limited audio constraint support
+                return true; // Simple true works best on iOS
+            }
+            return {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            };
+        }
+
         // Attempt 1: Camera + Microphone (full experience)
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            const stream = await getUserMediaWithTimeout({
+                video: getVideoConstraints(),
+                audio: getAudioConstraints()
             });
             mediaMode = 'full';
             isAudioOn = true;
@@ -133,14 +337,14 @@
             console.log('[VLERoom] Media acquired: camera + microphone');
             return stream;
         } catch (e) {
-            console.warn('[VLERoom] Camera+Mic failed:', e.message, '- trying mic-only...');
+            console.warn('[VLERoom] Camera+Mic failed:', e.name, e.message, '- trying mic-only...');
         }
 
         // Attempt 2: Microphone only (can talk and hear, no video)
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            const stream = await getUserMediaWithTimeout({
                 video: false,
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                audio: getAudioConstraints()
             });
             mediaMode = 'audio';
             isAudioOn = true;
@@ -149,7 +353,7 @@
             onError('Camera not available — joined with microphone only. You can still hear and talk.');
             return stream;
         } catch (e) {
-            console.warn('[VLERoom] Mic-only failed:', e.message, '- joining view-only...');
+            console.warn('[VLERoom] Mic-only failed:', e.name, e.message, '- joining view-only...');
         }
 
         // Attempt 3: View-only (can see and hear the lecturer, but can't share own audio/video)
@@ -214,9 +418,9 @@
     async function leaveRoom() {
         isInRoom = false;
 
-        clearInterval(pollTimer);
-        clearInterval(heartbeatTimer);
-        clearInterval(chatPollTimer);
+        clearTimeout(pollTimer);
+        clearTimeout(heartbeatTimer);
+        clearTimeout(chatPollTimer);
 
         // Close all peer connections
         for (const peerId in peerConnections) {
@@ -243,13 +447,30 @@
         try { await fetch(SIGNAL_API, { method: 'POST', body: fd }); } catch (e) {}
     }
 
+    // ─── ADAPTIVE POLLING SCHEDULER ───────────────────────────────
+    /**
+     * Start polling loops using setTimeout (not setInterval) so each poll
+     * waits for the previous one to finish. Includes exponential backoff
+     * when the server is returning errors (e.g. InfinityFree rate limiting).
+     */
+    function schedulePolling() {
+        // Use setTimeout-based polling — each call reschedules itself
+        // This prevents overlapping requests that overwhelm free hosting
+        pollTimer = setTimeout(pollSignals, POLL_INTERVAL);
+        heartbeatTimer = setTimeout(sendHeartbeat, HEARTBEAT_INTERVAL);
+        chatPollTimer = setTimeout(pollChat, CHAT_POLL_INTERVAL);
+    }
+
     // ─── PEER CONNECTION ──────────────────────────────────────────
     async function createPeerConnection(remotePeerId, isInitiator) {
         if (peerConnections[remotePeerId]) {
             peerConnections[remotePeerId].close();
         }
 
-        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        const pc = new RTCPeerConnection({ 
+            iceServers: ICE_SERVERS,
+            iceTransportPolicy: iceTransportPolicy
+        });
         peerConnections[remotePeerId] = pc;
 
         // Add local tracks (if available — view-only users have no local stream)
@@ -280,6 +501,38 @@
             if (event.candidate) {
                 sendSignal(remotePeerId, 'ice', JSON.stringify(event.candidate));
             }
+        };
+
+        // ICE connection state monitoring with auto-restart
+        let iceRestartTimer = null;
+        pc.oniceconnectionstatechange = () => {
+            const state = pc.iceConnectionState;
+            console.log('[VLERoom] ICE connection state [' + remotePeerId.substring(0, 15) + ']: ' + state);
+            
+            if (state === 'connected' || state === 'completed') {
+                // Connection successful — clear any restart timer
+                if (iceRestartTimer) { clearTimeout(iceRestartTimer); iceRestartTimer = null; }
+                logConnectionType(pc, remotePeerId);
+            } else if (state === 'failed') {
+                // Connection failed — attempt ICE restart
+                console.warn('[VLERoom] ICE failed for peer ' + remotePeerId + ', attempting ICE restart...');
+                attemptIceRestart(pc, remotePeerId);
+            } else if (state === 'disconnected') {
+                // Temporarily disconnected — wait before restarting
+                console.warn('[VLERoom] ICE disconnected for peer ' + remotePeerId + ', will restart if not recovered...');
+                if (iceRestartTimer) clearTimeout(iceRestartTimer);
+                iceRestartTimer = setTimeout(() => {
+                    if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                        console.warn('[VLERoom] ICE still disconnected, restarting...');
+                        attemptIceRestart(pc, remotePeerId);
+                    }
+                }, ICE_RESTART_TIMEOUT);
+            }
+        };
+
+        // ICE gathering state (for diagnostics)
+        pc.onicegatheringstatechange = () => {
+            console.log('[VLERoom] ICE gathering state [' + remotePeerId.substring(0, 15) + ']: ' + pc.iceGatheringState);
         };
 
         // Remote stream — ensure audio tracks are always received and played
@@ -325,6 +578,110 @@
         onPeerLeft(peerId, info);
     }
 
+    // ─── ICE RESTART & CONNECTION DIAGNOSTICS ─────────────────────
+    /**
+     * Attempt ICE restart when connection fails.
+     * Creates a new offer with iceRestart: true, which generates new ICE
+     * candidates and can recover from network changes or NAT rebinding.
+     */
+    async function attemptIceRestart(pc, remotePeerId) {
+        if (!isInRoom) return;
+        if (pc.signalingState === 'closed') return;
+        
+        try {
+            const offer = await pc.createOffer({ iceRestart: true });
+            await pc.setLocalDescription(offer);
+            sendSignal(remotePeerId, 'offer', JSON.stringify(offer));
+            console.log('[VLERoom] ICE restart offer sent to', remotePeerId);
+        } catch (e) {
+            console.error('[VLERoom] ICE restart failed:', e.message);
+            // Last resort: completely rebuild the connection
+            console.log('[VLERoom] Attempting full reconnection...');
+            try {
+                await createPeerConnection(remotePeerId, true);
+            } catch (e2) {
+                console.error('[VLERoom] Full reconnection failed:', e2.message);
+            }
+        }
+    }
+
+    /**
+     * Log the connection type (direct vs relayed) for diagnostics.
+     * Helps administrators know if TURN relay is being used.
+     */
+    async function logConnectionType(pc, remotePeerId) {
+        try {
+            const stats = await pc.getStats();
+            stats.forEach(report => {
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    const localId = report.localCandidateId;
+                    const remoteId = report.remoteCandidateId;
+                    
+                    let localType = 'unknown', remoteType = 'unknown';
+                    stats.forEach(s => {
+                        if (s.id === localId) localType = s.candidateType || 'unknown';
+                        if (s.id === remoteId) remoteType = s.candidateType || 'unknown';
+                    });
+                    
+                    const isRelayed = localType === 'relay' || remoteType === 'relay';
+                    console.log('[VLERoom] Connection to ' + remotePeerId.substring(0, 15) + ': ' +
+                        (isRelayed ? '🔄 RELAYED (via TURN)' : '✅ DIRECT (peer-to-peer)') +
+                        ' | local=' + localType + ' remote=' + remoteType);
+                }
+            });
+        } catch (e) {
+            // Stats not available on all browsers
+        }
+    }
+
+    /**
+     * Get connection diagnostics for all peers.
+     * Returns an object with connection status, type (direct/relayed), etc.
+     */
+    async function getConnectionDiagnostics() {
+        const diagnostics = {
+            iceServerCount: ICE_SERVERS.length,
+            turnConfigured: ICE_SERVERS.some(s => {
+                const u = Array.isArray(s.urls) ? s.urls.join(',') : (s.urls || '');
+                return u.includes('turn:') || u.includes('turns:');
+            }),
+            iceTransportPolicy: iceTransportPolicy,
+            peers: {}
+        };
+        
+        for (const peerId in peerConnections) {
+            const pc = peerConnections[peerId];
+            const peerDiag = {
+                connectionState: pc.connectionState,
+                iceConnectionState: pc.iceConnectionState,
+                iceGatheringState: pc.iceGatheringState,
+                connectionType: 'unknown'
+            };
+            
+            try {
+                const stats = await pc.getStats();
+                stats.forEach(report => {
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                        stats.forEach(s => {
+                            if (s.id === report.localCandidateId) {
+                                peerDiag.localCandidateType = s.candidateType;
+                                peerDiag.connectionType = s.candidateType === 'relay' ? 'RELAYED' : 'DIRECT';
+                            }
+                            if (s.id === report.remoteCandidateId) {
+                                peerDiag.remoteCandidateType = s.candidateType;
+                                if (s.candidateType === 'relay') peerDiag.connectionType = 'RELAYED';
+                            }
+                        });
+                    }
+                });
+            } catch (e) {}
+            
+            diagnostics.peers[peerId] = peerDiag;
+        }
+        
+        return diagnostics;
+    }
+
     // ─── SIGNALING ────────────────────────────────────────────────
     async function sendSignal(toPeer, type, data) {
         const fd = new FormData();
@@ -335,7 +692,7 @@
         fd.append('signal_type', type);
         fd.append('signal_data', data);
         try {
-            await fetch(SIGNAL_API, { method: 'POST', body: fd });
+            await fetchWithTimeout(SIGNAL_API, { method: 'POST', body: fd }, 8000);
         } catch (e) {
             console.error('Signal send error:', e);
         }
@@ -344,8 +701,8 @@
     async function pollSignals() {
         if (!isInRoom) return;
         try {
-            const res = await fetch(`${SIGNAL_API}?action=poll_signals&session_id=${sessionId}&peer_id=${encodeURIComponent(myPeerId)}`);
-            const data = await res.json();
+            const res = await fetchWithTimeout(`${SIGNAL_API}?action=poll_signals&session_id=${sessionId}&peer_id=${encodeURIComponent(myPeerId)}`, {}, 10000);
+            const data = await safeJsonParse(res, { success: false, signals: [] });
             if (data.success && data.signals) {
                 for (const sig of data.signals) {
                     await handleSignal(sig);
@@ -353,6 +710,10 @@
             }
         } catch (e) {
             console.error('Poll signals error:', e);
+        }
+        // Reschedule with backoff
+        if (isInRoom) {
+            pollTimer = setTimeout(pollSignals, getBackoffInterval(POLL_INTERVAL));
         }
     }
 
@@ -404,8 +765,8 @@
         fd.append('session_id', sessionId);
         fd.append('peer_id', myPeerId);
         try {
-            const res = await fetch(SIGNAL_API, { method: 'POST', body: fd });
-            const data = await res.json();
+            const res = await fetchWithTimeout(SIGNAL_API, { method: 'POST', body: fd }, 10000);
+            const data = await safeJsonParse(res, { success: false });
             if (data.success) {
                 // Check if session has been ended by the host
                 if (data.session_status && data.session_status !== 'active') {
@@ -435,12 +796,16 @@
                 }
             }
         } catch (e) {}
+        // Reschedule with backoff
+        if (isInRoom) {
+            heartbeatTimer = setTimeout(sendHeartbeat, getBackoffInterval(HEARTBEAT_INTERVAL));
+        }
     }
 
     async function refreshPeerList() {
         try {
-            const res = await fetch(`${SIGNAL_API}?action=get_peers&session_id=${sessionId}`);
-            const data = await res.json();
+            const res = await fetchWithTimeout(`${SIGNAL_API}?action=get_peers&session_id=${sessionId}`, {}, 10000);
+            const data = await safeJsonParse(res, { success: false, peers: [] });
             if (data.success) {
                 data.peers.forEach(p => { peerInfo[p.peer_id] = p; });
             }
@@ -707,8 +1072,9 @@
         fd.append('session_id', sessionId);
         fd.append('message', message);
         try {
-            const res = await fetch(SIGNAL_API, { method: 'POST', body: fd });
-            return (await res.json()).success;
+            const res = await fetchWithTimeout(SIGNAL_API, { method: 'POST', body: fd }, 8000);
+            const data = await safeJsonParse(res, { success: false });
+            return data.success;
         } catch (e) {
             return false;
         }
@@ -717,15 +1083,19 @@
     async function pollChat() {
         if (!isInRoom) return;
         try {
-            const res = await fetch(`${SIGNAL_API}?action=get_chat&session_id=${sessionId}&after_id=${lastChatId}`);
-            const data = await res.json();
-            if (data.success && data.messages.length > 0) {
+            const res = await fetchWithTimeout(`${SIGNAL_API}?action=get_chat&session_id=${sessionId}&after_id=${lastChatId}`, {}, 10000);
+            const data = await safeJsonParse(res, { success: false, messages: [] });
+            if (data.success && data.messages && data.messages.length > 0) {
                 data.messages.forEach(msg => {
                     lastChatId = Math.max(lastChatId, parseInt(msg.chat_id));
                     onChatMessage(msg);
                 });
             }
         } catch (e) {}
+        // Reschedule with backoff
+        if (isInRoom) {
+            chatPollTimer = setTimeout(pollChat, getBackoffInterval(CHAT_POLL_INTERVAL));
+        }
     }
 
     // ─── GETTERS ──────────────────────────────────────────────────
@@ -760,6 +1130,10 @@
         getIsRecording,
         getMediaMode,
         getPeerInfo,
-        refreshPeerList
+        refreshPeerList,
+        // TURN/ICE configuration
+        setIceConfig,
+        fetchIceConfig,
+        getConnectionDiagnostics
     };
 })();

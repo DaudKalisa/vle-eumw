@@ -47,65 +47,56 @@ if (!isLoggedIn()) {
 
 $conn = getDbConnection();
 
-// Create live session tables if they don't exist
-// Temporarily disable foreign key checks to avoid constraint errors
-$conn->query("SET FOREIGN_KEY_CHECKS=0");
-
-$create_tables = "
-CREATE TABLE IF NOT EXISTS vle_live_sessions (
-    session_id INT PRIMARY KEY AUTO_INCREMENT,
-    course_id INT NOT NULL,
-    lecturer_id VARCHAR(50) NOT NULL,
-    session_name VARCHAR(255) NOT NULL,
-    session_code VARCHAR(50) UNIQUE NOT NULL,
-    status ENUM('pending', 'active', 'completed') DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP NULL,
-    ended_at TIMESTAMP NULL,
-    max_participants INT DEFAULT 50,
-    meeting_url VARCHAR(500),
-    INDEX idx_course (course_id),
-    INDEX idx_lecturer (lecturer_id),
-    INDEX idx_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS vle_session_participants (
-    participant_id INT PRIMARY KEY AUTO_INCREMENT,
-    session_id INT NOT NULL,
-    student_id VARCHAR(50) NOT NULL,
-    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    left_at TIMESTAMP NULL,
-    status ENUM('invited', 'joined', 'completed') DEFAULT 'invited',
-    INDEX idx_session (session_id),
-    INDEX idx_student (student_id),
-    UNIQUE (session_id, student_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS vle_session_invites (
-    invite_id INT PRIMARY KEY AUTO_INCREMENT,
-    session_id INT NOT NULL,
-    student_id VARCHAR(50) NOT NULL,
-    invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    viewed_at TIMESTAMP NULL,
-    status ENUM('pending', 'accepted', 'declined') DEFAULT 'pending',
-    INDEX idx_session (session_id),
-    INDEX idx_student (student_id),
-    UNIQUE (session_id, student_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-";
-
-// Execute table creation
-if (mysqli_multi_query($conn, $create_tables)) {
-    // Clear all results from multi_query
-    do {
-        if ($result = $conn->store_result()) {
-            $result->free();
-        }
-    } while ($conn->next_result());
+// One-time table creation: only run if the main table doesn't exist yet
+// Avoids costly multi_query + connection state issues on every API call
+$table_check = $conn->query("SHOW TABLES LIKE 'vle_live_sessions'");
+if (!$table_check || $table_check->num_rows === 0) {
+    $conn->query("SET FOREIGN_KEY_CHECKS=0");
+    
+    $conn->query("CREATE TABLE IF NOT EXISTS vle_live_sessions (
+        session_id INT PRIMARY KEY AUTO_INCREMENT,
+        course_id INT NOT NULL,
+        lecturer_id VARCHAR(50) NOT NULL,
+        session_name VARCHAR(255) NOT NULL,
+        session_code VARCHAR(50) UNIQUE NOT NULL,
+        status ENUM('pending', 'active', 'completed') DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        started_at TIMESTAMP NULL,
+        ended_at TIMESTAMP NULL,
+        max_participants INT DEFAULT 50,
+        meeting_url VARCHAR(500),
+        recording_url VARCHAR(500) DEFAULT NULL,
+        INDEX idx_course (course_id),
+        INDEX idx_lecturer (lecturer_id),
+        INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    
+    $conn->query("CREATE TABLE IF NOT EXISTS vle_session_participants (
+        participant_id INT PRIMARY KEY AUTO_INCREMENT,
+        session_id INT NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        left_at TIMESTAMP NULL,
+        status ENUM('invited', 'joined', 'completed') DEFAULT 'invited',
+        INDEX idx_session (session_id),
+        INDEX idx_student (student_id),
+        UNIQUE (session_id, student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    
+    $conn->query("CREATE TABLE IF NOT EXISTS vle_session_invites (
+        invite_id INT PRIMARY KEY AUTO_INCREMENT,
+        session_id INT NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        viewed_at TIMESTAMP NULL,
+        status ENUM('pending', 'accepted', 'declined') DEFAULT 'pending',
+        INDEX idx_session (session_id),
+        INDEX idx_student (student_id),
+        UNIQUE (session_id, student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    
+    $conn->query("SET FOREIGN_KEY_CHECKS=1");
 }
-
-// Re-enable foreign key checks
-$conn->query("SET FOREIGN_KEY_CHECKS=1");
 
 $user = getCurrentUser();
 $action = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : '');
@@ -171,6 +162,43 @@ if ($action === 'start_session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
+        // Auto-end any existing active sessions for this lecturer
+        $active_check = $conn->prepare("
+            SELECT session_id, session_name FROM vle_live_sessions 
+            WHERE lecturer_id = ? AND status IN ('active', 'pending')
+        ");
+        $lecturer_id_check = (string)$lecturer_user_id;
+        $active_check->bind_param("s", $lecturer_id_check);
+        $active_check->execute();
+        $active_result = $active_check->get_result();
+        
+        $ended_sessions = [];
+        while ($existing = $active_result->fetch_assoc()) {
+            $ended_sessions[] = $existing['session_name'];
+        }
+        $active_check->close();
+        
+        if (!empty($ended_sessions)) {
+            // End all running sessions for this lecturer
+            $end_stmt = $conn->prepare("
+                UPDATE vle_live_sessions 
+                SET status = 'completed', ended_at = NOW() 
+                WHERE lecturer_id = ? AND status IN ('active', 'pending')
+            ");
+            $end_stmt->bind_param("s", $lecturer_id_check);
+            $end_stmt->execute();
+            $end_stmt->close();
+            
+            // Clean up peers from ended sessions
+            $conn->query("
+                DELETE sp FROM vle_session_peers sp
+                INNER JOIN vle_live_sessions vls ON sp.session_id = vls.session_id
+                WHERE vls.lecturer_id = '{$conn->real_escape_string($lecturer_id_check)}' AND vls.status = 'completed'
+            ");
+            
+            error_log("[VLE Live] Auto-ended " . count($ended_sessions) . " previous session(s) for lecturer $lecturer_user_id: " . implode(', ', $ended_sessions));
+        }
+        
         $session_code = generateSessionCode();
         
         // Zoom settings no longer required — using built-in WebRTC classroom
@@ -231,42 +259,100 @@ if ($action === 'start_session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             // Get course and lecturer info for email
             $course_info = $conn->query("SELECT c.course_name, l.full_name as lecturer_name FROM vle_courses c JOIN lecturers l ON c.lecturer_id = l.lecturer_id WHERE c.course_id = $course_id")->fetch_assoc();
             
-            // Send invites to all students
+            // Collect all student IDs first (fast DB operations only)
+            $student_ids = [];
             if ($result) {
                 while ($student = $result->fetch_assoc()) {
-                    $student_id = $student['student_id'];
-                    
-                    // Insert invite
-                    try {
-                        $stmt2 = $conn->prepare("
-                            INSERT INTO vle_session_invites 
-                            (session_id, student_id, status)
-                            VALUES (?, ?, 'pending')
-                        ");
-                        if ($stmt2) {
-                            $stmt2->bind_param("is", $session_id, $student_id);
-                            @$stmt2->execute();
-                            $stmt2->close();
+                    $student_ids[] = $student['student_id'];
+                }
+            }
+            
+            // Insert invites and participants in batch (fast, no emails yet)
+            foreach ($student_ids as $student_id) {
+                // Insert invite
+                try {
+                    $stmt2 = $conn->prepare("
+                        INSERT IGNORE INTO vle_session_invites 
+                        (session_id, student_id, status)
+                        VALUES (?, ?, 'pending')
+                    ");
+                    if ($stmt2) {
+                        $stmt2->bind_param("is", $session_id, $student_id);
+                        $stmt2->execute();
+                        $stmt2->close();
+                    }
+                } catch (Throwable $e) { /* ignore duplicate */ }
+                
+                // Insert participant record
+                try {
+                    $stmt3 = $conn->prepare("
+                        INSERT IGNORE INTO vle_session_participants 
+                        (session_id, student_id, status)
+                        VALUES (?, ?, 'invited')
+                    ");
+                    if ($stmt3) {
+                        $stmt3->bind_param("is", $session_id, $student_id);
+                        $stmt3->execute();
+                        $stmt3->close();
+                    }
+                } catch (Throwable $e) { /* ignore duplicate */ }
+            }
+            
+            // ── RESPOND TO LECTURER IMMEDIATELY ──
+            // Send the JSON response BEFORE sending emails so the lecturer
+            // isn't stuck waiting for 50+ SMTP connections to complete
+            $response_data = [
+                'success' => true, 
+                'message' => 'Live session started',
+                'session_id' => $session_id,
+                'session_code' => $session_code,
+                'meeting_url' => $meeting_url,
+                'auto_open' => true
+            ];
+            
+            // Include info about auto-ended sessions
+            if (!empty($ended_sessions)) {
+                $response_data['ended_previous'] = true;
+                $response_data['ended_sessions'] = $ended_sessions;
+                $response_data['message'] = 'Live session started (previous session' . (count($ended_sessions) > 1 ? 's' : '') . ' auto-ended)';
+            }
+            
+            $response_json = json_encode($response_data);
+            
+            // Flush the response to the client immediately
+            header('Content-Length: ' . strlen($response_json));
+            echo $response_json;
+            
+            // Flush all output buffers to send response now
+            if (ob_get_level() > 0) ob_end_flush();
+            flush();
+            
+            // If available, tell PHP-FPM the client is done (response sent)
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
+            
+            // Prevent timeout during async email sending
+            @set_time_limit(120);
+            ignore_user_abort(true);
+            
+            // ── SEND EMAILS IN BACKGROUND (after response is sent) ──
+            // Limit emails to prevent timeout on shared hosting
+            $email_sent = 0;
+            $max_emails = 20; // Cap at 20 emails per session start to prevent timeout
+            
+            if (function_exists('isEmailEnabled') && $course_info) {
+                $email_enabled = false;
+                try { $email_enabled = isEmailEnabled(); } catch (Throwable $e) {}
+                
+                if ($email_enabled) {
+                    foreach ($student_ids as $student_id) {
+                        if ($email_sent >= $max_emails) {
+                            error_log("Live session $session_id: Email limit reached ($max_emails). Remaining students will see in-app notification.");
+                            break;
                         }
-                    } catch (Throwable $e) { /* ignore duplicate */ }
-                    
-                    // Insert participant record
-                    try {
-                        $stmt3 = $conn->prepare("
-                            INSERT INTO vle_session_participants 
-                            (session_id, student_id, status)
-                            VALUES (?, ?, 'invited')
-                        ");
-                        if ($stmt3) {
-                            $stmt3->bind_param("is", $session_id, $student_id);
-                            @$stmt3->execute();
-                            $stmt3->close();
-                        }
-                    } catch (Throwable $e) { /* ignore duplicate */ }
-                    
-                    // Send email notification to student (wrapped in try/catch so email failure doesn't kill the response)
-                    try {
-                        if (function_exists('isEmailEnabled') && isEmailEnabled() && $course_info) {
+                        
+                        try {
                             $student_info_stmt = $conn->prepare("SELECT full_name, email FROM students WHERE student_id = ?");
                             if ($student_info_stmt) {
                                 $student_info_stmt->bind_param("s", $student_id);
@@ -287,23 +373,15 @@ if ($action === 'start_session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                         '',
                                         $student_invites_url
                                     );
+                                    $email_sent++;
                                 }
                             }
+                        } catch (Throwable $e) {
+                            error_log('Email notification error for student ' . $student_id . ': ' . $e->getMessage());
                         }
-                    } catch (Throwable $e) {
-                        error_log('Email notification error for student ' . $student_id . ': ' . $e->getMessage());
                     }
                 }
             }
-            
-            echo json_encode([
-                'success' => true, 
-                'message' => 'Live session started',
-                'session_id' => $session_id,
-                'session_code' => $session_code,
-                'meeting_url' => $meeting_url,
-                'auto_open' => true
-            ]);
         } else {
             echo json_encode(['success' => false, 'message' => 'Failed to create session: ' . $conn->error]);
         }
@@ -378,8 +456,11 @@ if ($action === 'upload_recording' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $filepath = $upload_dir . $filename;
     
     if (move_uploaded_file($file['tmp_name'], $filepath)) {
-        // Ensure recording_url column exists
-        $conn->query("ALTER TABLE vle_live_sessions ADD COLUMN IF NOT EXISTS recording_url VARCHAR(500) DEFAULT NULL AFTER meeting_url");
+        // Ensure recording_url column exists (one-time check)
+        $col_check = $conn->query("SHOW COLUMNS FROM vle_live_sessions LIKE 'recording_url'");
+        if ($col_check && $col_check->num_rows === 0) {
+            $conn->query("ALTER TABLE vle_live_sessions ADD COLUMN recording_url VARCHAR(500) DEFAULT NULL AFTER meeting_url");
+        }
         
         // Save recording URL to session
         $recording_url = 'uploads/recordings/' . $filename;
@@ -432,27 +513,49 @@ if ($action === 'delete_recording' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// End a live session (ends ALL active sessions for this lecturer at once)
+// End a specific live session (also ends all other active sessions for this lecturer)
 if ($action === 'end_session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $session_id = isset($_POST['session_id']) ? (int)$_POST['session_id'] : 0;
     
-    // Verify lecturer owns this session
-    $stmt = $conn->prepare("SELECT session_id FROM vle_live_sessions WHERE session_id = ? AND lecturer_id = ?");
-    $stmt->bind_param("is", $session_id, $user['user_id']);
-    $stmt->execute();
-    
-    if ($stmt->get_result()->num_rows === 0) {
-        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-        exit;
+    if ($session_id > 0) {
+        // Verify lecturer owns this session
+        $stmt = $conn->prepare("SELECT session_id FROM vle_live_sessions WHERE session_id = ? AND lecturer_id = ?");
+        $stmt->bind_param("is", $session_id, $user['user_id']);
+        $stmt->execute();
+        
+        if ($stmt->get_result()->num_rows === 0) {
+            echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+            exit;
+        }
     }
     
-    // End ALL active sessions for this lecturer (not just the one)
+    // End ALL active sessions for this lecturer
     $stmt = $conn->prepare("UPDATE vle_live_sessions SET status = 'completed', ended_at = NOW() WHERE lecturer_id = ? AND status IN ('active', 'pending')");
     $stmt->bind_param("s", $user['user_id']);
     
     if ($stmt->execute()) {
         $ended_count = $stmt->affected_rows;
         echo json_encode(['success' => true, 'message' => "All sessions ended ($ended_count total)"]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Error ending sessions']);
+    }
+    exit;
+}
+
+// End ALL active sessions for the current lecturer (no session_id needed)
+if ($action === 'end_all_sessions' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $lecturer_id = (string)$user['user_id'];
+    
+    $stmt = $conn->prepare("UPDATE vle_live_sessions SET status = 'completed', ended_at = NOW() WHERE lecturer_id = ? AND status IN ('active', 'pending')");
+    $stmt->bind_param("s", $lecturer_id);
+    
+    if ($stmt->execute()) {
+        $ended_count = $stmt->affected_rows;
+        if ($ended_count > 0) {
+            echo json_encode(['success' => true, 'message' => "$ended_count active session(s) stopped successfully"]);
+        } else {
+            echo json_encode(['success' => true, 'message' => 'No active sessions to stop']);
+        }
     } else {
         echo json_encode(['success' => false, 'message' => 'Error ending sessions']);
     }

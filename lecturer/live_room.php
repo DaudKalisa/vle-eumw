@@ -7,6 +7,9 @@
 require_once '../includes/auth.php';
 requireLogin();
 
+// Load TURN server configuration for cross-network connectivity
+require_once '../includes/turn_config.php';
+
 $conn = getDbConnection();
 $user = getCurrentUser();
 $user_id = (int)$user['user_id'];
@@ -31,6 +34,10 @@ if (!$session) {
 }
 
 $is_host = ($user_role === 'lecturer');
+
+// Generate ICE server configuration (includes TURN for cross-network support)
+$iceConfig = getIceServerConfig();
+$iceConfigJson = json_encode($iceConfig);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -392,6 +399,8 @@ $is_host = ($user_role === 'lecturer');
             justify-content: center;
             gap: 16px;
             padding: 0 20px;
+            position: relative;
+            z-index: 9999;
         }
         .ctrl-btn {
             width: 48px; height: 48px;
@@ -404,6 +413,7 @@ $is_host = ($user_role === 'lecturer');
             cursor: pointer;
             transition: all 0.2s;
             color: #fff;
+            z-index: 10000;
         }
         .ctrl-btn:hover { transform: scale(1.1); }
         .ctrl-btn.on { background: #2a2a4a; }
@@ -460,6 +470,33 @@ $is_host = ($user_role === 'lecturer');
             animation: livePulse 2s infinite;
         }
 
+        /* ── FULLSCREEN: Controls always visible at bottom ── */
+        body:fullscreen .room-controls,
+        body:-webkit-full-screen .room-controls,
+        body:-ms-fullscreen .room-controls,
+        :fullscreen .room-controls,
+        :-webkit-full-screen .room-controls {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 99999 !important;
+            height: 70px !important;
+        }
+        body:fullscreen .room-main,
+        body:-webkit-full-screen .room-main,
+        :-webkit-full-screen .room-main,
+        :fullscreen .room-main {
+            height: calc(100vh - 50px - 70px) !important;
+        }
+        body:fullscreen .self-pip,
+        body:-webkit-full-screen .self-pip,
+        :-webkit-full-screen .self-pip,
+        :fullscreen .self-pip {
+            z-index: 99998 !important;
+            bottom: 84px !important;
+        }
+
         /* ── RESPONSIVE ── */
         @media (max-width: 900px) {
             .filmstrip { width: 140px; min-width: 140px; }
@@ -468,8 +505,31 @@ $is_host = ($user_role === 'lecturer');
         }
         @media (max-width: 600px) {
             .filmstrip { width: 0; min-width: 0; display: none; }
-            .room-controls { gap: 8px; }
-            .ctrl-btn { width: 42px; height: 42px; font-size: 18px; }
+            .sidebar { width: 100%; max-width: 100%; }
+            .room-controls { 
+                gap: 8px; 
+                padding: 0 10px; 
+                flex-wrap: wrap; 
+                height: auto; 
+                min-height: 60px; 
+                padding-top: 8px; 
+                padding-bottom: 8px;
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                z-index: 99999 !important;
+            }
+            .room-main {
+                height: calc(100vh - 50px - 70px) !important;
+                padding-bottom: 70px;
+            }
+            .ctrl-btn { width: 44px; height: 44px; font-size: 18px; }
+            .ctrl-btn.end-call { width: 48px; height: 48px; font-size: 20px; }
+            /* Ensure audio/video buttons are always prominent on mobile */
+            #btnAudio, #btnVideo { background: #2ecc71; }
+            #btnAudio.off, #btnVideo.off { background: #e74c3c; }
+            .self-pip { bottom: 84px !important; z-index: 99998 !important; }
         }
 
         /* Scrollbar */
@@ -502,6 +562,28 @@ $is_host = ($user_role === 'lecturer');
     <p class="text-muted" id="uploadStatus">Preparing upload...</p>
 </div>
 
+<!-- CONNECTING OVERLAY — shown during camera/session initialization -->
+<div id="connectingOverlay" style="position:fixed;inset:0;background:rgba(15,15,15,0.95);z-index:10000;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:'Segoe UI',system-ui,sans-serif;">
+    <div style="text-align:center;max-width:400px;padding:20px;">
+        <div id="connectingSpinner" class="spinner-border text-primary mb-3" role="status" style="width:3rem;height:3rem;"></div>
+        <h4 id="connectingTitle" style="margin-bottom:8px;">Connecting to Live Session</h4>
+        <p id="connectingStatus" style="color:#aab;font-size:14px;margin-bottom:4px;">Initializing...</p>
+        <p id="connectingHint" style="color:#667;font-size:12px;margin-bottom:20px;">Please allow camera and microphone access when prompted</p>
+        <div id="connectingError" style="display:none;">
+            <div style="background:#2a1a1a;border:1px solid #dc3545;border-radius:10px;padding:15px;margin-bottom:15px;">
+                <i class="bi bi-exclamation-triangle-fill" style="color:#dc3545;font-size:20px;"></i>
+                <p id="connectingErrorMsg" style="color:#f88;font-size:13px;margin:8px 0 0;"></p>
+            </div>
+            <button id="btnRetryConnect" onclick="retryConnection()" style="background:#6c63ff;color:#fff;border:none;padding:10px 30px;border-radius:8px;font-size:14px;cursor:pointer;margin-right:8px;">
+                <i class="bi bi-arrow-clockwise me-1"></i> Retry
+            </button>
+            <button onclick="retryWithoutCamera()" style="background:#2a2a4a;color:#fff;border:1px solid #444;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;">
+                <i class="bi bi-eye me-1"></i> Join without camera
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- TOP BAR -->
 <div class="room-topbar">
     <div class="session-info">
@@ -515,6 +597,11 @@ $is_host = ($user_role === 'lecturer');
         <span class="twoway-badge" id="twowayBadge" style="display:none;"><span class="tw-dot"></span> 2-Way Audio</span>
         <span class="peer-count" id="peerCount"><i class="bi bi-people me-1"></i> 1</span>
         <span style="font-size:12px;color:#666;" id="connectionStatus">Connecting...</span>
+        <?php if ($is_host): ?>
+        <button class="btn btn-sm btn-outline-secondary" id="btnDiagnostics" title="Connection diagnostics" style="font-size:11px;padding:2px 8px;border-radius:12px;" onclick="showDiagnostics()">
+            <i class="bi bi-wifi"></i>
+        </button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -532,8 +619,8 @@ $is_host = ($user_role === 'lecturer');
     <!-- FILMSTRIP (participant thumbnails) -->
     <div class="filmstrip" id="filmstrip"></div>
 
-    <!-- CHAT SIDEBAR -->
-    <div class="sidebar" id="chatSidebar">
+    <!-- CHAT SIDEBAR - starts collapsed -->
+    <div class="sidebar collapsed" id="chatSidebar">
         <div class="sidebar-header">
             <span><i class="bi bi-chat-dots me-2"></i>Chat</span>
             <button class="btn btn-sm btn-outline-light" onclick="toggleSidebar()" style="font-size:12px;"><i class="bi bi-x-lg"></i></button>
@@ -554,7 +641,7 @@ $is_host = ($user_role === 'lecturer');
 
 <!-- SELF-VIEW PiP (your own camera) -->
 <div class="self-pip" id="selfPip" style="display:none;">
-    <video id="localVideo" autoplay muted playsinline></video>
+    <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
     <div class="tile-avatar" id="selfAvatar" style="display:none;"><?= strtoupper(substr($user_name,0,1)) ?></div>
     <div class="self-pip-label"><?= $user_name ?><?php if ($is_host): ?> <span style="color:#e74c3c;font-weight:700;">HOST</span><?php endif; ?></div>
     <button class="self-pip-close" onclick="toggleSelfPip()" title="Hide self view"><i class="bi bi-x"></i></button>
@@ -605,6 +692,22 @@ $is_host = ($user_role === 'lecturer');
     const USER_ROLE = <?= json_encode($user_role) ?>;
     const IS_HOST = <?= $is_host ? 'true' : 'false' ?>;
 
+    // Inject TURN/STUN server configuration for cross-network connectivity
+    // This ensures students can connect from any network (mobile, home, corporate)
+    const ICE_CONFIG = <?= $iceConfigJson ?>;
+    VLERoom.setIceConfig(ICE_CONFIG);
+
+    // Detect iOS for special handling
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const isMobile = isIOS || isAndroid;
+
+    // For iOS Safari - show enable media button first
+    if (isIOS) {
+        console.log('[VLERoom] iOS device detected - showing media permission prompt');
+    }
+
     const speakerArea = document.getElementById('speakerArea');
     const filmstrip = document.getElementById('filmstrip');
     const selfPip = document.getElementById('selfPip');
@@ -622,6 +725,12 @@ $is_host = ($user_role === 'lecturer');
         userId: USER_ID,
         userName: USER_NAME,
         userRole: USER_ROLE,
+
+        onStatusUpdate: function(status) {
+            const el = document.getElementById('connectingStatus');
+            if (el) el.textContent = status;
+            console.log('[VLERoom] Status:', status);
+        },
 
         onPeerJoined: function(peer) {
             statusEl.textContent = 'Connected';
@@ -690,59 +799,121 @@ $is_host = ($user_role === 'lecturer');
     });
 
     // ── Join the room — all users get full audio + video ──
-    VLERoom.joinRoom().then(function(result) {
-        const localStream = result.stream;
-        const mode = result.mediaMode;
+    // For iOS: show an enable button first, since iOS requires user gesture for media
+    let joinAttempts = 0;
+    let joinWithCamera = true;
 
-        // Show self-view PiP
-        selfPip.style.display = '';
-        if (localStream) {
-            localVideo.srcObject = localStream;
-            localVideo.style.display = '';
-            selfAvatar.style.display = 'none';
-        } else {
-            localVideo.style.display = 'none';
-            selfAvatar.style.display = 'flex';
-        }
+    function startJoin() {
+        joinAttempts++;
+        const overlay = document.getElementById('connectingOverlay');
+        const spinner = document.getElementById('connectingSpinner');
+        const title = document.getElementById('connectingTitle');
+        const hint = document.getElementById('connectingHint');
+        const errorDiv = document.getElementById('connectingError');
 
-        statusEl.textContent = 'Connected';
-        statusEl.style.color = '#2ecc71';
+        // Reset overlay to loading state
+        if (overlay) overlay.style.display = 'flex';
+        if (spinner) spinner.style.display = '';
+        if (title) title.textContent = joinAttempts > 1 ? 'Reconnecting...' : 'Connecting to Live Session';
+        if (hint) hint.textContent = joinWithCamera ? 'Please allow camera and microphone access when prompted' : 'Joining without camera...';
+        if (errorDiv) errorDiv.style.display = 'none';
 
-        if (mode === 'full' || mode === 'audio') {
-            show2WayBadge();
-        }
+        VLERoom.joinRoom().then(function(result) {
+            const localStream = result.stream;
+            const mode = result.mediaMode;
 
-        // Update button states based on mode
-        if (mode === 'audio') {
-            const btnVideo = document.getElementById('btnVideo');
-            btnVideo.className = 'ctrl-btn off';
-            btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
-            localVideo.style.display = 'none';
-            selfAvatar.style.display = 'flex';
-        } else if (mode === 'view-only') {
-            const btnVideo = document.getElementById('btnVideo');
-            btnVideo.className = 'ctrl-btn off';
-            btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
-            const btnAudio = document.getElementById('btnAudio');
-            btnAudio.className = 'ctrl-btn off';
-            btnAudio.innerHTML = '<i class="bi bi-mic-mute-fill"></i>';
-            localVideo.style.display = 'none';
-            selfAvatar.style.display = 'flex';
-        }
+            // Hide connecting overlay
+            if (overlay) {
+                overlay.style.opacity = '0';
+                overlay.style.transition = 'opacity 0.4s ease';
+                setTimeout(function() { overlay.style.display = 'none'; overlay.style.opacity = ''; }, 400);
+            }
 
-        // If host (lecturer), auto-pin self as speaker initially
-        if (IS_HOST && !pinnedSpeakerId) {
-            pinSpeaker('local');
-        }
+            // Show self-view PiP
+            selfPip.style.display = '';
+            if (localStream) {
+                localVideo.srcObject = localStream;
+                localVideo.style.display = '';
+                selfAvatar.style.display = 'none';
+                // Ensure video plays on iOS
+                localVideo.setAttribute('playsinline', '');
+                localVideo.setAttribute('webkit-playsinline', '');
+                localVideo.play().catch(function(){});
+            } else {
+                localVideo.style.display = 'none';
+                selfAvatar.style.display = 'flex';
+            }
 
-    }).catch(function(err) {
-        statusEl.textContent = 'Failed to join session';
-        statusEl.style.color = '#e74c3c';
-        selfPip.style.display = '';
-        localVideo.style.display = 'none';
-        selfAvatar.style.display = 'flex';
-        showToast('Failed to join: ' + err.message, 'danger');
-    });
+            statusEl.textContent = 'Connected';
+            statusEl.style.color = '#2ecc71';
+
+            if (mode === 'full' || mode === 'audio') {
+                show2WayBadge();
+            }
+
+            // Update button states based on mode
+            if (mode === 'audio') {
+                const btnVideo = document.getElementById('btnVideo');
+                btnVideo.className = 'ctrl-btn off';
+                btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
+                localVideo.style.display = 'none';
+                selfAvatar.style.display = 'flex';
+            } else if (mode === 'view-only') {
+                const btnVideo = document.getElementById('btnVideo');
+                btnVideo.className = 'ctrl-btn off';
+                btnVideo.innerHTML = '<i class="bi bi-camera-video-off-fill"></i>';
+                const btnAudio = document.getElementById('btnAudio');
+                btnAudio.className = 'ctrl-btn off';
+                btnAudio.innerHTML = '<i class="bi bi-mic-mute-fill"></i>';
+                localVideo.style.display = 'none';
+                selfAvatar.style.display = 'flex';
+            }
+
+            // If host (lecturer), auto-pin self as speaker initially
+            if (IS_HOST && !pinnedSpeakerId) {
+                pinSpeaker('local');
+            }
+
+            // For iOS - automatically show audio unblock banner
+            if (isIOS) {
+                setTimeout(function() {
+                    const fakeVideo = document.createElement('video');
+                    showAudioUnblockBanner(fakeVideo);
+                }, 500);
+            }
+
+        }).catch(function(err) {
+            console.error('[VLERoom] Join failed:', err);
+            
+            // Show error state in connecting overlay
+            if (overlay) overlay.style.display = 'flex';
+            if (spinner) spinner.style.display = 'none';
+            if (title) title.textContent = 'Connection Failed';
+            if (hint) hint.style.display = 'none';
+            if (errorDiv) {
+                errorDiv.style.display = '';
+                document.getElementById('connectingErrorMsg').textContent = err.message || 'Could not connect to the live session.';
+            }
+
+            statusEl.textContent = 'Failed to join';
+            statusEl.style.color = '#e74c3c';
+        });
+    }
+
+    // Retry connection
+    window.retryConnection = function() {
+        joinWithCamera = true;
+        startJoin();
+    };
+
+    // Join without camera (view-only fallback)
+    window.retryWithoutCamera = function() {
+        joinWithCamera = false;
+        startJoin();
+    };
+
+    // Start joining immediately (media permissions will prompt)
+    startJoin();
 
     // ── Speaker View: pin a tile into the large speaker area ──
     function pinSpeaker(id) {
@@ -760,7 +931,7 @@ $is_host = ($user_role === 'lecturer');
                 speakerTile = document.createElement('div');
                 speakerTile.id = 'speakerTile';
                 speakerTile.className = 'video-tile';
-                speakerTile.innerHTML = '<video autoplay muted playsinline></video>' +
+                speakerTile.innerHTML = '<video autoplay muted playsinline webkit-playsinline></video>' +
                     '<div class="tile-avatar" style="display:none;">' + USER_NAME.charAt(0).toUpperCase() + '</div>' +
                     '<div class="tile-label"><span>' + escapeHtml(USER_NAME) + '</span>' + (IS_HOST ? '<span class="host-badge">HOST</span>' : '') + '</div>' +
                     '<button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
@@ -768,6 +939,9 @@ $is_host = ($user_role === 'lecturer');
                 speakerArea.appendChild(speakerTile);
             }
             const vid = speakerTile.querySelector('video');
+            // Ensure iOS-compatible attributes
+            vid.setAttribute('playsinline', '');
+            vid.setAttribute('webkit-playsinline', '');
             if (localVideo.srcObject) vid.srcObject = localVideo.srcObject;
             const av = speakerTile.querySelector('.tile-avatar');
             if (localVideo.srcObject && localVideo.srcObject.getVideoTracks().length > 0) {
@@ -801,18 +975,23 @@ $is_host = ($user_role === 'lecturer');
                 const srcAvatar = filmTile.querySelector('.tile-avatar');
                 const name = srcLabel ? srcLabel.querySelector('span').textContent : 'Participant';
 
-                speakerTile.innerHTML = '<video autoplay playsinline></video>' +
+                speakerTile.innerHTML = '<video autoplay playsinline webkit-playsinline></video>' +
                     '<div class="tile-avatar" style="display:none;">' + name.charAt(0).toUpperCase() + '</div>' +
                     (srcLabel ? '<div class="tile-label">' + srcLabel.innerHTML + '</div>' : '') +
                     '<div class="tile-indicators"></div>' +
                     '<button class="tile-fullscreen-btn" onclick="toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
 
                 const vid = speakerTile.querySelector('video');
+                // Ensure iOS-compatible attributes
+                vid.setAttribute('playsinline', '');
+                vid.setAttribute('webkit-playsinline', '');
                 if (srcVid && srcVid.srcObject) {
                     vid.srcObject = srcVid.srcObject;
                     vid.muted = false;
                     vid.volume = 1.0;
-                    vid.play().catch(function(){});
+                    vid.play().catch(function(err){
+                        console.log('[VLERoom] Speaker video play failed:', err.message);
+                    });
                 }
 
                 // Copy avatar visibility
@@ -848,16 +1027,22 @@ $is_host = ($user_role === 'lecturer');
             filmstrip.appendChild(tile);
         }
 
-        tile.innerHTML = '<video autoplay playsinline></video>' +
+        tile.innerHTML = '<video autoplay playsinline webkit-playsinline></video>' +
             '<div class="tile-avatar" style="display:none;">' + escapeHtml(name).charAt(0).toUpperCase() + '</div>' +
             '<div class="tile-label"><span>' + escapeHtml(name) + '</span>' + hostBadge + '</div>' +
             '<div class="tile-indicators"></div>' +
             '<button class="tile-fullscreen-btn" onclick="event.stopPropagation();toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
 
         const video = tile.querySelector('video');
+        // Ensure iOS-compatible attributes
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.setAttribute('autoplay', '');
         video.srcObject = stream;
         video.muted = false;
         video.volume = 1.0;
+        
+        // For iOS - need to call play() with user gesture handling
         const playPromise = video.play();
         if (playPromise !== undefined) {
             playPromise.catch(function(err) {
@@ -935,39 +1120,82 @@ $is_host = ($user_role === 'lecturer');
         if (audioUnblockBannerShown) return;
         audioUnblockBannerShown = true;
 
-        const label = IS_HOST
-            ? 'Click here to enable audio — hear your students'
-            : 'Click here to enable audio — hear the lecturer';
+        const mobileLabel = isMobile
+            ? 'TAP HERE to enable audio and video'
+            : (IS_HOST ? 'Click here to enable audio — hear your students' : 'Click here to enable audio — hear the lecturer');
 
         const banner = document.createElement('div');
         banner.id = 'audioUnblockBanner';
-        banner.style.cssText = 'position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(135deg,#ff6b35,#e74c3c);color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 15px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;animation:slideDown 0.3s ease;';
-        banner.innerHTML = '<i class="bi bi-volume-up-fill" style="font-size:20px;"></i> ' + label + ' <i class="bi bi-arrow-right"></i>';
+        banner.style.cssText = 'position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:9999;background:linear-gradient(135deg,#ff6b35,#e74c3c);color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 15px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;animation:slideDown 0.3s ease;max-width:90%;text-align:center;';
+        banner.innerHTML = '<i class="bi bi-volume-up-fill" style="font-size:20px;"></i> ' + mobileLabel + ' <i class="bi bi-arrow-right"></i>';
 
-        banner.onclick = function() { unblockAllRemoteAudio(); banner.remove(); audioUnblockBannerShown = false; };
+        function handleUnblock(e) {
+            e.preventDefault();
+            unblockAllRemoteAudio();
+            banner.remove();
+            audioUnblockBannerShown = false;
+        }
+
+        // Handle both click and touch for mobile
+        banner.onclick = handleUnblock;
+        banner.ontouchend = handleUnblock;
         document.body.appendChild(banner);
 
-        document.addEventListener('click', function unmuteHandler() {
+        // Also handle any click/touch on the page
+        function unmuteHandler(e) {
             unblockAllRemoteAudio();
             const b = document.getElementById('audioUnblockBanner');
             if (b) b.remove();
             audioUnblockBannerShown = false;
             document.removeEventListener('click', unmuteHandler);
-        }, { once: true });
+            document.removeEventListener('touchend', unmuteHandler);
+        }
+        
+        document.addEventListener('click', unmuteHandler, { once: true });
+        document.addEventListener('touchend', unmuteHandler, { once: true });
+    }
+
+    // iOS/Safari audio context - needs to be resumed after user interaction
+    let audioContext = null;
+    function resumeAudioContext() {
+        if (!audioContext) {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch(e) {}
+        }
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().then(function() {
+                console.log('[VLERoom] AudioContext resumed');
+            }).catch(function(){});
+        }
     }
 
     function unblockAllRemoteAudio() {
+        // Resume audio context for iOS Safari
+        resumeAudioContext();
+        
         document.querySelectorAll('.video-tile video').forEach(function(v) {
             if (v.id === 'localVideo') return;
             v.muted = false;
             v.volume = 1.0;
-            v.play().catch(function() {});
+            // For iOS - set playsinline and webkit-playsinline via JS
+            v.setAttribute('playsinline', '');
+            v.setAttribute('webkit-playsinline', '');
+            v.play().catch(function(err) {
+                console.log('[VLERoom] Play failed:', err.message);
+            });
         });
         // Also unmute speaker tile video
         const speakerTile = document.getElementById('speakerTile');
         if (speakerTile) {
             const v = speakerTile.querySelector('video');
-            if (v) { v.muted = false; v.volume = 1.0; v.play().catch(function(){}); }
+            if (v) {
+                v.muted = false;
+                v.volume = 1.0;
+                v.setAttribute('playsinline', '');
+                v.setAttribute('webkit-playsinline', '');
+                v.play().catch(function(){});
+            }
         }
     }
 
@@ -1357,6 +1585,50 @@ $is_host = ($user_role === 'lecturer');
             selfPip.style.transition = '';
         });
     })();
+
+    // ── Connection Diagnostics (Host only) ──
+    window.showDiagnostics = async function() {
+        try {
+            const diag = await VLERoom.getConnectionDiagnostics();
+            let html = '<div style="font-family:monospace;font-size:13px;color:#fff;background:#1a1a2e;padding:20px;border-radius:12px;max-width:500px;max-height:80vh;overflow-y:auto;">';
+            html += '<h4 style="margin:0 0 12px;color:#6c63ff;">Connection Diagnostics</h4>';
+            html += '<div style="margin-bottom:10px;">';
+            html += '<b>ICE Servers:</b> ' + diag.iceServerCount + '<br>';
+            html += '<b>TURN Configured:</b> ' + (diag.turnConfigured ? '<span style="color:#2ecc71;">Yes &#10003;</span>' : '<span style="color:#e74c3c;">No &#10007; (cross-network may fail)</span>') + '<br>';
+            html += '<b>Transport Policy:</b> ' + diag.iceTransportPolicy + '<br>';
+            html += '</div>';
+            
+            const peerIds = Object.keys(diag.peers);
+            if (peerIds.length === 0) {
+                html += '<p style="color:#888;">No peers connected yet.</p>';
+            } else {
+                html += '<h5 style="margin:10px 0 6px;color:#aaa;">Peer Connections (' + peerIds.length + ')</h5>';
+                peerIds.forEach(function(pid) {
+                    const p = diag.peers[pid];
+                    const typeColor = p.connectionType === 'RELAYED' ? '#f39c12' : (p.connectionType === 'DIRECT' ? '#2ecc71' : '#888');
+                    html += '<div style="background:#0a0a1a;padding:8px 12px;border-radius:8px;margin:4px 0;">';
+                    html += '<span style="color:#aaa;">' + pid.substring(0, 20) + '</span><br>';
+                    html += 'State: <b style="color:' + (p.connectionState === 'connected' ? '#2ecc71' : '#e74c3c') + ';">' + p.connectionState + '</b>';
+                    html += ' | ICE: <b>' + p.iceConnectionState + '</b>';
+                    html += ' | Route: <b style="color:' + typeColor + ';">' + p.connectionType + '</b>';
+                    html += '</div>';
+                });
+            }
+            
+            html += '<div style="margin-top:15px;text-align:right;">';
+            html += '<button onclick="this.closest(\'.diag-overlay\').remove()" style="background:#6c63ff;color:#fff;border:none;padding:6px 20px;border-radius:6px;cursor:pointer;">Close</button>';
+            html += '</div></div>';
+            
+            const overlay = document.createElement('div');
+            overlay.className = 'diag-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML = html;
+            overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+            document.body.appendChild(overlay);
+        } catch (e) {
+            console.error('Diagnostics error:', e);
+        }
+    };
 })();
 </script>
 </body>

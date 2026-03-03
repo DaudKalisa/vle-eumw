@@ -40,8 +40,8 @@ if (!$session_id && $action !== '') {
     exit;
 }
 
-// Clean up stale peers (no heartbeat for 15 seconds)
-$conn->query("DELETE FROM vle_session_peers WHERE last_heartbeat < DATE_SUB(NOW(), INTERVAL 15 SECOND)");
+// Clean up stale peers (no heartbeat for 30 seconds — allows for slow hosting)
+$conn->query("DELETE FROM vle_session_peers WHERE last_heartbeat < DATE_SUB(NOW(), INTERVAL 30 SECOND)");
 // Clean up old signals (older than 60 seconds)
 $conn->query("DELETE FROM vle_webrtc_signals WHERE created_at < DATE_SUB(NOW(), INTERVAL 60 SECOND)");
 
