@@ -504,9 +504,11 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Entry Type</label>
                                 <select name="invite_entry_type" class="form-select">
-                                    <option value="NE">New Entry (NE)</option>
-                                    <option value="RE">Re-Entry (RE)</option>
-                                    <option value="TR">Transfer (TR)</option>
+                                    <option value="NE">Normal Entry (NE)</option>
+                                    <option value="ME">Mature Entry (ME)</option>
+                                    <option value="CE">Continuing Entry (CE)</option>
+                                    <option value="ODL">Open Distance Learning (ODL)</option>
+                                    <option value="PC">Professional Course (PC)</option>
                                 </select>
                             </div>
                             <div class="col-md-3">

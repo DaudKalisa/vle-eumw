@@ -453,8 +453,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
                         <label class="form-label">Entry Type</label>
                         <select name="entry_type" class="form-select">
                             <?php
-                            $et = $_POST['entry_type'] ?? $invite['entry_type'] ?? 'NE';
-                            foreach (['NE' => 'New Entry (NE)', 'RE' => 'Re-Entry (RE)', 'TR' => 'Transfer (TR)'] as $val => $label): ?>
+                            $et = $_POST['entry_type'] ?? ($invite['entry_type'] ?? 'NE');
+                            foreach (['NE' => 'Normal Entry (NE)', 'ME' => 'Mature Entry (ME)', 'CE' => 'Continuing Entry (CE)', 'ODL' => 'Open Distance Learning (ODL)', 'PC' => 'Professional Course (PC)'] as $val => $label): ?>
                             <option value="<?= $val ?>" <?= $et === $val ? 'selected' : '' ?>><?= $label ?></option>
                             <?php endforeach; ?>
                         </select>
