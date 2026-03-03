@@ -29,8 +29,10 @@ $nav_items = [
     ['url' => 'manage_courses.php', 'icon' => 'bi-book', 'title' => 'Courses'],
     ['url' => 'manage_lecturers.php', 'icon' => 'bi-person-badge', 'title' => 'Lecturers'],
     ['url' => 'manage_students.php', 'icon' => 'bi-people', 'title' => 'Students'],
+    ['url' => 'student_invite_links.php', 'icon' => 'bi-link-45deg', 'title' => 'Invite Links'],
+    ['url' => 'approve_student_accounts.php', 'icon' => 'bi-person-check', 'title' => 'Approve Students'],
+    ['url' => 'register_student_courses.php', 'icon' => 'bi-journal-plus', 'title' => 'Enroll Students'],
     ['url' => 'semester_shift.php', 'icon' => 'bi-arrow-repeat', 'title' => 'Semester Shift'],
-    ['url' => '../examination_officer/dashboard.php', 'icon' => 'bi-file-earmark-text', 'title' => 'Examinations'],
     ['url' => 'manage_finance.php', 'icon' => 'bi-cash-coin', 'title' => 'Finance'],
     ['url' => 'messages.php', 'icon' => 'bi-chat-dots', 'title' => 'Messages'],
 ];
@@ -69,7 +71,6 @@ $page_title = $page_title ?? 'Admin Portal';
                         <i class="bi bi-grid me-1"></i> More
                     </a>
                     <ul class="dropdown-menu" aria-labelledby="moreDropdown">
-                        <li><a class="dropdown-item" href="manage_modules.php"><i class="bi bi-collection me-2"></i>Modules</a></li>
                         <li><a class="dropdown-item" href="manage_departments.php"><i class="bi bi-building me-2"></i>Departments</a></li>
                         <li><a class="dropdown-item" href="manage_faculties.php"><i class="bi bi-diagram-3 me-2"></i>Faculties</a></li>
                         <li><a class="dropdown-item" href="manage_programs.php"><i class="bi bi-mortarboard me-2"></i>Programs</a></li>
@@ -81,6 +82,9 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><a class="dropdown-item" href="system_notifications.php"><i class="bi bi-megaphone me-2"></i>System Notifications</a></li>
                         <li><a class="dropdown-item" href="zoom_settings.php"><i class="bi bi-camera-video me-2"></i>Zoom Settings</a></li>
                         <li><a class="dropdown-item" href="university_settings.php"><i class="bi bi-gear me-2"></i>University Settings</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="database_manager.php"><i class="bi bi-database-gear me-2"></i>Database Backup</a></li>
+                        <li><a class="dropdown-item" href="file_manager.php"><i class="bi bi-folder2-open me-2"></i>File Manager</a></li>
                     </ul>
                 </li>
             </ul>
@@ -132,9 +136,9 @@ $page_title = $page_title ?? 'Admin Portal';
                 <li class="breadcrumb-item"><a href="dashboard.php"><i class="bi bi-house-door"></i> Dashboard</a></li>
                 <?php foreach ($breadcrumbs as $crumb): ?>
                     <?php if (isset($crumb['url']) && !empty($crumb['url'])): ?>
-                        <li class="breadcrumb-item"><a href="<?= $crumb['url'] ?>"><?= $crumb['title'] ?></a></li>
+                        <li class="breadcrumb-item"><a href="<?= $crumb['url'] ?>"><?= $crumb['title'] ?? '' ?></a></li>
                     <?php else: ?>
-                        <li class="breadcrumb-item active" aria-current="page"><?= $crumb['title'] ?></li>
+                        <li class="breadcrumb-item active" aria-current="page"><?= $crumb['title'] ?? '' ?></li>
                     <?php endif; ?>
                 <?php endforeach; ?>
             </ol>
