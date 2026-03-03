@@ -4,15 +4,21 @@
  * Update these values with your actual hosting credentials
  */
 
-// Database Configuration - Production
-define('DB_HOST', 'localhost');
-define('DB_USER', 'u615976264_vleadmin');
-define('DB_PASS', 'Vle-admin2026');
-define('DB_NAME', 'u615976264_portal');
+// Database Configuration - Production (InfinityFree)
+define('DB_HOST', 'sql305.infinityfree.com');
+define('DB_USER', 'if0_40881536');
+define('DB_PASS', 'kalisadaud');
 define('DB_CHARSET', 'utf8mb4');
 
-// Site Configuration
-define('SITE_URL', 'https://vle.exploitsonline.com'); // Production site URL
+// Auto-detect database and site URL based on domain
+$_prod_host = $_SERVER['HTTP_HOST'] ?? '';
+if (strpos($_prod_host, 'vle-exploitsonline.gt.tc') !== false) {
+    define('DB_NAME', 'if0_40881536_exploits_vle');
+    define('SITE_URL', 'https://vle-exploitsonline.gt.tc');
+} else {
+    define('DB_NAME', 'if0_40881536_university_portal');
+    define('SITE_URL', 'https://vle-eumw.infinityfree.me');
+}
 
 // Security Settings for Production
 error_reporting(0);                             // Disable error display
