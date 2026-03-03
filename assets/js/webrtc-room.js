@@ -617,15 +617,25 @@
             console.log('[VLERoom] ICE gathering state [' + remotePeerId.substring(0, 15) + ']: ' + pc.iceGatheringState);
         };
 
-        // Remote stream — ensure audio tracks are always received and played
+        // Remote stream — ensure audio and video tracks are always received
         pc.ontrack = (event) => {
             if (!remoteStreams[remotePeerId]) {
                 remoteStreams[remotePeerId] = new MediaStream();
             }
-            // Add track (both audio and video)
-            remoteStreams[remotePeerId].addTrack(event.track);
-            console.log('[VLERoom] Remote track received:', event.track.kind, 'from', remotePeerId);
+            // Add track only if not already present (avoid duplicates)
+            const existing = remoteStreams[remotePeerId].getTracks();
+            if (!existing.find(t => t.id === event.track.id)) {
+                remoteStreams[remotePeerId].addTrack(event.track);
+            }
+            console.log('[VLERoom] Remote track received:', event.track.kind, 'from', remotePeerId,
+                '(total tracks:', remoteStreams[remotePeerId].getTracks().length + ')');
             onRemoteStream(remotePeerId, remoteStreams[remotePeerId], peerInfo[remotePeerId]);
+
+            // Monitor track unmute (tracks may arrive muted and unmute later)
+            event.track.onunmute = () => {
+                console.log('[VLERoom] Track unmuted:', event.track.kind, 'from', remotePeerId);
+                onRemoteStream(remotePeerId, remoteStreams[remotePeerId], peerInfo[remotePeerId]);
+            };
         };
 
         // Connection state

@@ -1003,10 +1003,14 @@ $iceConfigJson = json_encode($iceConfig);
                 vid.setAttribute('webkit-playsinline', '');
                 if (srcVid && srcVid.srcObject) {
                     vid.srcObject = srcVid.srcObject;
-                    vid.muted = false;
-                    vid.volume = 1.0;
-                    vid.play().catch(function(err){
+                    // Start muted so autoplay works (Chrome policy), then unmute
+                    vid.muted = true;
+                    vid.play().then(function() {
+                        vid.muted = false;
+                        vid.volume = 1.0;
+                    }).catch(function(err){
                         console.log('[VLERoom] Speaker video play failed:', err.message);
+                        showAudioUnblockBanner(vid);
                     });
                 }
 
@@ -1033,36 +1037,42 @@ $iceConfigJson = json_encode($iceConfig);
 
         // Create/update filmstrip tile
         let tile = document.getElementById('film-' + peerId);
+        let video;
         if (!tile) {
             tile = document.createElement('div');
             tile.id = 'film-' + peerId;
             tile.className = 'video-tile';
-            // Click on filmstrip tile to pin as speaker
             tile.addEventListener('click', function() { pinSpeaker(peerId); });
             tile.addEventListener('dblclick', function(e) { e.preventDefault(); toggleTileFullscreen(tile); });
+            tile.innerHTML = '<video autoplay muted playsinline webkit-playsinline></video>' +
+                '<div class="tile-avatar" style="display:none;">' + escapeHtml(name).charAt(0).toUpperCase() + '</div>' +
+                '<div class="tile-label"><span>' + escapeHtml(name) + '</span>' + hostBadge + '</div>' +
+                '<div class="tile-indicators"></div>' +
+                '<button class="tile-fullscreen-btn" onclick="event.stopPropagation();toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
             filmstrip.appendChild(tile);
         }
 
-        tile.innerHTML = '<video autoplay playsinline webkit-playsinline></video>' +
-            '<div class="tile-avatar" style="display:none;">' + escapeHtml(name).charAt(0).toUpperCase() + '</div>' +
-            '<div class="tile-label"><span>' + escapeHtml(name) + '</span>' + hostBadge + '</div>' +
-            '<div class="tile-indicators"></div>' +
-            '<button class="tile-fullscreen-btn" onclick="event.stopPropagation();toggleTileFullscreen(this.closest(\'.video-tile\'))" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>';
-
-        const video = tile.querySelector('video');
-        // Ensure iOS-compatible attributes
+        video = tile.querySelector('video');
         video.setAttribute('playsinline', '');
         video.setAttribute('webkit-playsinline', '');
         video.setAttribute('autoplay', '');
-        video.srcObject = stream;
-        video.muted = false;
-        video.volume = 1.0;
-        
-        // For iOS - need to call play() with user gesture handling
+
+        // Set/update the stream (don't rebuild the whole tile)
+        if (video.srcObject !== stream) {
+            video.srcObject = stream;
+        }
+
+        // Start muted so autoplay works (Chrome policy), then unmute after play starts
+        video.muted = true;
         const playPromise = video.play();
         if (playPromise !== undefined) {
-            playPromise.catch(function(err) {
+            playPromise.then(function() {
+                // Autoplay succeeded while muted — now unmute for audio
+                video.muted = false;
+                video.volume = 1.0;
+            }).catch(function(err) {
                 console.warn('[VLERoom] Autoplay blocked for ' + peerId + ':', err.message);
+                // Show banner to let user tap to unmute
                 showAudioUnblockBanner(video);
             });
         }
