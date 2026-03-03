@@ -799,11 +799,12 @@ $iceConfigJson = json_encode($iceConfig);
     });
 
     // ── Join the room — all users get full audio + video ──
-    // For iOS: show an enable button first, since iOS requires user gesture for media
+    // Auto-retry up to 3 times on transient failures (anti-bot, slow server)
     let joinAttempts = 0;
     let joinWithCamera = true;
+    const MAX_AUTO_RETRIES = 3;
 
-    function startJoin() {
+    function startJoin(isAutoRetry) {
         joinAttempts++;
         const overlay = document.getElementById('connectingOverlay');
         const spinner = document.getElementById('connectingSpinner');
@@ -814,8 +815,11 @@ $iceConfigJson = json_encode($iceConfig);
         // Reset overlay to loading state
         if (overlay) overlay.style.display = 'flex';
         if (spinner) spinner.style.display = '';
-        if (title) title.textContent = joinAttempts > 1 ? 'Reconnecting...' : 'Connecting to Live Session';
-        if (hint) hint.textContent = joinWithCamera ? 'Please allow camera and microphone access when prompted' : 'Joining without camera...';
+        if (title) title.textContent = joinAttempts > 1 ? 'Reconnecting... (attempt ' + joinAttempts + ')' : 'Connecting to Live Session';
+        if (hint) {
+            hint.style.display = '';
+            hint.textContent = joinWithCamera ? 'Please allow camera and microphone access when prompted' : 'Joining without camera...';
+        }
         if (errorDiv) errorDiv.style.display = 'none';
 
         VLERoom.joinRoom().then(function(result) {
@@ -883,7 +887,17 @@ $iceConfigJson = json_encode($iceConfig);
             }
 
         }).catch(function(err) {
-            console.error('[VLERoom] Join failed:', err);
+            console.error('[VLERoom] Join failed (attempt ' + joinAttempts + '):', err);
+
+            // Auto-retry on transient failures (not on "session not active" errors)
+            var isFatal = err.message && (err.message.indexOf('not active') !== -1 || err.message.indexOf('does not exist') !== -1);
+            if (!isFatal && joinAttempts < MAX_AUTO_RETRIES) {
+                console.log('[VLERoom] Auto-retrying in 2s...');
+                if (title) title.textContent = 'Retrying... (attempt ' + (joinAttempts + 1) + '/' + MAX_AUTO_RETRIES + ')';
+                if (hint) { hint.style.display = ''; hint.textContent = 'Connection failed, retrying automatically...'; }
+                setTimeout(function() { startJoin(true); }, 2000);
+                return;
+            }
             
             // Show error state in connecting overlay
             if (overlay) overlay.style.display = 'flex';
@@ -900,19 +914,21 @@ $iceConfigJson = json_encode($iceConfig);
         });
     }
 
-    // Retry connection
+    // Retry connection (manual — resets counter)
     window.retryConnection = function() {
+        joinAttempts = 0;
         joinWithCamera = true;
         startJoin();
     };
 
     // Join without camera (view-only fallback)
     window.retryWithoutCamera = function() {
+        joinAttempts = 0;
         joinWithCamera = false;
         startJoin();
     };
 
-    // Start joining immediately (media permissions will prompt)
+    // Start joining immediately (media permissions will prompt automatically)
     startJoin();
 
     // ── Speaker View: pin a tile into the large speaker area ──

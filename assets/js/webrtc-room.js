@@ -237,27 +237,95 @@
         return Promise.race([joinPromise, timeoutPromise]);
     }
 
+    /**
+     * Check camera/mic permission state BEFORE calling getUserMedia.
+     * Returns 'granted', 'denied', 'prompt', or 'unknown'.
+     */
+    async function checkPermission(name) {
+        try {
+            if (navigator.permissions && navigator.permissions.query) {
+                const result = await navigator.permissions.query({ name: name });
+                return result.state; // 'granted' | 'denied' | 'prompt'
+            }
+        } catch (e) {
+            // Firefox doesn't support camera/microphone permission query
+        }
+        return 'unknown';
+    }
+
+    /**
+     * Helper: call the signaling join API with automatic retry on anti-bot HTML.
+     * InfinityFree serves an HTML challenge page on first contact;
+     * once the browser sets the cookie, subsequent calls work.
+     */
+    async function signalJoinWithRetry(maxRetries) {
+        maxRetries = maxRetries || 3;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            const fd = new FormData();
+            fd.append('action', 'join');
+            fd.append('session_id', sessionId);
+            fd.append('peer_id', myPeerId);
+
+            try {
+                const res = await fetchWithTimeout(SIGNAL_API, { method: 'POST', body: fd });
+                const data = await safeJsonParse(res);
+
+                if (data.success) return data;
+
+                // If error is "Session not active" don't retry — it's a real error
+                if (data.error && (data.error.indexOf('not active') !== -1 || data.error.indexOf('Missing') !== -1)) {
+                    throw new Error(data.error);
+                }
+
+                // Anti-bot or transient error — retry after delay
+                if (attempt < maxRetries) {
+                    console.warn('[VLERoom] Join attempt ' + attempt + ' failed (' + (data.error || 'unknown') + '), retrying in 2s...');
+                    onStatusUpdate('Server warming up... (attempt ' + attempt + '/' + maxRetries + ')');
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    throw new Error(data.error || 'Failed to join after ' + maxRetries + ' attempts. Please retry.');
+                }
+            } catch (err) {
+                if (err.name === 'AbortError' && attempt < maxRetries) {
+                    console.warn('[VLERoom] Join attempt ' + attempt + ' timed out, retrying...');
+                    onStatusUpdate('Retrying connection... (attempt ' + attempt + '/' + maxRetries + ')');
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    throw err;
+                }
+            }
+        }
+    }
+
     async function _doJoinRoom() {
         // Step 1: Fetch TURN/STUN server config (critical for cross-network)
         onStatusUpdate('Configuring network...');
         await fetchIceConfig();
 
-        // Step 2: Try to get camera + mic with graceful fallback
-        onStatusUpdate('Requesting camera & microphone...');
-        localStream = await acquireMediaStream();
+        // Step 2: Pre-check permissions (skip prompt wait if denied)
+        onStatusUpdate('Checking permissions...');
+        const camPerm = await checkPermission('camera');
+        const micPerm = await checkPermission('microphone');
+        console.log('[VLERoom] Permission state — camera: ' + camPerm + ', mic: ' + micPerm);
 
-        // Step 3: Register with signaling server
+        // Step 3: Get camera + mic with graceful fallback
+        if (camPerm === 'denied' && micPerm === 'denied') {
+            // Both denied — skip straight to view-only (no prompt wait)
+            console.log('[VLERoom] Both camera & mic denied — joining view-only');
+            onStatusUpdate('Permissions denied — joining as viewer...');
+            localStream = null;
+            mediaMode = 'view-only';
+            isAudioOn = false;
+            isVideoOn = false;
+        } else {
+            onStatusUpdate('Requesting camera & microphone...');
+            localStream = await acquireMediaStream();
+        }
+
+        // Step 4: Register with signaling server (auto-retry for anti-bot)
         onStatusUpdate('Joining session...');
-        const fd = new FormData();
-        fd.append('action', 'join');
-        fd.append('session_id', sessionId);
-        fd.append('peer_id', myPeerId);
-
         try {
-            const res = await fetchWithTimeout(SIGNAL_API, { method: 'POST', body: fd });
-            const data = await safeJsonParse(res);
-
-            if (!data.success) throw new Error(data.error || 'Failed to join room. Server may be temporarily unavailable.');
+            const data = await signalJoinWithRetry(3);
 
             isInRoom = true;
             onStatusUpdate('Connected! Setting up peers...');
@@ -290,6 +358,20 @@
      * Supports iOS Safari, Android Chrome, and all desktop browsers
      */
     async function acquireMediaStream() {
+        // If permissions are already granted, proceed silently.
+        // If denied, skip directly to view-only (no blocking prompt).
+        const camState = await checkPermission('camera');
+        const micState = await checkPermission('microphone');
+
+        if (camState === 'denied' && micState === 'denied') {
+            console.log('[VLERoom] Both permissions denied — view-only');
+            mediaMode = 'view-only';
+            isAudioOn = false;
+            isVideoOn = false;
+            onError('Camera and microphone access denied. You can see and hear the class but cannot share audio/video. Check browser site settings to allow access.');
+            return null;
+        }
+
         // iOS Safari requires user interaction before media capture
         if (isIOS) {
             console.log('[VLERoom] iOS detected - using iOS-optimized media constraints');
