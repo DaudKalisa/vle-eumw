@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Get and sanitize input
 $username_email = trim($_POST['username_email'] ?? '');
-$password = trim($_POST['password'] ?? '');
+$password = $_POST['password'] ?? '';
 
 // Validate input
 if (empty($username_email) || empty($password)) {
@@ -31,7 +31,60 @@ if (empty($username_email) || empty($password)) {
 }
 
 // Get connection
-$conn = getDbConnection();
+$conn = null;
+try {
+    $conn = getDbConnection();
+} catch (Throwable $e) {
+    error_log("Database connection error during login: " . $e->getMessage());
+    $_SESSION['login_error'] = 'Login service is temporarily unavailable. Please try again shortly.';
+    header('Location: login.php');
+    exit();
+}
+
+// ============================================
+// CHECK FOR SUPER USER LOGIN FIRST
+// ============================================
+try {
+    $super_check = $conn->prepare("SELECT id, username, password_hash, full_name, is_active FROM super_users WHERE username = ? OR email = ?");
+    if ($super_check) {
+        $super_check->bind_param("ss", $username_email, $username_email);
+        $super_check->execute();
+        $super_result = $super_check->get_result();
+        
+        if ($super_result->num_rows > 0) {
+            $super_user = $super_result->fetch_assoc();
+            
+            if ($super_user['is_active'] && password_verify($password, $super_user['password_hash'])) {
+                // Super user login successful
+                $_SESSION['super_user_logged_in'] = true;
+                $_SESSION['super_user_id'] = $super_user['id'];
+                $_SESSION['super_user_username'] = $super_user['username'];
+                $_SESSION['super_user_name'] = $super_user['full_name'];
+                $_SESSION['super_user_login_time'] = time();
+                
+                // Update last login
+                $update_login = $conn->prepare("UPDATE super_users SET last_login = NOW(), login_count = login_count + 1 WHERE id = ?");
+                $update_login->bind_param("i", $super_user['id']);
+                $update_login->execute();
+                
+                // Log super user login
+                error_log("Super User Login: {$super_user['username']} logged in from {$_SERVER['REMOTE_ADDR']}");
+                
+                header('Location: super_user/dashboard.php');
+                exit();
+            } elseif (!$super_user['is_active']) {
+                $_SESSION['login_error'] = 'This super user account has been deactivated.';
+                header('Location: login.php');
+                exit();
+            }
+            // If password doesn't match, continue to regular login check
+        }
+        $super_check->close();
+    }
+} catch (Throwable $e) {
+    // super_users table may not exist - continue with normal login
+    error_log("Super user check skipped: " . $e->getMessage());
+}
 
 // Get client info
 $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
@@ -109,7 +162,7 @@ try {
         unset($_SESSION['login_error']);
 
         // Enforce password change at first login or if required
-        if (!empty($result['user']['must_change_password']) && $result['user']['must_change_password']) {
+        if (!empty($result['user']['must_change_password'])) {
             $_SESSION['force_password_change'] = true;
             header('Location: change_password.php?first=1');
             exit();
@@ -129,13 +182,18 @@ try {
             case 'admin':
                 $redirect_url = 'admin/dashboard.php';
                 break;
+            case 'odl_coordinator':
+                $redirect_url = 'odl_coordinator/dashboard.php';
+                break;
             case 'examination_manager':
                 // User with explicit examination_manager role → examination officer portal
                 $redirect_url = 'examination_officer/dashboard.php';
                 break;
+            case 'dean':
+                $redirect_url = 'dean/dashboard.php';
+                break;
             case 'staff':
             case 'hod':
-            case 'dean':
                 // Check if this staff user is an examination officer/manager
                 $redirect_url = 'admin/dashboard.php';
                 if (!empty($result['user']['related_staff_id'])) {
@@ -195,10 +253,17 @@ try {
     }
 } catch (Throwable $e) {
     // Log error for debugging (catch both Exception and Error types)
-    error_log("Login error: " . $e->getMessage());
-    logLoginAttempt($conn, $username_email, $ip_address, $user_agent, false);
+    error_log("Login error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine() . "\n" . $e->getTraceAsString());
+    if ($conn instanceof mysqli) {
+        logLoginAttempt($conn, $username_email, $ip_address, $user_agent, false);
+    }
     
-    $_SESSION['login_error'] = 'An error occurred during login. Please try again.';
+    // In development show the actual error, in production show generic message
+    if (defined('APP_ENV') && APP_ENV === 'development') {
+        $_SESSION['login_error'] = 'Login error: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine();
+    } else {
+        $_SESSION['login_error'] = 'An error occurred during login. Please try again. [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+    }
     header('Location: login.php');
     exit();
 }

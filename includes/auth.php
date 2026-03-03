@@ -157,20 +157,20 @@ function login($username_email, $password) {
 }
 
 function getRelatedId($user) {
-    switch ($user['role']) {
+    switch ($user['role'] ?? '') {
         case 'student':
-            return $user['related_student_id'];
+            return $user['related_student_id'] ?? null;
         case 'lecturer':
-            return $user['related_lecturer_id'];
+            return $user['related_lecturer_id'] ?? null;
         case 'admin':
         case 'staff':
-            return $user['related_staff_id'];
+            return $user['related_staff_id'] ?? null;
         case 'hod':
-            return $user['related_hod_id'];
+            return $user['related_hod_id'] ?? ($user['related_staff_id'] ?? null);
         case 'dean':
-            return $user['related_dean_id'];
+            return $user['related_dean_id'] ?? ($user['related_staff_id'] ?? null);
         case 'finance':
-            return $user['related_finance_id'];
+            return $user['related_finance_id'] ?? null;
         default:
             return null;
     }
@@ -184,18 +184,24 @@ function logout() {
 
 function requireLogin() {
     if (!isLoggedIn()) {
-        header('Location: ../index.php');
+        // Get the base path
+        $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
+        header('Location: ' . $base . 'login.php');
         exit();
     }
 }
 
 function requireRole($allowed_roles) {
     if (!isLoggedIn()) {
-        header('Location: ../index.php');
+        $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
+        header('Location: ' . $base . 'login.php');
         exit();
     }
     if (!in_array($_SESSION['vle_role'], $allowed_roles)) {
-        die('Access denied. Insufficient permissions.');
+        // Redirect to access_denied.php instead of just dying
+        $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
+        header('Location: ' . $base . 'access_denied.php');
+        exit();
     }
 }
 ?>
