@@ -683,7 +683,7 @@ $iceConfigJson = json_encode($iceConfig);
     <?php endif; ?>
 </div>
 
-<script src="../assets/js/webrtc-room.js"></script>
+<script src="../assets/js/webrtc-room.js?v=<?= time() ?>"></script>
 <script>
 (function() {
     const SESSION_ID = <?= $session_id ?>;
