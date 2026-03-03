@@ -208,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // Truncate tables by category
     if ($_POST['action'] === 'truncate_category') {
         $category = $_POST['category'] ?? '';
-        $confirm = $_POST['confirm_text'] ?? '';
+        $admin_password = $_POST['admin_password'] ?? '';
         
         // Define table categories
         $categories = [
@@ -307,9 +307,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
         if (!isset($categories[$category])) {
             $error = 'Invalid category selected.';
-        } elseif ($confirm !== 'DELETE') {
-            $error = 'You must type DELETE to confirm truncation.';
+        } elseif (empty($admin_password)) {
+            $error = 'You must enter your admin password to confirm truncation.';
         } else {
+            // Verify admin password
+            $uid = $_SESSION['user_id'] ?? 0;
+            $pw_stmt = $conn->prepare("SELECT password_hash FROM users WHERE id = ?");
+            $pw_stmt->bind_param('i', $uid);
+            $pw_stmt->execute();
+            $pw_result = $pw_stmt->get_result();
+            $pw_user = $pw_result->fetch_assoc();
+            $pw_stmt->close();
+            
+            if (!$pw_user || !password_verify($admin_password, $pw_user['password_hash'])) {
+                $error = 'Incorrect password. Truncation cancelled.';
+            } else {
             $cat = $categories[$category];
             $conn->query("SET FOREIGN_KEY_CHECKS = 0");
             $truncated = 0;
@@ -326,6 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $conn->query("SET FOREIGN_KEY_CHECKS = 1");
             $message = "<strong>{$cat['label']}</strong> truncated! $truncated table(s) cleared" . ($skipped > 0 ? ", $skipped table(s) not found (skipped)" : '') . '.';
+            }
         }
     }
 
@@ -776,9 +789,9 @@ $truncate_categories = [
                         <input type="hidden" name="action" value="truncate_category">
                         <input type="hidden" name="category" id="truncateCategory" value="">
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Type <code>DELETE</code> to confirm:</label>
-                            <input type="text" name="confirm_text" class="form-control text-center fw-bold" id="truncateConfirmInput"
-                                   placeholder="Type DELETE here" autocomplete="off" style="font-size:1.1rem;letter-spacing:2px;border-radius:10px;">
+                            <label class="form-label fw-semibold"><i class="bi bi-shield-lock me-1"></i>Enter your admin password to confirm:</label>
+                            <input type="password" name="admin_password" class="form-control text-center" id="truncateConfirmInput"
+                                   placeholder="Enter your password" autocomplete="off" style="font-size:1rem;border-radius:10px;">
                         </div>
                         <button type="submit" class="btn btn-danger w-100" id="truncateSubmitBtn" disabled style="border-radius:10px;padding:12px;">
                             <i class="bi bi-trash3 me-2"></i>Permanently Delete All Data
@@ -806,7 +819,7 @@ $truncate_categories = [
         }
 
         document.getElementById('truncateConfirmInput').addEventListener('input', function() {
-            document.getElementById('truncateSubmitBtn').disabled = this.value !== 'DELETE';
+            document.getElementById('truncateSubmitBtn').disabled = this.value.length === 0;
         });
 
         document.getElementById('truncateForm').addEventListener('submit', function(e) {
