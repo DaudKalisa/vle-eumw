@@ -342,6 +342,216 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 
+    // Backup category tables
+    if ($_POST['action'] === 'backup_category') {
+        $category = $_POST['category'] ?? '';
+        
+        // Re-use the truncate_categories definition
+        $categories = [
+            'students' => ['label' => 'Students', 'tables' => ['students', 'student_finances', 'student_invite_registrations', 'student_registration_invites', 'student_access_logs']],
+            'lecturers' => ['label' => 'Lecturers', 'tables' => ['lecturers']],
+            'courses_content' => ['label' => 'Courses & Content', 'tables' => ['vle_courses', 'vle_weekly_content', 'vle_enrollments', 'vle_progress', 'vle_download_requests']],
+            'assignments' => ['label' => 'Assignments & Submissions', 'tables' => ['vle_assignments', 'vle_submissions', 'vle_grades']],
+            'exams' => ['label' => 'Examinations', 'tables' => ['exams', 'exam_questions', 'exam_tokens', 'exam_sessions', 'exam_answers', 'exam_results', 'exam_monitoring', 'examination_managers']],
+            'quizzes' => ['label' => 'Quizzes', 'tables' => ['vle_quizzes', 'vle_quiz_questions', 'vle_quiz_attempts', 'vle_quiz_answers']],
+            'forums' => ['label' => 'Forums & Discussions', 'tables' => ['vle_forums', 'vle_forum_posts']],
+            'messages' => ['label' => 'Messages & Notifications', 'tables' => ['vle_messages', 'vle_notifications']],
+            'live_sessions' => ['label' => 'Live Sessions', 'tables' => ['vle_live_sessions', 'vle_session_participants', 'vle_session_invites', 'vle_webrtc_signals', 'vle_session_chat', 'vle_session_peers']],
+            'attendance' => ['label' => 'Attendance', 'tables' => ['attendance_sessions', 'attendance_records']],
+            'finance' => ['label' => 'Finance & Payments', 'tables' => ['student_finances', 'payment_transactions', 'fee_settings', 'finance_users']],
+            'login_security' => ['label' => 'Login & Security Logs', 'tables' => ['login_attempts', 'login_history', 'account_locks']],
+            'users' => ['label' => 'User Accounts', 'tables' => ['users']],
+        ];
+        
+        if (isset($categories[$category])) {
+            $cat = $categories[$category];
+            $filename = 'backup_' . $category . '_' . date('Y-m-d_H-i-s') . '.sql';
+            $filepath = $backup_dir . $filename;
+            
+            $sql_content = "-- VLE Category Backup: {$cat['label']}\n";
+            $sql_content .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
+            $sql_content .= "-- Database: " . DB_NAME . "\n";
+            $sql_content .= "-- Category: $category\n\n";
+            $sql_content .= "SET FOREIGN_KEY_CHECKS = 0;\n\n";
+            
+            $backed_up = 0;
+            foreach ($cat['tables'] as $table) {
+                $check = $conn->query("SHOW TABLES LIKE '$table'");
+                if ($check && $check->num_rows > 0) {
+                    $create_result = $conn->query("SHOW CREATE TABLE `$table`");
+                    if ($row = $create_result->fetch_assoc()) {
+                        $sql_content .= "-- Table: $table\n";
+                        $sql_content .= "DROP TABLE IF EXISTS `$table`;\n";
+                        $sql_content .= $row['Create Table'] . ";\n\n";
+                    }
+                    $data_result = $conn->query("SELECT * FROM `$table`");
+                    if ($data_result && $data_result->num_rows > 0) {
+                        $columns = [];
+                        $fields = $data_result->fetch_fields();
+                        foreach ($fields as $field) {
+                            $columns[] = "`{$field->name}`";
+                        }
+                        while ($row = $data_result->fetch_assoc()) {
+                            $values = [];
+                            foreach ($row as $value) {
+                                if ($value === null) {
+                                    $values[] = 'NULL';
+                                } else {
+                                    $values[] = "'" . $conn->real_escape_string($value) . "'";
+                                }
+                            }
+                            $sql_content .= "INSERT INTO `$table` (" . implode(", ", $columns) . ") VALUES (" . implode(", ", $values) . ");\n";
+                        }
+                        $sql_content .= "\n";
+                    }
+                    $backed_up++;
+                }
+            }
+            
+            $sql_content .= "SET FOREIGN_KEY_CHECKS = 1;\n";
+            
+            if (file_put_contents($filepath, $sql_content)) {
+                $message = "<strong>{$cat['label']}</strong> backup created: <strong>$filename</strong> ($backed_up table(s), " . number_format(strlen($sql_content)) . " bytes)";
+            } else {
+                $error = "Failed to write backup file.";
+            }
+        } else {
+            $error = 'Invalid category for backup.';
+        }
+    }
+    
+    // Restore category from uploaded SQL file
+    if ($_POST['action'] === 'restore_category') {
+        $category = $_POST['category'] ?? '';
+        $admin_password = $_POST['admin_password'] ?? '';
+        
+        $categories = [
+            'students' => ['label' => 'Students', 'tables' => ['students', 'student_finances', 'student_invite_registrations', 'student_registration_invites', 'student_access_logs']],
+            'lecturers' => ['label' => 'Lecturers', 'tables' => ['lecturers']],
+            'courses_content' => ['label' => 'Courses & Content', 'tables' => ['vle_courses', 'vle_weekly_content', 'vle_enrollments', 'vle_progress', 'vle_download_requests']],
+            'assignments' => ['label' => 'Assignments & Submissions', 'tables' => ['vle_assignments', 'vle_submissions', 'vle_grades']],
+            'exams' => ['label' => 'Examinations', 'tables' => ['exams', 'exam_questions', 'exam_tokens', 'exam_sessions', 'exam_answers', 'exam_results', 'exam_monitoring', 'examination_managers']],
+            'quizzes' => ['label' => 'Quizzes', 'tables' => ['vle_quizzes', 'vle_quiz_questions', 'vle_quiz_attempts', 'vle_quiz_answers']],
+            'forums' => ['label' => 'Forums & Discussions', 'tables' => ['vle_forums', 'vle_forum_posts']],
+            'messages' => ['label' => 'Messages & Notifications', 'tables' => ['vle_messages', 'vle_notifications']],
+            'live_sessions' => ['label' => 'Live Sessions', 'tables' => ['vle_live_sessions', 'vle_session_participants', 'vle_session_invites', 'vle_webrtc_signals', 'vle_session_chat', 'vle_session_peers']],
+            'attendance' => ['label' => 'Attendance', 'tables' => ['attendance_sessions', 'attendance_records']],
+            'finance' => ['label' => 'Finance & Payments', 'tables' => ['student_finances', 'payment_transactions', 'fee_settings', 'finance_users']],
+            'login_security' => ['label' => 'Login & Security Logs', 'tables' => ['login_attempts', 'login_history', 'account_locks']],
+            'users' => ['label' => 'User Accounts', 'tables' => ['users']],
+        ];
+        
+        if (!isset($categories[$category])) {
+            $error = 'Invalid category for restore.';
+        } elseif (empty($admin_password)) {
+            $error = 'You must enter your admin password to confirm restore.';
+        } elseif (!isset($_FILES['restore_file']) || $_FILES['restore_file']['error'] !== UPLOAD_ERR_OK) {
+            $error = 'Please select a .sql backup file to restore.';
+        } else {
+            // Verify admin password
+            $uid = $_SESSION['user_id'] ?? 0;
+            $pw_stmt = $conn->prepare("SELECT password_hash FROM users WHERE id = ?");
+            $pw_stmt->bind_param('i', $uid);
+            $pw_stmt->execute();
+            $pw_result = $pw_stmt->get_result();
+            $pw_user = $pw_result->fetch_assoc();
+            $pw_stmt->close();
+            
+            if (!$pw_user || !password_verify($admin_password, $pw_user['password_hash'])) {
+                $error = 'Incorrect password. Restore cancelled.';
+            } else {
+                $ext = strtolower(pathinfo($_FILES['restore_file']['name'], PATHINFO_EXTENSION));
+                if ($ext !== 'sql') {
+                    $error = 'Invalid file type. Only .sql files are allowed.';
+                } else {
+                    $sql_content = file_get_contents($_FILES['restore_file']['tmp_name']);
+                    if (empty($sql_content)) {
+                        $error = 'SQL file is empty.';
+                    } else {
+                        $cat = $categories[$category];
+                        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+                        mysqli_report(MYSQLI_REPORT_OFF);
+                        
+                        $sql_content = preg_replace('/^--.*$/m', '', $sql_content);
+                        $sql_content = preg_replace('/\/\*.*?\*\//s', '', $sql_content);
+                        
+                        $statements = [];
+                        $current = '';
+                        $lines = explode("\n", $sql_content);
+                        foreach ($lines as $line) {
+                            $line = trim($line);
+                            if (empty($line)) continue;
+                            $current .= ' ' . $line;
+                            if (substr($line, -1) === ';') {
+                                $statements[] = trim($current);
+                                $current = '';
+                            }
+                        }
+                        if (!empty(trim($current))) {
+                            $statements[] = trim($current);
+                        }
+                        
+                        $success_count = 0;
+                        $error_count = 0;
+                        $skipped_count = 0;
+                        
+                        foreach ($statements as $statement) {
+                            $statement = trim($statement);
+                            if (empty($statement)) continue;
+                            
+                            // Only process statements for tables in this category
+                            $is_relevant = false;
+                            foreach ($cat['tables'] as $t) {
+                                if (stripos($statement, "`$t`") !== false || stripos($statement, " $t ") !== false || stripos($statement, " $t;") !== false) {
+                                    $is_relevant = true;
+                                    break;
+                                }
+                            }
+                            // Also allow SET statements
+                            if (preg_match('/^SET\s+/i', $statement)) $is_relevant = true;
+                            
+                            if (!$is_relevant) { $skipped_count++; continue; }
+                            
+                            if (preg_match('/^CREATE\s+TABLE\s+`?(\w+)`?/i', $statement, $matches)) {
+                                @$conn->query("DROP TABLE IF EXISTS `{$matches[1]}`");
+                            }
+                            $statement = preg_replace('/^INSERT\s+INTO\s+/i', 'INSERT IGNORE INTO ', $statement);
+                            
+                            try {
+                                if (@$conn->query($statement)) {
+                                    $success_count++;
+                                } else {
+                                    $err = $conn->error;
+                                    if (strpos($err, 'already exists') !== false || strpos($err, 'Duplicate') !== false) {
+                                        $skipped_count++;
+                                    } else {
+                                        $error_count++;
+                                    }
+                                }
+                            } catch (Exception $e) {
+                                $msg = $e->getMessage();
+                                if (strpos($msg, 'already exists') !== false || strpos($msg, 'Duplicate') !== false) {
+                                    $skipped_count++;
+                                } else {
+                                    $error_count++;
+                                }
+                            }
+                        }
+                        
+                        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+                        $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                        
+                        if ($error_count === 0) {
+                            $message = "<strong>{$cat['label']}</strong> restored successfully! Executed: $success_count" . ($skipped_count > 0 ? ", Skipped: $skipped_count" : '');
+                        } else {
+                            $message = "<strong>{$cat['label']}</strong> restore completed. Success: $success_count, Errors: $error_count" . ($skipped_count > 0 ? ", Skipped: $skipped_count" : '');
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Download backup
     if ($_POST['action'] === 'download' && isset($_POST['filename'])) {
         $filename = basename($_POST['filename']);
@@ -714,16 +924,16 @@ $truncate_categories = [
             </div>
         </div>
 
-        <!-- Truncate Data Section -->
+        <!-- Data Management by Category -->
         <div class="card mb-4" id="truncateSection">
-            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-trash3 me-2"></i>Truncate Data by Category</h5>
-                <span class="badge bg-light text-danger">Destructive Action</span>
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>Data Management by Category</h5>
+                <span class="badge bg-light text-dark"><?= count($truncate_categories) ?> Categories</span>
             </div>
             <div class="card-body">
-                <div class="alert alert-warning mb-4" style="border-radius:10px;">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    <strong>Warning:</strong> Truncating will permanently delete ALL data in the selected tables. This action cannot be undone. Create a backup first!
+                <div class="alert alert-info mb-4" style="border-radius:10px;">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    Use the action buttons on each card to <strong>Backup</strong>, <strong>Restore</strong>, or <strong>Delete</strong> data for specific categories. Password is required for destructive actions.
                 </div>
                 <div class="row g-3">
                     <?php foreach ($truncate_categories as $cat_key => $cat): 
@@ -737,24 +947,76 @@ $truncate_categories = [
                         }
                     ?>
                     <div class="col-md-4 col-lg-3">
-                        <div class="card h-100 truncate-card" style="border-left: 4px solid <?= $cat['color'] ?>;cursor:pointer;transition:all 0.2s;"
+                        <div class="card h-100 truncate-card" style="border-left: 4px solid <?= $cat['color'] ?>;transition:all 0.2s;"
                              onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 4px 15px rgba(0,0,0,0.1)'"
-                             onmouseout="this.style.transform='';this.style.boxShadow=''"
-                             onclick="openTruncateModal('<?= $cat_key ?>', '<?= htmlspecialchars($cat['label']) ?>', '<?= htmlspecialchars($cat['description']) ?>', '<?= $cat['icon'] ?>', '<?= $cat['color'] ?>', <?= count($cat['tables']) ?>, <?= $cat_rows ?>, '<?= htmlspecialchars(implode(', ', $cat['tables'])) ?>')">
+                             onmouseout="this.style.transform='';this.style.boxShadow=''">
                             <div class="card-body p-3">
                                 <div class="d-flex align-items-center gap-2 mb-2">
                                     <i class="bi <?= $cat['icon'] ?>" style="font-size:1.5rem;color:<?= $cat['color'] ?>"></i>
                                     <h6 class="mb-0 fw-bold"><?= $cat['label'] ?></h6>
                                 </div>
                                 <p class="text-muted mb-2" style="font-size:0.8rem;"><?= $cat['description'] ?></p>
-                                <div class="d-flex justify-content-between" style="font-size:0.75rem;">
+                                <div class="d-flex justify-content-between mb-3" style="font-size:0.75rem;">
                                     <span class="text-muted"><i class="bi bi-table me-1"></i><?= $cat_tables_found ?>/<?= count($cat['tables']) ?> tables</span>
                                     <span class="fw-semibold" style="color:<?= $cat['color'] ?>"><?= number_format($cat_rows) ?> rows</span>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-outline-primary flex-fill" title="Backup this category"
+                                            onclick="backupCategory('<?= $cat_key ?>')">
+                                        <i class="bi bi-download me-1"></i>Backup
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-success flex-fill" title="Restore this category"
+                                            onclick="openRestoreModal('<?= $cat_key ?>', '<?= htmlspecialchars($cat['label']) ?>', '<?= $cat['icon'] ?>', '<?= $cat['color'] ?>')">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger flex-fill" title="Delete all data in this category"
+                                            onclick="openTruncateModal('<?= $cat_key ?>', '<?= htmlspecialchars($cat['label']) ?>', '<?= htmlspecialchars($cat['description']) ?>', '<?= $cat['icon'] ?>', '<?= $cat['color'] ?>', <?= count($cat['tables']) ?>, <?= $cat_rows ?>, '<?= htmlspecialchars(implode(', ', $cat['tables'])) ?>')">
+                                        <i class="bi bi-trash3 me-1"></i>Delete
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Category Modal -->
+    <div class="modal fade" id="restoreModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius:16px;border:none;overflow:hidden;">
+                <div class="modal-header" id="restoreModalHeader" style="background:#059669;color:#fff;">
+                    <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-2"></i>Restore Category Data</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3">
+                        <i id="restoreModalIcon" class="bi bi-people" style="font-size:3rem;color:#059669;"></i>
+                        <h5 class="mt-2 fw-bold" id="restoreModalLabel">Category Name</h5>
+                        <p class="text-muted" style="font-size:0.9rem;">Upload a .sql backup file to restore this category's data</p>
+                    </div>
+                    <div class="alert alert-warning" style="border-radius:10px;font-size:0.85rem;">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        This will <strong>overwrite</strong> existing data in the selected category tables.
+                    </div>
+                    <form method="POST" enctype="multipart/form-data" id="restoreForm">
+                        <input type="hidden" name="action" value="restore_category">
+                        <input type="hidden" name="category" id="restoreCategory" value="">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold"><i class="bi bi-file-earmark-arrow-up me-1"></i>Select backup file (.sql):</label>
+                            <input type="file" name="restore_file" class="form-control" id="restoreFileInput" accept=".sql" required style="border-radius:10px;">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold"><i class="bi bi-shield-lock me-1"></i>Enter your admin password to confirm:</label>
+                            <input type="password" name="admin_password" class="form-control text-center" id="restorePasswordInput"
+                                   placeholder="Enter your password" autocomplete="off" style="font-size:1rem;border-radius:10px;">
+                        </div>
+                        <button type="submit" class="btn btn-success w-100" id="restoreSubmitBtn" disabled style="border-radius:10px;padding:12px;">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Restore Category Data
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -802,6 +1064,42 @@ $truncate_categories = [
         </div>
     </div>
     <script>
+        // Backup category - simple form submit
+        function backupCategory(key) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.innerHTML = '<input type="hidden" name="action" value="backup_category"><input type="hidden" name="category" value="' + key + '">';
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        // Restore modal functions
+        function openRestoreModal(key, label, icon, color) {
+            document.getElementById('restoreCategory').value = key;
+            document.getElementById('restoreModalIcon').className = 'bi ' + icon;
+            document.getElementById('restoreModalIcon').style.color = color;
+            document.getElementById('restoreModalLabel').textContent = label;
+            document.getElementById('restoreModalHeader').style.background = color;
+            document.getElementById('restoreFileInput').value = '';
+            document.getElementById('restorePasswordInput').value = '';
+            document.getElementById('restoreSubmitBtn').disabled = true;
+            new bootstrap.Modal(document.getElementById('restoreModal')).show();
+        }
+
+        function checkRestoreReady() {
+            const hasFile = document.getElementById('restoreFileInput').files.length > 0;
+            const hasPass = document.getElementById('restorePasswordInput').value.length > 0;
+            document.getElementById('restoreSubmitBtn').disabled = !(hasFile && hasPass);
+        }
+        document.getElementById('restoreFileInput').addEventListener('change', checkRestoreReady);
+        document.getElementById('restorePasswordInput').addEventListener('input', checkRestoreReady);
+
+        document.getElementById('restoreForm').addEventListener('submit', function() {
+            const btn = document.getElementById('restoreSubmitBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Restoring...';
+            btn.disabled = true;
+        });
+
         // Truncate modal functions
         function openTruncateModal(key, label, desc, icon, color, tableCount, rowCount, tableList) {
             document.getElementById('truncateCategory').value = key;
