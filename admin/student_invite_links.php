@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO student_registration_invites 
             (token, email, full_name, department_id, program, campus, program_type, year_of_study, semester, entry_type, max_uses, expires_at, created_by, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssississsiis", 
+        $stmt->bind_param("sssisssississis", 
             $token, 
             $bind_email, 
             $bind_name, 
