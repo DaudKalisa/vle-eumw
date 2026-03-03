@@ -45,15 +45,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = bin2hex(random_bytes(32));
         $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
         
+        $bind_email = $email ?: null;
+        $bind_name = $full_name ?: null;
+        $bind_program = $program ?: null;
+        $bind_notes = $notes ?: null;
+        $created_by = $user['user_id'];
+        
         $stmt = $conn->prepare("INSERT INTO student_registration_invites 
             (token, email, full_name, department_id, program, campus, program_type, year_of_study, semester, entry_type, max_uses, expires_at, created_by, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("sssississsiis", 
             $token, 
-            $email ?: null, 
-            $full_name ?: null, 
+            $bind_email, 
+            $bind_name, 
             $department_id, 
-            $program ?: null, 
+            $bind_program, 
             $campus, 
             $program_type, 
             $year_of_study, 
@@ -61,8 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $entry_type, 
             $max_uses, 
             $expires_at, 
-            $user['user_id'], 
-            $notes ?: null);
+            $created_by, 
+            $bind_notes);
         
         if ($stmt->execute()) {
             $invite_url = (defined('SITE_URL') ? SITE_URL : 'http://localhost/vle-eumw') . '/register_student.php?token=' . $token;
@@ -122,12 +128,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
 
         $created = 0;
+        $bind_program = $program ?: null;
+        $bind_notes = $notes ?: null;
+        $created_by = $user['user_id'];
         for ($i = 0; $i < $bulk_count; $i++) {
             $token = bin2hex(random_bytes(32));
             $stmt = $conn->prepare("INSERT INTO student_registration_invites 
                 (token, department_id, program, campus, program_type, max_uses, expires_at, created_by, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("sisssiiss", $token, $department_id, $program ?: null, $campus, $program_type, $max_uses, $expires_at, $user['user_id'], $notes ?: null);
+            $stmt->bind_param("sisssiiss", $token, $department_id, $bind_program, $campus, $program_type, $max_uses, $expires_at, $created_by, $bind_notes);
             if ($stmt->execute()) $created++;
         }
         $success = "$created bulk invite links created successfully.";
