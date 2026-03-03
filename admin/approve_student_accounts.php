@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
                 try {
                     // 1. Create student record
                     $stmt = $conn->prepare("INSERT INTO students (student_id, full_name, email, department, program, year_of_study, campus, year_of_registration, semester, gender, national_id, phone, address, program_type, entry_type, student_type, academic_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("ssssissssssssssss", $student_id, $full_name, $email, $department_id, $program, $year_of_study, $campus, $year_of_registration, $semester, $gender, $national_id, $phone, $address, $program_type, $entry_type, $student_type, $academic_level);
+                    $stmt->bind_param("sssisisssssssssss", $student_id, $full_name, $email, $department_id, $program, $year_of_study, $campus, $year_of_registration, $semester, $gender, $national_id, $phone, $address, $program_type, $entry_type, $student_type, $academic_level);
                     $stmt->execute();
 
                     // 2. Create user account 

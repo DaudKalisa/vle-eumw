@@ -62,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
     $semester = trim($_POST['semester'] ?? $invite['semester'] ?? 'One');
     $entry_type = trim($_POST['entry_type'] ?? $invite['entry_type'] ?? 'NE');
     $student_type = trim($_POST['student_type'] ?? 'new_student');
+    $invite_id = $invite ? $invite['invite_id'] : 0;
 
     // Validation
     if (empty($first_name) || empty($last_name)) {
@@ -77,12 +78,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
     } elseif (!empty($national_id) && strlen($national_id) > 8) {
         $error = 'National ID must be 8 characters or less.';
     } else {
-        // Check if email already used in this invite
-        $check = $conn->prepare("SELECT registration_id FROM student_invite_registrations WHERE email = ? AND invite_id = ?");
-        $check->bind_param("si", $email, $invite['invite_id']);
-        $check->execute();
+        // Check if email already used
+        if ($invite) {
+            $check = $conn->prepare("SELECT registration_id FROM student_invite_registrations WHERE email = ? AND invite_id = ?");
+            $check->bind_param("si", $email, $invite_id);
+            $check->execute();
+        } else {
+            $check = $conn->prepare("SELECT registration_id FROM student_invite_registrations WHERE email = ? AND status = 'pending'");
+            $check->bind_param("s", $email);
+            $check->execute();
+        }
         if ($check->get_result()->num_rows > 0) {
-            $error = 'This email has already been used to register with this invite link. Your application is being reviewed.';
+            $error = 'This email has already been used to register. Your application is being reviewed.';
         } else {
             // Check if email exists in users table already
             $check2 = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
@@ -111,17 +118,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error && ($invite || $general_mod
              department_id, program, program_type, campus, year_of_study, semester, entry_type, student_type, 
              status, ip_address) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)");
-        $stmt->bind_param("issssssssississss", 
-            $invite['invite_id'], $first_name, $middle_name, $last_name, $email, $phone, 
+        $stmt->bind_param("issssssssisssissss", 
+            $invite_id, $first_name, $middle_name, $last_name, $email, $phone, 
             $gender, $national_id, $address, $department_id, $program, $program_type, 
             $campus, $year_of_study, $semester, $entry_type, $student_type, $ip);
         
         if ($stmt->execute()) {
-            // Increment usage counter
-            $conn->prepare("UPDATE student_registration_invites SET times_used = times_used + 1 WHERE invite_id = ?")->bind_param("i", $invite['invite_id']);
-            $upd = $conn->prepare("UPDATE student_registration_invites SET times_used = times_used + 1 WHERE invite_id = ?");
-            $upd->bind_param("i", $invite['invite_id']);
-            $upd->execute();
+            // Increment usage counter (only for invite-based registrations)
+            if ($invite) {
+                $upd = $conn->prepare("UPDATE student_registration_invites SET times_used = times_used + 1 WHERE invite_id = ?");
+                $upd->bind_param("i", $invite_id);
+                $upd->execute();
+            }
 
             $success = 'Your registration has been submitted successfully! An administrator will review your application and you will receive your login credentials via email once approved.';
         } else {

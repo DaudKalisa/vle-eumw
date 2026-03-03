@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO student_registration_invites 
             (token, email, full_name, department_id, program, campus, program_type, year_of_study, semester, entry_type, max_uses, expires_at, created_by, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssisssississis", 
+        $stmt->bind_param("sssississsisis", 
             $token, 
             $bind_email, 
             $bind_name, 
@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("INSERT INTO student_registration_invites 
                 (token, department_id, program, campus, program_type, max_uses, expires_at, created_by, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("sisssiiss", $token, $department_id, $bind_program, $campus, $program_type, $max_uses, $expires_at, $created_by, $bind_notes);
+            $stmt->bind_param("sisssisis", $token, $department_id, $bind_program, $campus, $program_type, $max_uses, $expires_at, $created_by, $bind_notes);
             if ($stmt->execute()) $created++;
         }
         $success = "$created bulk invite links created successfully.";
