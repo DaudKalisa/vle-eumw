@@ -83,32 +83,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
         if ($check2->get_result()->num_rows > 0) {
             $error = "Email '{$email}' already exists in the system. Cannot create duplicate account.";
         } else {
-            // Get department code for student ID generation
-            $dept_data = $departments[$department_id] ?? null;
-            if (!$dept_data) {
-                $dept_q = $conn->prepare("SELECT department_id, department_code, department_name FROM departments WHERE department_id = ?");
-                $dept_q->bind_param("i", $department_id);
-                $dept_q->execute();
-                $dept_data = $dept_q->get_result()->fetch_assoc();
+            // Use existing student ID if provided, otherwise generate one
+            $existing_sid = trim($reg['student_id_number'] ?? '');
+            
+            if (!empty($existing_sid)) {
+                // Validate existing student ID is not already taken
+                $sid_check = $conn->prepare("SELECT student_id FROM students WHERE student_id = ?");
+                $sid_check->bind_param("s", $existing_sid);
+                $sid_check->execute();
+                if ($sid_check->get_result()->num_rows > 0) {
+                    $error = "Existing Student ID '{$existing_sid}' is already in use. Please review.";
+                    $sid_check->close();
+                } else {
+                    $sid_check->close();
+                    $student_id = $existing_sid;
+                }
             }
             
-            if (!$dept_data) {
-                $error = "Invalid department. Please check the registration details.";
-            } else {
-                $dept_code = $dept_data['department_code'];
+            // Generate new student ID if no existing one (or not set yet)
+            if (empty($error) && empty($student_id ?? '')) {
+                // Get department code for student ID generation
+                $dept_data = $departments[$department_id] ?? null;
+                if (!$dept_data) {
+                    $dept_q = $conn->prepare("SELECT department_id, department_code, department_name FROM departments WHERE department_id = ?");
+                    $dept_q->bind_param("i", $department_id);
+                    $dept_q->execute();
+                    $dept_data = $dept_q->get_result()->fetch_assoc();
+                }
                 
-                // Generate Student ID
-                $campus_code = 'MZ';
-                if (strpos($campus, 'Lilongwe') !== false) $campus_code = 'LL';
-                elseif (strpos($campus, 'Blantyre') !== false) $campus_code = 'BT';
-                elseif (strpos($campus, 'ODel') !== false) $campus_code = 'ODL';
-                
-                $year_short = substr($year_of_registration, -2);
-                $prefix = $dept_code . '/' . $year_short . '/' . $campus_code . '/' . $entry_type . '/';
-                $count_query = $conn->query("SELECT COUNT(*) as count FROM students WHERE student_id LIKE '" . $conn->real_escape_string($prefix) . "%'");
-                $next_num = ($count_query->fetch_assoc()['count'] ?? 0) + 1;
-                $sequential = str_pad($next_num, 4, '0', STR_PAD_LEFT);
-                $student_id = $prefix . $sequential;
+                if (!$dept_data) {
+                    $error = "Invalid department. Please check the registration details.";
+                } else {
+                    $dept_code = $dept_data['department_code'];
+                    
+                    // Generate Student ID
+                    $campus_code = 'MZ';
+                    if (strpos($campus, 'Lilongwe') !== false) $campus_code = 'LL';
+                    elseif (strpos($campus, 'Blantyre') !== false) $campus_code = 'BT';
+                    elseif (strpos($campus, 'ODel') !== false) $campus_code = 'ODL';
+                    
+                    $year_short = substr($year_of_registration, -2);
+                    $prefix = $dept_code . '/' . $year_short . '/' . $campus_code . '/' . $entry_type . '/';
+                    $count_query = $conn->query("SELECT COUNT(*) as count FROM students WHERE student_id LIKE '" . $conn->real_escape_string($prefix) . "%'");
+                    $next_num = ($count_query->fetch_assoc()['count'] ?? 0) + 1;
+                    $sequential = str_pad($next_num, 4, '0', STR_PAD_LEFT);
+                    $student_id = $prefix . $sequential;
+                }
+            }
+            
+            if (empty($error) && !empty($student_id)) {
 
                 $conn->begin_transaction();
                 try {
