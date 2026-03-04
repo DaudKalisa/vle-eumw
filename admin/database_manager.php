@@ -865,7 +865,7 @@ $truncate_categories = [
             <!-- Backup Section -->
             <div class="col-lg-6 mb-4">
                 <div class="card h-100">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header text-white" style="background:var(--vle-gradient-primary);">
                         <h5 class="mb-0"><i class="bi bi-download me-2"></i>Create Backup</h5>
                     </div>
                     <div class="card-body">
@@ -889,7 +889,7 @@ $truncate_categories = [
             <!-- Import Section -->
             <div class="col-lg-6 mb-4">
                 <div class="card h-100">
-                    <div class="card-header bg-success text-white">
+                    <div class="card-header text-white" style="background:var(--vle-gradient-primary);">
                         <h5 class="mb-0"><i class="bi bi-upload me-2"></i>Import Database</h5>
                     </div>
                     <div class="card-body">
@@ -919,7 +919,7 @@ $truncate_categories = [
         
         <!-- Existing Backups -->
         <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:var(--vle-gradient-primary);">
                 <h5 class="mb-0"><i class="bi bi-archive me-2"></i>Existing Backups (<?= count($backups) ?>)</h5>
                 <?php if ($scheduled_backup_count > 0): ?>
                     <span class="badge bg-info"><i class="bi bi-clock me-1"></i><?= $scheduled_backup_count ?> scheduled</span>
@@ -979,7 +979,7 @@ $truncate_categories = [
 
         <!-- Scheduled Backups -->
         <div class="card mb-4" id="scheduleSection">
-            <div class="card-header bg-indigo text-white d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg, #4f46e5, #7c3aed);">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:var(--vle-gradient-primary);">
                 <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Scheduled Backups</h5>
                 <span class="badge bg-light <?= $schedule_config['enabled'] ? 'text-success' : 'text-danger' ?>">
                     <i class="bi <?= $schedule_config['enabled'] ? 'bi-check-circle-fill' : 'bi-x-circle-fill' ?> me-1"></i>
@@ -1118,7 +1118,7 @@ $truncate_categories = [
 
         <!-- Data Management by Category -->
         <div class="card mb-4" id="truncateSection">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:var(--vle-gradient-primary);">
                 <h5 class="mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>Data Management by Category</h5>
                 <span class="badge bg-light text-dark"><?= count($truncate_categories) ?> Categories</span>
             </div>
