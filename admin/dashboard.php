@@ -909,6 +909,11 @@ if ($result) {
                 <div class="card-title">Exam Officers</div>
                 <div class="card-subtitle">Manage officers</div>
             </a>
+            <a href="export_data.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0891b2, #0e7490);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0891b2, #0e7490);"><i class="bi bi-box-arrow-up-right"></i></div>
+                <div class="card-title">Export Data</div>
+                <div class="card-subtitle">CSV, JSON, SQL, XML</div>
+            </a>
         </div>
         <div class="management-list mb-4" id="coreList">
             <a href="manage_students.php" class="list-item">
@@ -988,6 +993,14 @@ if ($result) {
                 <div class="list-content">
                     <div class="list-title">Examination Officers</div>
                     <div class="list-subtitle">Manage exam officers</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="export_data.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #0891b2, #0e7490);"><i class="bi bi-box-arrow-up-right"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Export Data</div>
+                    <div class="list-subtitle">Export system data in CSV, JSON, SQL, XML</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
