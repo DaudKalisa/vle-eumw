@@ -26,6 +26,7 @@ $required_programs = [
     ['EDU', 'Education', 'degree', 4],
     ['MKT', 'Marketing', 'degree', 4],
     ['PAD', 'Public Administration', 'degree', 4],
+    ['HSM', 'Health Systems Management', 'degree', 4],
 ];
 $prog_table_check = $conn->query("SHOW TABLES LIKE 'programs'");
 if ($prog_table_check && $prog_table_check->num_rows > 0) {
@@ -1540,6 +1541,7 @@ while ($row = $result->fetch_assoc()) {
             // Nursing / Health Sciences
             'NUR': 'Nursing',
             'HSC': 'Health Sciences',
+            'HSM': 'Health Systems Management',
             'PH': 'Public Health',
             'PHC': 'Public Health',
             

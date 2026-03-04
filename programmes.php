@@ -448,7 +448,7 @@ header("X-XSS-Protection: 1; mode=block");
                             <div class="prog-icon icon-undergrad"><i class="bi bi-truck"></i></div>
                             <span class="prog-level badge-undergrad">Bachelor's Degree</span>
                             <h5>Bachelor of Logistics &amp; Supply Chain Management</h5>
-                            <div class="prog-abbr">BLSCM</div>
+                            <div class="prog-abbr">LSM</div>
                         </div>
                         <div class="prog-card-body">
                             <p>Master the complexities of procurement, warehousing, transportation, inventory management and global supply chain operations across public and private sectors.</p>
@@ -496,7 +496,7 @@ header("X-XSS-Protection: 1; mode=block");
                             <div class="prog-icon icon-undergrad"><i class="bi bi-person-badge"></i></div>
                             <span class="prog-level badge-undergrad">Bachelor's Degree</span>
                             <h5>Bachelor of Human Resources Management</h5>
-                            <div class="prog-abbr">BHRM</div>
+                            <div class="prog-abbr">HRM</div>
                         </div>
                         <div class="prog-card-body">
                             <p>Develop expertise in talent acquisition, employee relations, performance management, labour law, organisational behaviour and strategic HR planning in modern organisations.</p>
@@ -520,7 +520,7 @@ header("X-XSS-Protection: 1; mode=block");
                             <div class="prog-icon icon-undergrad"><i class="bi bi-heart-pulse"></i></div>
                             <span class="prog-level badge-undergrad">Bachelor's Degree</span>
                             <h5>Bachelor of Health Systems Management</h5>
-                            <div class="prog-abbr">BHSM</div>
+                            <div class="prog-abbr">HSM</div>
                         </div>
                         <div class="prog-card-body">
                             <p>Acquire essential competencies in health policy, hospital administration, public health planning, health economics, quality assurance and health information systems to lead and manage healthcare organisations effectively.</p>
