@@ -19,10 +19,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO programs (program_code, program_name, department_id, program_type, duration_years, description) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("ssssis", $program_code, $program_name, $department_id, $program_type, $duration_years, $description);
         
-        if ($stmt->execute()) {
-            $success = "Program added successfully!";
-        } else {
-            $error = "Failed to add program. Code might already exist.";
+        try {
+            if ($stmt->execute()) {
+                $success = "Program added successfully!";
+            } else {
+                $error = "Failed to add program. Code might already exist.";
+            }
+        } catch (mysqli_sql_exception $e) {
+            if (strpos($e->getMessage(), 'Duplicate') !== false) {
+                $error = "Program code '<strong>$program_code</strong>' already exists. Please use a different code.";
+            } else {
+                $error = "Failed to add program: " . $e->getMessage();
+            }
         }
     } elseif (isset($_POST['update_program'])) {
         $program_id = (int)$_POST['program_id'];
@@ -70,19 +78,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get all departments for dropdown
 $departments = [];
-$result = $conn->query("SELECT department_id, department_code, department_name FROM departments ORDER BY department_name");
-while ($row = $result->fetch_assoc()) {
-    $departments[] = $row;
+$dept_table_check = $conn->query("SHOW TABLES LIKE 'departments'");
+if ($dept_table_check && $dept_table_check->num_rows > 0) {
+    $result = $conn->query("SELECT department_id, department_code, department_name FROM departments ORDER BY department_name");
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $departments[] = $row;
+        }
+    }
 }
+
+// Check if programs table exists, create if not
+$prog_table_check = $conn->query("SHOW TABLES LIKE 'programs'");
+if (!$prog_table_check || $prog_table_check->num_rows === 0) {
+    $conn->query("CREATE TABLE IF NOT EXISTS programs (
+        program_id INT AUTO_INCREMENT PRIMARY KEY,
+        program_code VARCHAR(10) UNIQUE NOT NULL,
+        program_name VARCHAR(255) NOT NULL,
+        department_id INT NULL,
+        program_type ENUM('degree','professional','masters','doctorate') DEFAULT 'degree',
+        duration_years INT DEFAULT 4,
+        description TEXT,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_program_code (program_code),
+        INDEX idx_is_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+// Check if programs has department_id column
+$has_dept_col = $conn->query("SHOW COLUMNS FROM programs LIKE 'department_id'");
+$has_program_dept = ($has_dept_col && $has_dept_col->num_rows > 0);
 
 // Get all programs with department info
 $programs = [];
-$result = $conn->query("
-    SELECT p.*, d.department_name, d.department_code
-    FROM programs p
-    LEFT JOIN departments d ON p.department_id = d.department_id
-    ORDER BY p.program_name
-");
+if ($has_program_dept) {
+    $result = $conn->query("
+        SELECT p.*, d.department_name, d.department_code
+        FROM programs p
+        LEFT JOIN departments d ON p.department_id = d.department_id
+        ORDER BY p.program_name
+    ");
+} else {
+    $result = $conn->query("SELECT p.* FROM programs p ORDER BY p.program_name");
+}
 while ($row = $result->fetch_assoc()) {
     $programs[] = $row;
 }
