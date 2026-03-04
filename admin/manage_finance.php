@@ -24,7 +24,11 @@ if (!$table_exists) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_finance'])) {
         $finance_code = 'FIN' . date('Y') . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
-        $full_name = trim($_POST['first_name']) . ' ' . trim($_POST['last_name']);
+        $first_name = trim($_POST['first_name']);
+        $middle_name = trim($_POST['middle_name'] ?? '');
+        $last_name = trim($_POST['last_name']);
+        $full_name = trim($first_name . ' ' . $middle_name . ' ' . $last_name);
+        $full_name = preg_replace('/\s+/', ' ', $full_name); // Remove extra spaces
         $email = trim($_POST['email']);
         $username = trim($_POST['username']);
         $position = trim($_POST['position'] ?? 'Finance Officer');
@@ -361,11 +365,15 @@ while ($row = $result->fetch_assoc()) {
                 <form method="POST">
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label">First Name *</label>
                                 <input type="text" class="form-control" id="fin_first_name" name="first_name" required oninput="generateFinanceCredentials()">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
+                                <label class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="fin_middle_name" name="middle_name" oninput="generateFinanceCredentials()">
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label">Last Name *</label>
                                 <input type="text" class="form-control" id="fin_last_name" name="last_name" required oninput="generateFinanceCredentials()">
                             </div>
@@ -400,6 +408,7 @@ while ($row = $result->fetch_assoc()) {
                                     <option value="Mzuzu Campus">Mzuzu Campus</option>
                                     <option value="Lilongwe Campus">Lilongwe Campus</option>
                                     <option value="Blantyre Campus">Blantyre Campus</option>
+                                    <option value="ODel">ODel</option>
                                     <option value="Head Office">Head Office</option>
                                 </select>
                             </div>

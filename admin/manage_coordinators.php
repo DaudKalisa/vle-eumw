@@ -50,7 +50,11 @@ $campus_options = [
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_coordinator'])) {
-        $full_name = trim($_POST['full_name']);
+        $first_name = trim($_POST['first_name']);
+        $middle_name = trim($_POST['middle_name'] ?? '');
+        $last_name = trim($_POST['last_name']);
+        $full_name = trim($first_name . ' ' . $middle_name . ' ' . $last_name);
+        $full_name = preg_replace('/\s+/', ' ', $full_name); // Remove extra spaces
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? 'Open Distance Learning');
@@ -186,15 +190,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif (isset($_POST['update_coordinator'])) {
         $coordinator_id = (int)$_POST['coordinator_id'];
-        $full_name = trim($_POST['full_name']);
+        $first_name = trim($_POST['first_name']);
+        $middle_name = trim($_POST['middle_name'] ?? '');
+        $last_name = trim($_POST['last_name']);
+        $full_name = trim($first_name . ' ' . $middle_name . ' ' . $last_name);
+        $full_name = preg_replace('/\s+/', ' ', $full_name); // Remove extra spaces
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? '');
         $position = trim($_POST['position'] ?? '');
         $campus = trim($_POST['campus'] ?? 'all');
 
-        if (empty($full_name)) {
-            $error = "Full name is required.";
+        if (empty($first_name) || empty($last_name)) {
+            $error = "First name and last name are required.";
         } elseif (empty($email)) {
             $error = "Email is required.";
         } else {
@@ -481,9 +489,17 @@ foreach ($coordinators as $c) {
                 <form method="post">
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="full_name" required>
+                            <div class="col-md-4">
+                                <label class="form-label">First Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="first_name" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" name="middle_name">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="last_name" required>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Email <span class="text-danger">*</span></label>
@@ -547,9 +563,17 @@ foreach ($coordinators as $c) {
                     <input type="hidden" name="coordinator_id" id="edit_coordinator_id">
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="edit_full_name" name="full_name" required>
+                            <div class="col-md-4">
+                                <label class="form-label">First Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="edit_first_name" name="first_name" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="edit_middle_name" name="middle_name">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="edit_last_name" name="last_name" required>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Email <span class="text-danger">*</span></label>
@@ -673,7 +697,14 @@ foreach ($coordinators as $c) {
         const coord = coordinators.find(c => c.coordinator_id == coordId);
         if (coord) {
             document.getElementById('edit_coordinator_id').value = coord.coordinator_id;
-            document.getElementById('edit_full_name').value = coord.full_name;
+            // Split full_name into first, middle, last
+            const nameParts = (coord.full_name || '').trim().split(/\s+/);
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+            const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : '';
+            document.getElementById('edit_first_name').value = firstName;
+            document.getElementById('edit_middle_name').value = middleName;
+            document.getElementById('edit_last_name').value = lastName;
             document.getElementById('edit_email').value = coord.email;
             document.getElementById('edit_phone').value = coord.phone || '';
             document.getElementById('edit_department').value = coord.department || '';

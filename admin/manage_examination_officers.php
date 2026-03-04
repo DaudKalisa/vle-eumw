@@ -13,7 +13,11 @@ $error = '';
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_officer'])) {
-        $full_name = trim($_POST['full_name']);
+        $first_name = trim($_POST['first_name']);
+        $middle_name = trim($_POST['middle_name'] ?? '');
+        $last_name = trim($_POST['last_name']);
+        $full_name = trim($first_name . ' ' . $middle_name . ' ' . $last_name);
+        $full_name = preg_replace('/\s+/', ' ', $full_name); // Remove extra spaces
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? 'Academic Affairs');
@@ -22,8 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = trim($_POST['password']);
 
         // Validate required fields
-        if (empty($full_name)) {
-            $error = "Full name is required.";
+        if (empty($first_name) || empty($last_name)) {
+            $error = "First name and last name are required.";
         } elseif (empty($email)) {
             $error = "Email is required.";
         } elseif (empty($username)) {
@@ -85,14 +89,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <li><strong>Email:</strong> $email</li>
                                     <li><strong>Password:</strong> $password</li>
                                 </ul>
-                                <p><strong>Dashboard:</strong> <a href='" . getBaseUrl() . "/examination_officer/dashboard.php'>Examination Officer Dashboard</a></p>
+                                <p><strong>Dashboard:</strong> <a href='" . SYSTEM_URL . "/examination_officer/dashboard.php'>Examination Officer Dashboard</a></p>
                                 <p>Please change your password after first login for security purposes.</p>
                                 <p>Best regards,<br>VLE Administration Team</p>
                             </body>
                             </html>
                             ";
 
-                            sendEmail($email, $subject, $message);
+                            sendEmail($email, $full_name, $subject, $message);
 
                         } catch (Exception $e) {
                             $conn->rollback();
@@ -150,14 +154,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif (isset($_POST['update_officer'])) {
         $manager_id = (int)$_POST['manager_id'];
-        $full_name = trim($_POST['full_name']);
+        $first_name = trim($_POST['first_name']);
+        $middle_name = trim($_POST['middle_name'] ?? '');
+        $last_name = trim($_POST['last_name']);
+        $full_name = trim($first_name . ' ' . $middle_name . ' ' . $last_name);
+        $full_name = preg_replace('/\s+/', ' ', $full_name); // Remove extra spaces
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? '');
         $position = trim($_POST['position'] ?? '');
 
-        if (empty($full_name)) {
-            $error = "Full name is required.";
+        if (empty($first_name) || empty($last_name)) {
+            $error = "First name and last name are required.";
         } elseif (empty($email)) {
             $error = "Email is required.";
         } else {
@@ -378,9 +386,17 @@ $stats = $stats_result->fetch_assoc();
                 <form method="post">
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="full_name" required>
+                            <div class="col-md-4">
+                                <label class="form-label">First Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="first_name" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" name="middle_name">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="last_name" required>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Email <span class="text-danger">*</span></label>
@@ -430,9 +446,17 @@ $stats = $stats_result->fetch_assoc();
                     <input type="hidden" name="manager_id" id="edit_manager_id">
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="edit_full_name" name="full_name" required>
+                            <div class="col-md-4">
+                                <label class="form-label">First Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="edit_first_name" name="first_name" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="edit_middle_name" name="middle_name">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="edit_last_name" name="last_name" required>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Email <span class="text-danger">*</span></label>
@@ -575,7 +599,14 @@ $stats = $stats_result->fetch_assoc();
             .then(data => {
                 if (data.success) {
                     document.getElementById('edit_manager_id').value = data.officer.manager_id;
-                    document.getElementById('edit_full_name').value = data.officer.full_name;
+                    // Split full_name into first, middle, last
+                    const nameParts = (data.officer.full_name || '').trim().split(/\s+/);
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+                    const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : '';
+                    document.getElementById('edit_first_name').value = firstName;
+                    document.getElementById('edit_middle_name').value = middleName;
+                    document.getElementById('edit_last_name').value = lastName;
                     document.getElementById('edit_email').value = data.officer.email;
                     document.getElementById('edit_phone').value = data.officer.phone || '';
                     document.getElementById('edit_department').value = data.officer.department;
