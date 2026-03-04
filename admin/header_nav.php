@@ -76,6 +76,7 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><a class="dropdown-item" href="manage_programs.php"><i class="bi bi-mortarboard me-2"></i>Programs</a></li>
                         <li><a class="dropdown-item" href="manage_administrators.php"><i class="bi bi-person-gear me-2"></i>Administrators</a></li>
                         <li><a class="dropdown-item" href="manage_examination_officers.php"><i class="bi bi-shield-check me-2"></i>Exam Officers</a></li>
+                        <li><a class="dropdown-item" href="manage_coordinators.php"><i class="bi bi-person-video3 me-2"></i>Coordinators</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="fee_settings.php"><i class="bi bi-currency-dollar me-2"></i>Fee Settings</a></li>
                         <li><a class="dropdown-item" href="smtp_settings.php"><i class="bi bi-envelope-gear me-2"></i>SMTP Settings</a></li>

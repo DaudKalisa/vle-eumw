@@ -836,6 +836,12 @@ if ($result) {
                 </div>
                 <span>Admins</span>
             </a>
+            <a href="manage_coordinators.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                    <i class="bi bi-person-video3"></i>
+                </div>
+                <span>Coordinators</span>
+            </a>
             <a href="database_manager.php" class="action-btn">
                 <div class="action-icon" style="background: linear-gradient(135deg, #059669, #047857);">
                     <i class="bi bi-database-gear"></i>
@@ -913,6 +919,11 @@ if ($result) {
                 <div class="card-icon" style="background: linear-gradient(135deg, #0891b2, #0e7490);"><i class="bi bi-box-arrow-up-right"></i></div>
                 <div class="card-title">Export Data</div>
                 <div class="card-subtitle">CSV, JSON, SQL, XML</div>
+            </a>
+            <a href="manage_coordinators.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #f59e0b, #d97706);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);"><i class="bi bi-person-video3"></i></div>
+                <div class="card-title">Coordinators</div>
+                <div class="card-subtitle">Manage ODL coordinators</div>
             </a>
         </div>
         <div class="management-list mb-4" id="coreList">
@@ -1001,6 +1012,14 @@ if ($result) {
                 <div class="list-content">
                     <div class="list-title">Export Data</div>
                     <div class="list-subtitle">Export system data in CSV, JSON, SQL, XML</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="manage_coordinators.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);"><i class="bi bi-person-video3"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Coordinators</div>
+                    <div class="list-subtitle">Manage ODL coordinator accounts</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
