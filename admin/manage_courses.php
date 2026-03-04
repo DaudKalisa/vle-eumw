@@ -31,11 +31,11 @@ $required_programs = [
 $prog_table_check = $conn->query("SHOW TABLES LIKE 'programs'");
 if ($prog_table_check && $prog_table_check->num_rows > 0) {
     foreach ($required_programs as $rp) {
-        $check = $conn->prepare("SELECT program_id FROM programs WHERE program_name = ?");
-        $check->bind_param("s", $rp[1]);
+        $check = $conn->prepare("SELECT program_id FROM programs WHERE program_code = ? OR program_name = ?");
+        $check->bind_param("ss", $rp[0], $rp[1]);
         $check->execute();
         if ($check->get_result()->num_rows === 0) {
-            $ins = $conn->prepare("INSERT INTO programs (program_code, program_name, program_type, duration_years, is_active) VALUES (?, ?, ?, ?, 1)");
+            $ins = $conn->prepare("INSERT IGNORE INTO programs (program_code, program_name, program_type, duration_years, is_active) VALUES (?, ?, ?, ?, 1)");
             $ins->bind_param("sssi", $rp[0], $rp[1], $rp[2], $rp[3]);
             $ins->execute();
             $ins->close();
