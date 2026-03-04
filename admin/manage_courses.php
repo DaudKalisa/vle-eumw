@@ -433,6 +433,44 @@ while ($row = $result->fetch_assoc()) {
             border: none;
             color: white;
         }
+        .quick-filter-bar {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 1px solid #dee2e6;
+            border-radius: 12px;
+            padding: 1.25rem;
+        }
+        .ys-btn {
+            border: 2px solid #dee2e6;
+            background: #fff;
+            color: #495057;
+            font-weight: 600;
+            font-size: 0.82rem;
+            padding: 0.45rem 0.9rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .ys-btn:hover {
+            border-color: #1e3c72;
+            color: #1e3c72;
+            background: #eef2ff;
+        }
+        .ys-btn.active {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            border-color: #1e3c72;
+            box-shadow: 0 2px 8px rgba(30,60,114,0.3);
+        }
+        .active-filter-display {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            border-radius: 10px;
+            padding: 0.75rem 1.25rem;
+            display: none;
+        }
+        .active-filter-display.show {
+            display: flex;
+        }
     </style>
 </head>
 <body>
@@ -461,6 +499,56 @@ while ($row = $result->fetch_assoc()) {
             </div>
         </div>
         
+        <!-- Quick Action Filters -->
+        <div class="quick-filter-bar mb-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-lightning-charge me-2"></i>Quick Filter</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearQuickFilter()">
+                    <i class="bi bi-x-circle me-1"></i>Clear
+                </button>
+            </div>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4 col-lg-3">
+                    <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-diagram-3 me-1"></i>Program</label>
+                    <select class="form-select" id="quickFilterProgram" onchange="applyQuickFilter()">
+                        <option value="">All Programs</option>
+                        <?php foreach ($programs as $prog): ?>
+                            <option value="<?= htmlspecialchars($prog) ?>"><?= htmlspecialchars($prog) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-8 col-lg-9">
+                    <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-calendar-week me-1"></i>Year &amp; Semester</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="ys-btn" data-year="1" data-sem="One" onclick="selectYearSem(this)">Y1 Sem 1</button>
+                        <button type="button" class="ys-btn" data-year="1" data-sem="Two" onclick="selectYearSem(this)">Y1 Sem 2</button>
+                        <button type="button" class="ys-btn" data-year="2" data-sem="One" onclick="selectYearSem(this)">Y2 Sem 1</button>
+                        <button type="button" class="ys-btn" data-year="2" data-sem="Two" onclick="selectYearSem(this)">Y2 Sem 2</button>
+                        <button type="button" class="ys-btn" data-year="3" data-sem="One" onclick="selectYearSem(this)">Y3 Sem 1</button>
+                        <button type="button" class="ys-btn" data-year="3" data-sem="Two" onclick="selectYearSem(this)">Y3 Sem 2</button>
+                        <button type="button" class="ys-btn" data-year="4" data-sem="One" onclick="selectYearSem(this)">Y4 Sem 1</button>
+                        <button type="button" class="ys-btn" data-year="4" data-sem="Two" onclick="selectYearSem(this)">Y4 Sem 2</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Filter Display -->
+        <div class="active-filter-display mb-3" id="activeFilterDisplay">
+            <div class="d-flex flex-wrap align-items-center justify-content-between w-100">
+                <div>
+                    <i class="bi bi-funnel-fill me-2"></i>
+                    <span class="fw-bold" id="activeFilterText">Showing all courses</span>
+                </div>
+                <div>
+                    <span class="badge bg-light text-dark me-2" id="activeFilterCount">0 courses</span>
+                    <button class="btn btn-sm btn-outline-light" onclick="clearQuickFilter()">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Success/Error Messages -->
         <?php if ($success_message): ?>
             <div class="alert vle-alert-success alert-dismissible fade show" role="alert">
@@ -524,7 +612,7 @@ while ($row = $result->fetch_assoc()) {
                             </thead>
                             <tbody id="coursesTableBody">
                                 <?php foreach ($courses as $course): ?>
-                                    <tr data-program="<?php echo htmlspecialchars($course['program_of_study'] ?? ''); ?>" data-code="<?php echo htmlspecialchars($course['course_code']); ?>" data-name="<?php echo htmlspecialchars($course['course_name']); ?>">
+                                    <tr data-program="<?php echo htmlspecialchars($course['program_of_study'] ?? ''); ?>" data-code="<?php echo htmlspecialchars($course['course_code']); ?>" data-name="<?php echo htmlspecialchars($course['course_name']); ?>" data-year="<?php echo (int)($course['year_of_study'] ?? 0); ?>" data-semester="<?php echo htmlspecialchars($course['semester'] ?? ''); ?>">
                                         <td><strong class="text-primary"><?php echo htmlspecialchars($course['course_code']); ?></strong></td>
                                         <td><?php echo htmlspecialchars($course['course_name']); ?></td>
                                         <td><small><?php echo htmlspecialchars($course['program_of_study'] ?? 'N/A'); ?></small></td>
@@ -1189,26 +1277,20 @@ while ($row = $result->fetch_assoc()) {
         
         // Course filtering functionality
         function filterCourses() {
-            const programFilter = document.getElementById('courseFilterProgram').value.toLowerCase();
-            const searchTerm = document.getElementById('courseSearch').value.toLowerCase();
-            const rows = document.querySelectorAll('#coursesTableBody tr');
-            
-            let visibleCount = 0;
-            rows.forEach(row => {
-                const program = (row.dataset.program || '').toLowerCase();
-                const code = (row.dataset.code || '').toLowerCase();
-                const name = (row.dataset.name || '').toLowerCase();
-                
-                const matchesProgram = !programFilter || program === programFilter;
-                const matchesSearch = !searchTerm || code.includes(searchTerm) || name.includes(searchTerm);
-                
-                if (matchesProgram && matchesSearch) {
-                    row.style.display = '';
-                    visibleCount++;
-                } else {
-                    row.style.display = 'none';
+            // Delegate to the quick filter which handles all filtering
+            // Sync program from existing dropdown to quick filter
+            const existingProg = document.getElementById('courseFilterProgram')?.value || '';
+            if (existingProg) {
+                const quickProg = document.getElementById('quickFilterProgram');
+                // Match case-insensitive
+                for (const opt of quickProg.options) {
+                    if (opt.value.toLowerCase() === existingProg.toLowerCase()) {
+                        quickProg.value = opt.value;
+                        break;
+                    }
                 }
-            });
+            }
+            applyQuickFilter();
         }
         
         function clearCourseFilters() {
@@ -1561,6 +1643,91 @@ while ($row = $result->fetch_assoc()) {
                 autoAssignFromCode();
             }
         });
+
+        // ==========================================
+        // Quick Filter: Program + Year/Semester
+        // ==========================================
+        let quickFilterYear = '';
+        let quickFilterSem = '';
+
+        function selectYearSem(btn) {
+            const year = btn.dataset.year;
+            const sem = btn.dataset.sem;
+
+            // Toggle: if already active, deselect
+            if (quickFilterYear === year && quickFilterSem === sem) {
+                quickFilterYear = '';
+                quickFilterSem = '';
+                btn.classList.remove('active');
+            } else {
+                quickFilterYear = year;
+                quickFilterSem = sem;
+                document.querySelectorAll('.ys-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+            applyQuickFilter();
+        }
+
+        function applyQuickFilter() {
+            const program = document.getElementById('quickFilterProgram').value;
+            const rows = document.querySelectorAll('#coursesTableBody tr');
+            let visibleCount = 0;
+
+            // Also sync the existing filter dropdown
+            const existingProgramFilter = document.getElementById('courseFilterProgram');
+            if (existingProgramFilter) existingProgramFilter.value = program ? program.toLowerCase() : '';
+
+            rows.forEach(row => {
+                const rowProgram = (row.dataset.program || '').trim();
+                const rowYear = (row.dataset.year || '0');
+                const rowSem = (row.dataset.semester || '').trim();
+                const searchTerm = (document.getElementById('courseSearch')?.value || '').toLowerCase();
+                const rowCode = (row.dataset.code || '').toLowerCase();
+                const rowName = (row.dataset.name || '').toLowerCase();
+
+                const matchesProgram = !program || rowProgram.toLowerCase() === program.toLowerCase();
+                const matchesYear = !quickFilterYear || rowYear === quickFilterYear;
+                const matchesSem = !quickFilterSem || rowSem === quickFilterSem;
+                const matchesSearch = !searchTerm || rowCode.includes(searchTerm) || rowName.includes(searchTerm);
+
+                if (matchesProgram && matchesYear && matchesSem && matchesSearch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            // Update the active filter display bar
+            const display = document.getElementById('activeFilterDisplay');
+            const textEl = document.getElementById('activeFilterText');
+            const countEl = document.getElementById('activeFilterCount');
+
+            if (program || quickFilterYear) {
+                display.classList.add('show');
+                let parts = [];
+                if (program) parts.push(program);
+                if (quickFilterYear) parts.push('Year ' + quickFilterYear + ' Semester ' + (quickFilterSem === 'Two' ? '2' : '1'));
+                textEl.textContent = parts.join(' — ');
+                countEl.textContent = visibleCount + ' course' + (visibleCount !== 1 ? 's' : '');
+            } else {
+                display.classList.remove('show');
+            }
+        }
+
+        function clearQuickFilter() {
+            quickFilterYear = '';
+            quickFilterSem = '';
+            document.getElementById('quickFilterProgram').value = '';
+            document.querySelectorAll('.ys-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('activeFilterDisplay').classList.remove('show');
+            // Reset existing filters too
+            if (document.getElementById('courseFilterProgram')) document.getElementById('courseFilterProgram').value = '';
+            if (document.getElementById('courseSearch')) document.getElementById('courseSearch').value = '';
+            // Show all rows
+            document.querySelectorAll('#coursesTableBody tr').forEach(row => row.style.display = '');
+            window.history.pushState({}, '', 'manage_courses.php');
+        }
     </script>
 </body>
 </html>
