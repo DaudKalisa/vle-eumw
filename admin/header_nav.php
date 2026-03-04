@@ -84,6 +84,7 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><a class="dropdown-item" href="university_settings.php"><i class="bi bi-gear me-2"></i>University Settings</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="database_manager.php"><i class="bi bi-database-gear me-2"></i>Database Backup</a></li>
+                        <li><a class="dropdown-item" href="export_data.php"><i class="bi bi-box-arrow-up-right me-2"></i>Export Data</a></li>
                         <li><a class="dropdown-item" href="file_manager.php"><i class="bi bi-folder2-open me-2"></i>File Manager</a></li>
                     </ul>
                 </li>
