@@ -19,14 +19,33 @@ $conn->query("CREATE TABLE IF NOT EXISTS odl_coordinators (
     phone VARCHAR(20),
     department VARCHAR(100),
     position VARCHAR(100) DEFAULT 'ODL Coordinator',
+    campus VARCHAR(50) DEFAULT 'all',
     profile_picture VARCHAR(255),
     is_active TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_user (user_id),
     INDEX idx_email (email),
-    INDEX idx_active (is_active)
+    INDEX idx_active (is_active),
+    INDEX idx_campus (campus)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+// Ensure campus column exists (for existing tables)
+$col_check = $conn->query("SHOW COLUMNS FROM odl_coordinators LIKE 'campus'");
+if ($col_check && $col_check->num_rows === 0) {
+    $conn->query("ALTER TABLE odl_coordinators ADD COLUMN campus VARCHAR(50) DEFAULT 'all' AFTER position");
+    $conn->query("ALTER TABLE odl_coordinators ADD INDEX idx_campus (campus)");
+}
+
+// Campus options
+$campus_options = [
+    'all' => 'All Campuses',
+    'blantyre' => 'Blantyre Campus',
+    'lilongwe' => 'Lilongwe Campus',
+    'mzuzu' => 'Mzuzu Campus',
+    'odel' => 'ODeL Campus',
+    'postgraduate' => 'Postgraduate Campus'
+];
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -36,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? 'Open Distance Learning');
         $position = trim($_POST['position'] ?? 'ODL Coordinator');
+        $campus = trim($_POST['campus'] ?? 'all');
         $username = trim($_POST['username']);
         $password = trim($_POST['password']);
 
@@ -82,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $user_id = $conn->insert_id;
 
                         // Insert into odl_coordinators table
-                        $insert_stmt = $conn->prepare("INSERT INTO odl_coordinators (user_id, full_name, email, phone, department, position) VALUES (?, ?, ?, ?, ?, ?)");
-                        $insert_stmt->bind_param("isssss", $user_id, $full_name, $email, $phone, $department, $position);
+                        $insert_stmt = $conn->prepare("INSERT INTO odl_coordinators (user_id, full_name, email, phone, department, position, campus) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                        $insert_stmt->bind_param("issssss", $user_id, $full_name, $email, $phone, $department, $position, $campus);
                         $insert_stmt->execute();
 
                         $conn->commit();
@@ -171,6 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? '');
         $position = trim($_POST['position'] ?? '');
+        $campus = trim($_POST['campus'] ?? 'all');
 
         if (empty($full_name)) {
             $error = "Full name is required.";
@@ -183,8 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($check_stmt->get_result()->num_rows > 0) {
                 $error = "Email '$email' is already used by another coordinator.";
             } else {
-                $update_stmt = $conn->prepare("UPDATE odl_coordinators SET full_name = ?, email = ?, phone = ?, department = ?, position = ? WHERE coordinator_id = ?");
-                $update_stmt->bind_param("sssssi", $full_name, $email, $phone, $department, $position, $coordinator_id);
+                $update_stmt = $conn->prepare("UPDATE odl_coordinators SET full_name = ?, email = ?, phone = ?, department = ?, position = ?, campus = ? WHERE coordinator_id = ?");
+                $update_stmt->bind_param("ssssssi", $full_name, $email, $phone, $department, $position, $campus, $coordinator_id);
 
                 if ($update_stmt->execute()) {
                     // Also update email in users table
@@ -352,6 +373,7 @@ foreach ($coordinators as $c) {
                                 <tr>
                                     <th>Coordinator</th>
                                     <th>Contact</th>
+                                    <th>Campus</th>
                                     <th>Department</th>
                                     <th>Username</th>
                                     <th>Last Login</th>
@@ -379,6 +401,16 @@ foreach ($coordinators as $c) {
                                         <small><i class="bi bi-envelope me-1"></i><?= htmlspecialchars($coord['email']) ?></small>
                                         <?php if (!empty($coord['phone'])): ?>
                                             <br><small><i class="bi bi-telephone me-1"></i><?= htmlspecialchars($coord['phone']) ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        $campus_val = $coord['campus'] ?? 'all';
+                                        $campus_label = $campus_options[$campus_val] ?? ucfirst($campus_val);
+                                        if ($campus_val === 'all'): ?>
+                                            <span class="badge bg-primary"><i class="bi bi-globe me-1"></i><?= $campus_label ?></span>
+                                        <?php else: ?>
+                                            <span class="badge bg-info text-dark"><i class="bi bi-building me-1"></i><?= $campus_label ?></span>
                                         <?php endif; ?>
                                     </td>
                                     <td><small><?= htmlspecialchars($coord['department'] ?? 'N/A') ?></small></td>
@@ -470,6 +502,15 @@ foreach ($coordinators as $c) {
                                 <input type="text" class="form-control" name="position" value="ODL Coordinator">
                             </div>
                             <div class="col-md-6">
+                                <label class="form-label">Campus Assignment <span class="text-danger">*</span></label>
+                                <select class="form-select" name="campus" required>
+                                    <?php foreach ($campus_options as $val => $label): ?>
+                                        <option value="<?= $val ?>"><?= $label ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <small class="form-text text-muted">Select "All Campuses" to manage across all locations</small>
+                            </div>
+                            <div class="col-md-6">
                                 <label class="form-label">Username <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" name="username" required>
                             </div>
@@ -522,9 +563,17 @@ foreach ($coordinators as $c) {
                                 <label class="form-label">Department</label>
                                 <input type="text" class="form-control" id="edit_department" name="department">
                             </div>
-                            <div class="col-12">
+                            <div class="col-md-6">
                                 <label class="form-label">Position</label>
                                 <input type="text" class="form-control" id="edit_position" name="position">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Campus Assignment <span class="text-danger">*</span></label>
+                                <select class="form-select" id="edit_campus" name="campus" required>
+                                    <?php foreach ($campus_options as $val => $label): ?>
+                                        <option value="<?= $val ?>"><?= $label ?></option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -629,6 +678,7 @@ foreach ($coordinators as $c) {
             document.getElementById('edit_phone').value = coord.phone || '';
             document.getElementById('edit_department').value = coord.department || '';
             document.getElementById('edit_position').value = coord.position || '';
+            document.getElementById('edit_campus').value = coord.campus || 'all';
             new bootstrap.Modal(document.getElementById('editCoordinatorModal')).show();
         }
     }
