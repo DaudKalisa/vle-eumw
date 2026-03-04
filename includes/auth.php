@@ -8,6 +8,18 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once 'config.php';
 
+// Ensure additional_roles column exists
+try {
+    $__conn = getDbConnection();
+    $__col_check = $__conn->query("SHOW COLUMNS FROM users LIKE 'additional_roles'");
+    if ($__col_check && $__col_check->num_rows === 0) {
+        $__conn->query("ALTER TABLE users ADD COLUMN additional_roles VARCHAR(255) DEFAULT NULL AFTER role");
+    }
+    unset($__conn, $__col_check);
+} catch (Throwable $e) {
+    // Table may not exist yet during setup
+}
+
 function isLoggedIn() {
     if (!isset($_SESSION['vle_user_id']) || empty($_SESSION['vle_user_id'])) {
         return false;
@@ -149,6 +161,7 @@ function login($username_email, $password) {
             $_SESSION['vle_user_id'] = $user['user_id'];
             $_SESSION['vle_username'] = $user['username'];
             $_SESSION['vle_role'] = $user['role'];
+            $_SESSION['vle_additional_roles'] = !empty($user['additional_roles']) ? $user['additional_roles'] : '';
             $_SESSION['vle_related_id'] = getRelatedId($user);
             $_SESSION['vle_last_activity'] = time(); // Set initial activity time
             $_SESSION['vle_login_time'] = time(); // Track login time
@@ -201,11 +214,52 @@ function requireRole($allowed_roles) {
         header('Location: ' . $base . 'login.php');
         exit();
     }
-    if (!in_array($_SESSION['vle_role'], $allowed_roles)) {
+    if (!hasRole($allowed_roles)) {
         // Redirect to access_denied.php instead of just dying
         $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
         header('Location: ' . $base . 'access_denied.php');
         exit();
     }
+}
+
+/**
+ * Check if the current user has any of the specified roles.
+ * Checks both primary role and additional_roles.
+ * @param string|array $roles Role or array of roles to check
+ * @return bool
+ */
+function hasRole($roles) {
+    if (!isset($_SESSION['vle_role'])) return false;
+    if (is_string($roles)) $roles = [$roles];
+    
+    // Check primary role
+    if (in_array($_SESSION['vle_role'], $roles)) return true;
+    
+    // Check additional roles
+    $additional = $_SESSION['vle_additional_roles'] ?? '';
+    if (!empty($additional)) {
+        $extra_roles = array_map('trim', explode(',', $additional));
+        foreach ($extra_roles as $extra) {
+            if (in_array($extra, $roles)) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Get all roles for the current user (primary + additional).
+ * @return array
+ */
+function getAllUserRoles() {
+    $roles = [];
+    if (isset($_SESSION['vle_role'])) {
+        $roles[] = $_SESSION['vle_role'];
+    }
+    $additional = $_SESSION['vle_additional_roles'] ?? '';
+    if (!empty($additional)) {
+        $extra = array_map('trim', explode(',', $additional));
+        $roles = array_unique(array_merge($roles, $extra));
+    }
+    return $roles;
 }
 ?>

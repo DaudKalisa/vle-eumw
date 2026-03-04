@@ -74,6 +74,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = trim($_POST['email']);
         $role = trim($_POST['role']);
         
+        // Collect additional roles from checkboxes
+        $all_roles = ['student', 'lecturer', 'staff', 'finance', 'hod', 'dean', 'odl_coordinator', 'examination_manager'];
+        $additional = [];
+        if (isset($_POST['additional_roles']) && is_array($_POST['additional_roles'])) {
+            foreach ($_POST['additional_roles'] as $r) {
+                $r = trim($r);
+                if (in_array($r, $all_roles) && $r !== $role) {
+                    $additional[] = $r;
+                }
+            }
+        }
+        $additional_roles = !empty($additional) ? implode(',', $additional) : null;
+        
         // Check if username already exists for different user
         $check_stmt = $conn->prepare("SELECT user_id FROM users WHERE username = ? AND user_id != ?");
         $check_stmt->bind_param("si", $username, $user_id);
@@ -88,8 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($check_stmt->get_result()->num_rows > 0) {
                 $error = "Email '$email' already exists.";
             } else {
-                $stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, role = ? WHERE user_id = ?");
-                $stmt->bind_param("sssi", $username, $email, $role, $user_id);
+                $stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, role = ?, additional_roles = ? WHERE user_id = ?");
+                $stmt->bind_param("ssssi", $username, $email, $role, $additional_roles, $user_id);
                 
                 if ($stmt->execute()) {
                     $success = "User updated successfully!";
@@ -135,7 +148,8 @@ $where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_c
 
 $query = "SELECT u.*, 
           COALESCE(s.full_name, l.full_name, f.full_name, u.username) as display_name,
-          s.student_id, l.lecturer_id, f.finance_id
+          s.student_id, l.lecturer_id, f.finance_id,
+          u.additional_roles
           FROM users u
           LEFT JOIN students s ON u.related_student_id = s.student_id
           LEFT JOIN lecturers l ON u.related_lecturer_id = l.lecturer_id
@@ -324,6 +338,8 @@ $total_users = array_sum($role_counts);
                             <option value="finance" <?php echo $filter_role === 'finance' ? 'selected' : ''; ?>>Finance</option>
                             <option value="hod" <?php echo $filter_role === 'hod' ? 'selected' : ''; ?>>HOD</option>
                             <option value="dean" <?php echo $filter_role === 'dean' ? 'selected' : ''; ?>>Dean</option>
+                            <option value="odl_coordinator" <?php echo $filter_role === 'odl_coordinator' ? 'selected' : ''; ?>>ODL Coordinator</option>
+                            <option value="examination_manager" <?php echo $filter_role === 'examination_manager' ? 'selected' : ''; ?>>Exam Officer</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -382,13 +398,33 @@ $total_users = array_sum($role_counts);
                                                     'staff' => 'bg-danger',
                                                     'finance' => 'bg-warning text-dark',
                                                     'hod' => 'bg-purple',
-                                                    'dean' => 'bg-dark'
+                                                    'dean' => 'bg-dark',
+                                                    'odl_coordinator' => 'bg-primary',
+                                                    'examination_manager' => 'bg-secondary'
+                                                ];
+                                                $role_labels = [
+                                                    'student' => 'Student',
+                                                    'lecturer' => 'Lecturer',
+                                                    'staff' => 'Admin/Staff',
+                                                    'finance' => 'Finance',
+                                                    'hod' => 'HOD',
+                                                    'dean' => 'Dean',
+                                                    'odl_coordinator' => 'Coordinator',
+                                                    'examination_manager' => 'Exam Officer'
                                                 ];
                                                 $role_color = $role_colors[$u['role']] ?? 'bg-secondary';
                                                 ?>
                                                 <span class="badge <?php echo $role_color; ?> role-badge">
-                                                    <?php echo ucfirst($u['role']); ?>
+                                                    <?php echo $role_labels[$u['role']] ?? ucfirst($u['role']); ?>
                                                 </span>
+                                                <?php if (!empty($u['additional_roles'])): ?>
+                                                    <?php foreach (explode(',', $u['additional_roles']) as $extra_role): ?>
+                                                        <?php $extra_role = trim($extra_role); if (empty($extra_role)) continue; ?>
+                                                        <span class="badge <?php echo $role_colors[$extra_role] ?? 'bg-secondary'; ?> role-badge" style="opacity:0.8; font-size:0.65rem;">
+                                                            +<?php echo $role_labels[$extra_role] ?? ucfirst($extra_role); ?>
+                                                        </span>
+                                                    <?php endforeach; ?>
+                                                <?php endif; ?>
                                             </td>
                                             <td>
                                                 <?php if ($u['is_active']): ?>
@@ -440,35 +476,78 @@ $total_users = array_sum($role_counts);
                                         
                                         <!-- Edit Modal -->
                                         <div class="modal fade" id="editModal<?php echo $u['user_id']; ?>" tabindex="-1">
-                                            <div class="modal-dialog">
+                                            <div class="modal-dialog modal-lg">
                                                 <div class="modal-content">
                                                     <form method="POST">
-                                                        <div class="modal-header bg-primary text-white">
-                                                            <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit User</h5>
+                                                        <div class="modal-header" style="background: var(--vle-gradient-primary); color: white;">
+                                                            <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit User #<?php echo $u['user_id']; ?></h5>
                                                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
                                                             <input type="hidden" name="user_id" value="<?php echo $u['user_id']; ?>">
-                                                            <div class="mb-3">
-                                                                <label class="form-label">Username</label>
-                                                                <input type="text" class="form-control" name="username" 
-                                                                       value="<?php echo htmlspecialchars($u['username']); ?>" required>
-                                                            </div>
-                                                            <div class="mb-3">
-                                                                <label class="form-label">Email</label>
-                                                                <input type="email" class="form-control" name="email" 
-                                                                       value="<?php echo htmlspecialchars($u['email']); ?>" required>
-                                                            </div>
-                                                            <div class="mb-3">
-                                                                <label class="form-label">Role</label>
-                                                                <select class="form-select" name="role" required>
-                                                                    <option value="student" <?php echo $u['role'] === 'student' ? 'selected' : ''; ?>>Student</option>
-                                                                    <option value="lecturer" <?php echo $u['role'] === 'lecturer' ? 'selected' : ''; ?>>Lecturer</option>
-                                                                    <option value="staff" <?php echo $u['role'] === 'staff' ? 'selected' : ''; ?>>Admin/Staff</option>
-                                                                    <option value="finance" <?php echo $u['role'] === 'finance' ? 'selected' : ''; ?>>Finance</option>
-                                                                    <option value="hod" <?php echo $u['role'] === 'hod' ? 'selected' : ''; ?>>HOD</option>
-                                                                    <option value="dean" <?php echo $u['role'] === 'dean' ? 'selected' : ''; ?>>Dean</option>
-                                                                </select>
+                                                            <div class="row g-3">
+                                                                <div class="col-md-6">
+                                                                    <label class="form-label">Username</label>
+                                                                    <input type="text" class="form-control" name="username" 
+                                                                           value="<?php echo htmlspecialchars($u['username']); ?>" required>
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    <label class="form-label">Email</label>
+                                                                    <input type="email" class="form-control" name="email" 
+                                                                           value="<?php echo htmlspecialchars($u['email']); ?>" required>
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    <label class="form-label">Primary Role</label>
+                                                                    <select class="form-select" name="role" required onchange="updateAdditionalRoles(this, <?php echo $u['user_id']; ?>)">
+                                                                        <option value="student" <?php echo $u['role'] === 'student' ? 'selected' : ''; ?>>Student</option>
+                                                                        <option value="lecturer" <?php echo $u['role'] === 'lecturer' ? 'selected' : ''; ?>>Lecturer</option>
+                                                                        <option value="staff" <?php echo $u['role'] === 'staff' ? 'selected' : ''; ?>>Admin/Staff</option>
+                                                                        <option value="finance" <?php echo $u['role'] === 'finance' ? 'selected' : ''; ?>>Finance</option>
+                                                                        <option value="hod" <?php echo $u['role'] === 'hod' ? 'selected' : ''; ?>>HOD</option>
+                                                                        <option value="dean" <?php echo $u['role'] === 'dean' ? 'selected' : ''; ?>>Dean</option>
+                                                                        <option value="odl_coordinator" <?php echo $u['role'] === 'odl_coordinator' ? 'selected' : ''; ?>>ODL Coordinator</option>
+                                                                        <option value="examination_manager" <?php echo $u['role'] === 'examination_manager' ? 'selected' : ''; ?>>Examination Officer</option>
+                                                                    </select>
+                                                                    <small class="text-muted">Determines default dashboard on login</small>
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    <label class="form-label">Additional Roles</label>
+                                                                    <div class="border rounded p-2" id="additionalRoles<?php echo $u['user_id']; ?>" style="max-height: 160px; overflow-y: auto;">
+                                                                        <?php
+                                                                        $available_roles = [
+                                                                            'lecturer' => 'Lecturer',
+                                                                            'staff' => 'Admin/Staff',
+                                                                            'hod' => 'HOD',
+                                                                            'dean' => 'Dean',
+                                                                            'odl_coordinator' => 'ODL Coordinator',
+                                                                            'examination_manager' => 'Exam Officer',
+                                                                            'finance' => 'Finance',
+                                                                            'student' => 'Student'
+                                                                        ];
+                                                                        $user_additional = !empty($u['additional_roles']) ? array_map('trim', explode(',', $u['additional_roles'])) : [];
+                                                                        foreach ($available_roles as $rval => $rlabel):
+                                                                            $is_primary = ($u['role'] === $rval);
+                                                                            $is_checked = in_array($rval, $user_additional);
+                                                                        ?>
+                                                                        <div class="form-check">
+                                                                            <input class="form-check-input additional-role-<?php echo $u['user_id']; ?>" 
+                                                                                   type="checkbox" name="additional_roles[]" 
+                                                                                   value="<?php echo $rval; ?>" 
+                                                                                   id="role_<?php echo $rval; ?>_<?php echo $u['user_id']; ?>"
+                                                                                   <?php echo $is_checked ? 'checked' : ''; ?>
+                                                                                   <?php echo $is_primary ? 'disabled' : ''; ?>>
+                                                                            <label class="form-check-label <?php echo $is_primary ? 'text-muted' : ''; ?>" 
+                                                                                   for="role_<?php echo $rval; ?>_<?php echo $u['user_id']; ?>">
+                                                                                <?php echo $rlabel; ?>
+                                                                                <?php if ($is_primary): ?>
+                                                                                    <small class="text-muted">(primary)</small>
+                                                                                <?php endif; ?>
+                                                                            </label>
+                                                                        </div>
+                                                                        <?php endforeach; ?>
+                                                                    </div>
+                                                                    <small class="text-muted">Grant access to multiple portals</small>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div class="modal-footer">
@@ -564,5 +643,29 @@ $total_users = array_sum($role_counts);
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // When primary role changes, disable that checkbox in additional roles
+    function updateAdditionalRoles(selectEl, userId) {
+        const primaryRole = selectEl.value;
+        const checkboxes = document.querySelectorAll('.additional-role-' + userId);
+        checkboxes.forEach(cb => {
+            if (cb.value === primaryRole) {
+                cb.checked = false;
+                cb.disabled = true;
+                cb.closest('.form-check').querySelector('label').classList.add('text-muted');
+                // Update label to show (primary)
+                let label = cb.closest('.form-check').querySelector('label');
+                if (!label.querySelector('small')) {
+                    label.insertAdjacentHTML('beforeend', ' <small class="text-muted">(primary)</small>');
+                }
+            } else {
+                cb.disabled = false;
+                cb.closest('.form-check').querySelector('label').classList.remove('text-muted');
+                let small = cb.closest('.form-check').querySelector('label small');
+                if (small) small.remove();
+            }
+        });
+    }
+    </script>
 </body>
 </html>
