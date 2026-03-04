@@ -12,8 +12,45 @@ if ($col_check && $col_check->num_rows === 0) {
     $conn->query("ALTER TABLE vle_courses ADD COLUMN semester ENUM('One','Two') DEFAULT 'One' AFTER year_of_study");
 }
 
+// Auto-ensure required programs exist in programs table
+$required_programs = [
+    ['LSM', 'Logistics and Supply Chain Management', 'degree', 4],
+    ['COD', 'Community Development', 'degree', 4],
+    ['HRM', 'Human Resource Management', 'degree', 4],
+    ['ICT', 'Information Technology', 'degree', 4],
+    ['BIT', 'Information Technology', 'degree', 4],
+    ['CS', 'Computer Science', 'degree', 4],
+    ['BUS', 'Business Administration', 'degree', 4],
+    ['ACC', 'Accounting and Finance', 'degree', 4],
+    ['ECO', 'Economics', 'degree', 4],
+    ['EDU', 'Education', 'degree', 4],
+    ['MKT', 'Marketing', 'degree', 4],
+    ['PAD', 'Public Administration', 'degree', 4],
+];
+$prog_table_check = $conn->query("SHOW TABLES LIKE 'programs'");
+if ($prog_table_check && $prog_table_check->num_rows > 0) {
+    foreach ($required_programs as $rp) {
+        $check = $conn->prepare("SELECT program_id FROM programs WHERE program_name = ?");
+        $check->bind_param("s", $rp[1]);
+        $check->execute();
+        if ($check->get_result()->num_rows === 0) {
+            $ins = $conn->prepare("INSERT INTO programs (program_code, program_name, program_type, duration_years, is_active) VALUES (?, ?, ?, ?, 1)");
+            $ins->bind_param("sssi", $rp[0], $rp[1], $rp[2], $rp[3]);
+            $ins->execute();
+            $ins->close();
+        }
+        $check->close();
+    }
+}
+
 $success_message = '';
 $error_message = '';
+
+// Check for session success message (from edit_course.php redirect)
+if (isset($_SESSION['success_message'])) {
+    $success_message = $_SESSION['success_message'];
+    unset($_SESSION['success_message']);
+}
 
 // Handle template download
 if (isset($_GET['download_template'])) {
@@ -339,11 +376,11 @@ while ($row = $result->fetch_assoc()) {
     $lecturers[] = $row;
 }
 
-// Get distinct programs
+// Get distinct programs from programs table
 $programs = [];
-$result = $conn->query("SELECT DISTINCT program FROM students WHERE program IS NOT NULL AND program != '' ORDER BY program");
+$result = $conn->query("SELECT program_name FROM programs WHERE is_active = 1 ORDER BY program_name");
 while ($row = $result->fetch_assoc()) {
-    $programs[] = $row['program'];
+    $programs[] = $row['program_name'];
 }
 
 // Check if program_of_study and year_of_study columns exist in vle_courses
@@ -471,12 +508,12 @@ while ($row = $result->fetch_assoc()) {
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table table-hover table-striped mb-0">
+                        <table class="table table-hover table-striped mb-0" id="coursesTable">
                             <thead class="table-dark">
                                 <tr>
-                                    <th>Course Code</th>
-                                    <th>Course Name</th>
-                                    <th>Program</th>
+                                    <th class="sortable" data-sort="code" style="cursor: pointer;">Course Code <i class="bi bi-arrow-down-up ms-1"></i></th>
+                                    <th class="sortable" data-sort="name" style="cursor: pointer;">Course Name <i class="bi bi-arrow-down-up ms-1"></i></th>
+                                    <th class="sortable" data-sort="program" style="cursor: pointer;">Program <i class="bi bi-arrow-down-up ms-1"></i></th>
                                     <th>Year</th>
                                     <th>Lecturer</th>
                                     <th>Enrolled</th>
@@ -492,9 +529,9 @@ while ($row = $result->fetch_assoc()) {
                                         <td><?php echo htmlspecialchars($course['course_name']); ?></td>
                                         <td><small><?php echo htmlspecialchars($course['program_of_study'] ?? 'N/A'); ?></small></td>
                                         <td>
-                                            <?php if (isset($course['year_of_study']) && isset($course['semester'])): ?>
+                                            <?php if (!empty($course['year_of_study']) && $course['year_of_study'] > 0 && !empty($course['semester'])): ?>
                                                 <span class="badge bg-info">Year <?php echo $course['year_of_study']; ?> Semester <?php echo str_replace('One', '1', str_replace('Two', '2', $course['semester'])); ?></span>
-                                            <?php elseif (isset($course['year_of_study'])): ?>
+                                            <?php elseif (!empty($course['year_of_study']) && $course['year_of_study'] > 0): ?>
                                                 <span class="badge bg-info">Year <?php echo $course['year_of_study']; ?></span>
                                             <?php else: ?>
                                                 <span class="badge bg-secondary">N/A</span>
@@ -532,7 +569,7 @@ while ($row = $result->fetch_assoc()) {
                                                     </ul>
                                                 </div>
                                                 <button class="btn btn-sm btn-warning" 
-                                                        onclick="openAllocateStudentsModal(<?php echo $course['course_id']; ?>, '<?php echo addslashes($course['course_code']); ?>', '<?php echo addslashes($course['course_name']); ?>', '<?php echo addslashes($course['program_of_study'] ?? ''); ?>', <?php echo $course['year_of_study'] ?? 0; ?>)"
+                                                        onclick="openAllocateStudentsModal(<?php echo $course['course_id']; ?>, '<?php echo addslashes($course['course_code']); ?>', '<?php echo addslashes($course['course_name']); ?>', '<?php echo addslashes($course['program_of_study'] ?? ''); ?>', <?php echo (!empty($course['year_of_study']) && $course['year_of_study'] > 0) ? $course['year_of_study'] : "''"; ?>)"
                                                         title="Allocate students to access course content">
                                                     <i class="bi bi-person-plus-fill"></i> Allocate
                                                 </button>
@@ -615,7 +652,13 @@ while ($row = $result->fetch_assoc()) {
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold"><i class="bi bi-code"></i> Course Code *</label>
-                                <input type="text" class="form-control" name="course_code" required placeholder="e.g., CS101">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" name="course_code" id="addCourseCode" required placeholder="e.g., ICT 110, LSM 425">
+                                    <button type="button" class="btn btn-primary" onclick="autoAssignFromCode()" title="Auto-fill Department, Year & Semester from course code">
+                                        <i class="bi bi-magic me-1"></i>Auto-Assign
+                                    </button>
+                                </div>
+                                <div id="autoAssignResult" class="mt-1" style="display:none;"></div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold"><i class="bi bi-calendar-week"></i> Total Weeks *</label>
@@ -636,7 +679,7 @@ while ($row = $result->fetch_assoc()) {
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold"><i class="bi bi-diagram-3"></i> Program of Study *</label>
-                                <select class="form-select" name="program" required>
+                                <select class="form-select" name="program" id="addCourseProgram" required>
                                     <option value="">Select program...</option>
                                     <?php foreach ($programs as $program): ?>
                                         <option value="<?php echo htmlspecialchars($program); ?>"><?php echo htmlspecialchars($program); ?></option>
@@ -645,7 +688,7 @@ while ($row = $result->fetch_assoc()) {
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold"><i class="bi bi-123"></i> Year of Study *</label>
-                                <select class="form-select" name="year_of_study" required>
+                                <select class="form-select" name="year_of_study" id="addCourseYear" required>
                                     <option value="">Select year...</option>
                                     <option value="1">Year 1</option>
                                     <option value="2">Year 2</option>
@@ -655,7 +698,7 @@ while ($row = $result->fetch_assoc()) {
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold"><i class="bi bi-calendar"></i> Semester *</label>
-                                <select class="form-select" name="semester" required>
+                                <select class="form-select" name="semester" id="addCourseSemester" required>
                                     <option value="">Select semester...</option>
                                     <option value="One">Semester One</option>
                                     <option value="Two">Semester Two</option>
@@ -937,15 +980,83 @@ while ($row = $result->fetch_assoc()) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Table sorting functionality
+        let sortDirection = {};
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.sortable').forEach(function(header) {
+                header.addEventListener('click', function() {
+                    const sortKey = this.dataset.sort;
+                    sortTable(sortKey);
+                });
+            });
+        });
+        
+        function sortTable(sortKey) {
+            const table = document.getElementById('coursesTable');
+            const tbody = document.getElementById('coursesTableBody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            // Toggle sort direction
+            sortDirection[sortKey] = !sortDirection[sortKey];
+            const ascending = sortDirection[sortKey];
+            
+            rows.sort(function(a, b) {
+                let valA, valB;
+                
+                switch(sortKey) {
+                    case 'code':
+                        valA = a.dataset.code || '';
+                        valB = b.dataset.code || '';
+                        break;
+                    case 'name':
+                        valA = a.dataset.name || '';
+                        valB = b.dataset.name || '';
+                        break;
+                    case 'program':
+                        valA = a.dataset.program || '';
+                        valB = b.dataset.program || '';
+                        break;
+                    default:
+                        valA = '';
+                        valB = '';
+                }
+                
+                valA = valA.toLowerCase();
+                valB = valB.toLowerCase();
+                
+                if (ascending) {
+                    return valA.localeCompare(valB);
+                } else {
+                    return valB.localeCompare(valA);
+                }
+            });
+            
+            // Re-append sorted rows
+            rows.forEach(function(row) {
+                tbody.appendChild(row);
+            });
+            
+            // Update sort icons
+            document.querySelectorAll('.sortable i').forEach(function(icon) {
+                icon.className = 'bi bi-arrow-down-up ms-1';
+            });
+            
+            const activeHeader = document.querySelector('.sortable[data-sort="' + sortKey + '"] i');
+            if (activeHeader) {
+                activeHeader.className = ascending ? 'bi bi-sort-alpha-down ms-1' : 'bi bi-sort-alpha-up ms-1';
+            }
+        }
+        
         let allStudents = [];
         let currentCourseId = null;
         let currentCourseProgram = '';
-        let currentCourseYear = 0;
+        let currentCourseYear = '';
         
         function openAllocateStudentsModal(courseId, courseCode, courseName, program, year) {
             currentCourseId = courseId;
             currentCourseProgram = program;
-            currentCourseYear = year;
+            currentCourseYear = year || '';
             
             document.getElementById('allocateCourseTitle').textContent = courseCode + ' - ' + courseName;
             document.getElementById('allocateCourseId').value = courseId;
@@ -954,7 +1065,7 @@ while ($row = $result->fetch_assoc()) {
             modal.show();
             
             // Load students
-            loadStudentsForAllocation(program, year);
+            loadStudentsForAllocation(program, year || '');
         }
         
         function loadStudentsForAllocation(suggestedProgram, suggestedYear) {
@@ -975,9 +1086,11 @@ while ($row = $result->fetch_assoc()) {
                         programFilter.appendChild(option);
                     });
                     
-                    // Set suggested year
-                    if (suggestedYear) {
+                    // Set suggested year only if valid
+                    if (suggestedYear && suggestedYear !== '' && suggestedYear > 0) {
                         document.getElementById('filterYear').value = suggestedYear;
+                    } else {
+                        document.getElementById('filterYear').value = '';
                     }
                     
                     displayStudents();
@@ -1214,6 +1327,240 @@ while ($row = $result->fetch_assoc()) {
             
             new bootstrap.Modal(document.getElementById('deleteCourseModal')).show();
         }
+        
+        // ==========================================
+        // Auto-Assign from Course Code
+        // ==========================================
+        
+        // Course code prefix → program/department mapping
+        const codeToProgramMap = {
+            // Information Technology
+            'ICT': 'Information Technology',
+            'BIT': 'Information Technology',
+            'IT': 'Information Technology',
+            'CS': 'Computer Science',
+            'CSC': 'Computer Science',
+            'CIT': 'Information Technology',
+            
+            // Logistics & Supply Chain Management
+            'LSM': 'Logistics and Supply Chain Management',
+            'LOG': 'Logistics and Supply Chain Management',
+            'SCM': 'Logistics and Supply Chain Management',
+            'LSCM': 'Logistics and Supply Chain Management',
+            
+            // Community Development
+            'COD': 'Community Development',
+            'CD': 'Community Development',
+            'BACD': 'Community Development',
+            
+            // Human Resource Management
+            'BAHRM': 'Human Resource Management',
+            'HRM': 'Human Resource Management',
+            'HR': 'Human Resource Management',
+            
+            // Business Administration
+            'BUS': 'Business Administration',
+            'BA': 'Business Administration',
+            'BBA': 'Business Administration',
+            'BAM': 'Business Administration',
+            'MGT': 'Business Administration',
+            
+            // Accounting & Finance
+            'ACC': 'Accounting and Finance',
+            'BAAF': 'Accounting and Finance',
+            'FIN': 'Accounting and Finance',
+            'ACF': 'Accounting and Finance',
+            
+            // Economics
+            'ECO': 'Economics',
+            'ECON': 'Economics',
+            'EC': 'Economics',
+            
+            // Education
+            'EDU': 'Education',
+            'BED': 'Education',
+            'TCH': 'Education',
+            
+            // Law
+            'LAW': 'Law',
+            'LLB': 'Law',
+            
+            // Nursing / Health Sciences
+            'NUR': 'Nursing',
+            'HSC': 'Health Sciences',
+            'PH': 'Public Health',
+            'PHC': 'Public Health',
+            
+            // Marketing
+            'MKT': 'Marketing',
+            'BAMK': 'Marketing',
+            
+            // Public Administration
+            'PAD': 'Public Administration',
+            'PA': 'Public Administration',
+            
+            // Journalism / Mass Communication
+            'JMC': 'Journalism and Mass Communication',
+            'MC': 'Mass Communication',
+            'COM': 'Communication Studies',
+            
+            // Agriculture
+            'AGR': 'Agriculture',
+            'AG': 'Agriculture',
+            
+            // Social Work
+            'SW': 'Social Work',
+            'SOC': 'Sociology',
+            
+            // Mathematics & Statistics
+            'MAT': 'Mathematics',
+            'MATH': 'Mathematics',
+            'STA': 'Statistics',
+            'STAT': 'Statistics',
+            
+            // Engineering
+            'ENG': 'Engineering',
+            'CE': 'Civil Engineering',
+            'EE': 'Electrical Engineering',
+            'ME': 'Mechanical Engineering',
+        };
+        
+        function autoAssignFromCode() {
+            const codeInput = document.getElementById('addCourseCode');
+            const code = codeInput.value.trim().toUpperCase();
+            const resultDiv = document.getElementById('autoAssignResult');
+            
+            if (!code) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<small class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Please enter a course code first.</small>';
+                return;
+            }
+            
+            // Parse: split letters from numbers
+            // E.g. "LSM 425" → prefix="LSM", numbers="425"
+            // E.g. "BAHRM 1202" → prefix="BAHRM", numbers="1202"
+            // E.g. "BIT1102" → prefix="BIT", numbers="1102"
+            const cleaned = code.replace(/\s+/g, '');
+            const match = cleaned.match(/^([A-Z]+)(\d+)$/);
+            
+            if (!match) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<small class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Invalid format. Use letters + numbers (e.g. ICT 110, LSM 425).</small>';
+                return;
+            }
+            
+            const prefix = match[1];
+            const numPart = match[2];
+            
+            // First digit = year, second digit = semester
+            const year = parseInt(numPart.charAt(0));
+            const semDigit = parseInt(numPart.charAt(1));
+            const semester = (semDigit === 2) ? 'Two' : 'One';
+            
+            // Look up program from prefix (try longest match first)
+            let program = null;
+            let matchedPrefix = null;
+            
+            // Sort prefixes by length descending so BAHRM matches before BA
+            const sortedPrefixes = Object.keys(codeToProgramMap).sort((a, b) => b.length - a.length);
+            for (const p of sortedPrefixes) {
+                if (prefix === p) {
+                    program = codeToProgramMap[p];
+                    matchedPrefix = p;
+                    break;
+                }
+            }
+            
+            // If no exact match, try starts-with longest
+            if (!program) {
+                for (const p of sortedPrefixes) {
+                    if (prefix.startsWith(p) || p.startsWith(prefix)) {
+                        program = codeToProgramMap[p];
+                        matchedPrefix = p;
+                        break;
+                    }
+                }
+            }
+            
+            // Set Year
+            if (year >= 1 && year <= 4) {
+                document.getElementById('addCourseYear').value = year.toString();
+            }
+            
+            // Set Semester
+            document.getElementById('addCourseSemester').value = semester;
+            
+            // Set Program
+            let programSet = false;
+            if (program) {
+                const progSelect = document.getElementById('addCourseProgram');
+                const options = Array.from(progSelect.options);
+                
+                // Try exact match first
+                for (const opt of options) {
+                    if (opt.value.toLowerCase() === program.toLowerCase()) {
+                        progSelect.value = opt.value;
+                        programSet = true;
+                        break;
+                    }
+                }
+                
+                // Try partial/contains match
+                if (!programSet) {
+                    const keywords = program.toLowerCase().split(/\s+/);
+                    for (const opt of options) {
+                        if (!opt.value) continue;
+                        const optLower = opt.value.toLowerCase();
+                        const matchCount = keywords.filter(k => k.length > 2 && optLower.includes(k)).length;
+                        if (matchCount >= Math.ceil(keywords.length * 0.5)) {
+                            progSelect.value = opt.value;
+                            programSet = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Show result
+            resultDiv.style.display = 'block';
+            let html = '<div class="d-flex flex-wrap gap-2 align-items-center">';
+            
+            if (program) {
+                html += `<span class="badge ${programSet ? 'bg-success' : 'bg-warning text-dark'}" style="font-size:0.78rem;"><i class="bi bi-building me-1"></i>${program}${!programSet ? ' (not in list)' : ''}</span>`;
+            } else {
+                html += '<span class="badge bg-danger" style="font-size:0.78rem;"><i class="bi bi-question-circle me-1"></i>Unknown prefix: ' + prefix + '</span>';
+            }
+            
+            html += `<span class="badge bg-primary" style="font-size:0.78rem;"><i class="bi bi-123 me-1"></i>Year ${year}</span>`;
+            html += `<span class="badge bg-info" style="font-size:0.78rem;"><i class="bi bi-calendar me-1"></i>Semester ${semester === 'One' ? '1' : '2'}</span>`;
+            html += '</div>';
+            
+            if (program && !programSet) {
+                html += '<small class="text-warning d-block mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Program "' + program + '" not found in the dropdown. Please add it to Programs first or select manually.</small>';
+            }
+            
+            resultDiv.innerHTML = html;
+            
+            // Flash the changed fields
+            ['addCourseProgram', 'addCourseYear', 'addCourseSemester'].forEach(id => {
+                const el = document.getElementById(id);
+                el.style.transition = 'box-shadow 0.3s, border-color 0.3s';
+                el.style.borderColor = '#198754';
+                el.style.boxShadow = '0 0 0 3px rgba(25,135,84,0.25)';
+                setTimeout(() => {
+                    el.style.borderColor = '';
+                    el.style.boxShadow = '';
+                }, 2000);
+            });
+        }
+        
+        // Auto-assign on Enter key in course code field
+        document.getElementById('addCourseCode')?.addEventListener('keyup', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                autoAssignFromCode();
+            }
+        });
     </script>
 </body>
 </html>
