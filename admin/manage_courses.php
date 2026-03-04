@@ -46,6 +46,44 @@ if ($prog_table_check && $prog_table_check->num_rows > 0) {
 $success_message = '';
 $error_message = '';
 
+// AJAX: Inline update course program/year/semester
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['inline_update_course'])) {
+    header('Content-Type: application/json');
+    $course_id = (int)($_POST['course_id'] ?? 0);
+    $field = $_POST['field'] ?? '';
+    
+    if ($course_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid course ID']);
+        exit;
+    }
+    
+    if ($field === 'program') {
+        $value = trim($_POST['value'] ?? '');
+        $stmt = $conn->prepare("UPDATE vle_courses SET program_of_study = ? WHERE course_id = ?");
+        $stmt->bind_param("si", $value, $course_id);
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'message' => 'Program updated']);
+        } else {
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+        }
+        $stmt->close();
+    } elseif ($field === 'year_semester') {
+        $year = (int)($_POST['year'] ?? 0);
+        $semester = in_array($_POST['semester'] ?? '', ['One', 'Two']) ? $_POST['semester'] : 'One';
+        $stmt = $conn->prepare("UPDATE vle_courses SET year_of_study = ?, semester = ? WHERE course_id = ?");
+        $stmt->bind_param("isi", $year, $semester, $course_id);
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'message' => 'Year/Semester updated']);
+        } else {
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+        }
+        $stmt->close();
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Invalid field']);
+    }
+    exit;
+}
+
 // Check for session success message (from edit_course.php redirect)
 if (isset($_SESSION['success_message'])) {
     $success_message = $_SESSION['success_message'];
@@ -461,6 +499,21 @@ while ($row = $result->fetch_assoc()) {
             border-color: #1e3c72;
             box-shadow: 0 2px 8px rgba(30,60,114,0.3);
         }
+        .inline-program-select, .inline-year-select {
+            transition: border-color 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+        .inline-program-select:hover, .inline-year-select:hover {
+            border-color: #1e3c72;
+            background-color: #fff;
+        }
+        .inline-program-select:focus, .inline-year-select:focus {
+            border-color: #2a5298;
+            box-shadow: 0 0 0 3px rgba(42,82,152,0.2);
+            background-color: #fff;
+        }
         .active-filter-display {
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: #fff;
@@ -615,15 +668,32 @@ while ($row = $result->fetch_assoc()) {
                                     <tr data-program="<?php echo htmlspecialchars($course['program_of_study'] ?? ''); ?>" data-code="<?php echo htmlspecialchars($course['course_code']); ?>" data-name="<?php echo htmlspecialchars($course['course_name']); ?>" data-year="<?php echo (int)($course['year_of_study'] ?? 0); ?>" data-semester="<?php echo htmlspecialchars($course['semester'] ?? ''); ?>">
                                         <td><strong class="text-primary"><?php echo htmlspecialchars($course['course_code']); ?></strong></td>
                                         <td><?php echo htmlspecialchars($course['course_name']); ?></td>
-                                        <td><small><?php echo htmlspecialchars($course['program_of_study'] ?? 'N/A'); ?></small></td>
                                         <td>
-                                            <?php if (!empty($course['year_of_study']) && $course['year_of_study'] > 0 && !empty($course['semester'])): ?>
-                                                <span class="badge bg-info">Year <?php echo $course['year_of_study']; ?> Semester <?php echo str_replace('One', '1', str_replace('Two', '2', $course['semester'])); ?></span>
-                                            <?php elseif (!empty($course['year_of_study']) && $course['year_of_study'] > 0): ?>
-                                                <span class="badge bg-info">Year <?php echo $course['year_of_study']; ?></span>
-                                            <?php else: ?>
-                                                <span class="badge bg-secondary">N/A</span>
-                                            <?php endif; ?>
+                                            <select class="form-select form-select-sm inline-program-select" 
+                                                    data-course-id="<?php echo $course['course_id']; ?>"
+                                                    onchange="inlineUpdateProgram(this)"
+                                                    style="min-width:160px;font-size:0.78rem;padding:2px 24px 2px 6px;">
+                                                <option value="" <?php echo empty($course['program_of_study']) || $course['program_of_study'] === 'General Department' ? 'selected' : ''; ?>>General Department</option>
+                                                <?php foreach ($programs as $prog): ?>
+                                                    <option value="<?php echo htmlspecialchars($prog); ?>" <?php echo ($course['program_of_study'] ?? '') === $prog ? 'selected' : ''; ?>><?php echo htmlspecialchars($prog); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm inline-year-select"
+                                                    data-course-id="<?php echo $course['course_id']; ?>"
+                                                    onchange="inlineUpdateYear(this)"
+                                                    style="min-width:120px;font-size:0.78rem;padding:2px 24px 2px 6px;">
+                                                <option value="" <?php echo empty($course['year_of_study']) || $course['year_of_study'] == 0 ? 'selected' : ''; ?>>N/A</option>
+                                                <option value="1-One" <?php echo ($course['year_of_study'] ?? 0) == 1 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y1 Sem 1</option>
+                                                <option value="1-Two" <?php echo ($course['year_of_study'] ?? 0) == 1 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y1 Sem 2</option>
+                                                <option value="2-One" <?php echo ($course['year_of_study'] ?? 0) == 2 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y2 Sem 1</option>
+                                                <option value="2-Two" <?php echo ($course['year_of_study'] ?? 0) == 2 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y2 Sem 2</option>
+                                                <option value="3-One" <?php echo ($course['year_of_study'] ?? 0) == 3 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y3 Sem 1</option>
+                                                <option value="3-Two" <?php echo ($course['year_of_study'] ?? 0) == 3 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y3 Sem 2</option>
+                                                <option value="4-One" <?php echo ($course['year_of_study'] ?? 0) == 4 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y4 Sem 1</option>
+                                                <option value="4-Two" <?php echo ($course['year_of_study'] ?? 0) == 4 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y4 Sem 2</option>
+                                            </select>
                                         </td>
                                         <td><?php echo htmlspecialchars($course['lecturer_name'] ?? 'Not assigned'); ?></td>
                                         <td>
@@ -1643,6 +1713,97 @@ while ($row = $result->fetch_assoc()) {
                 autoAssignFromCode();
             }
         });
+
+        // ==========================================
+        // Inline Update Functions
+        // ==========================================
+        function inlineUpdateProgram(select) {
+            const courseId = select.dataset.courseId;
+            const value = select.value;
+            const row = select.closest('tr');
+            
+            select.disabled = true;
+            select.style.opacity = '0.6';
+            
+            const formData = new FormData();
+            formData.append('inline_update_course', '1');
+            formData.append('course_id', courseId);
+            formData.append('field', 'program');
+            formData.append('value', value);
+            
+            fetch('manage_courses.php', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    select.disabled = false;
+                    select.style.opacity = '1';
+                    if (data.success) {
+                        // Flash green
+                        select.style.borderColor = '#198754';
+                        select.style.boxShadow = '0 0 0 3px rgba(25,135,84,0.25)';
+                        setTimeout(() => { select.style.borderColor = ''; select.style.boxShadow = ''; }, 1500);
+                        // Update data attribute for filtering
+                        row.dataset.program = value || '';
+                    } else {
+                        select.style.borderColor = '#dc3545';
+                        alert('Update failed: ' + data.message);
+                        setTimeout(() => { select.style.borderColor = ''; }, 1500);
+                    }
+                })
+                .catch(() => {
+                    select.disabled = false;
+                    select.style.opacity = '1';
+                    select.style.borderColor = '#dc3545';
+                    alert('Network error. Please try again.');
+                });
+        }
+        
+        function inlineUpdateYear(select) {
+            const courseId = select.dataset.courseId;
+            const value = select.value;
+            const row = select.closest('tr');
+            
+            let year = 0, semester = 'One';
+            if (value) {
+                const parts = value.split('-');
+                year = parseInt(parts[0]);
+                semester = parts[1];
+            }
+            
+            select.disabled = true;
+            select.style.opacity = '0.6';
+            
+            const formData = new FormData();
+            formData.append('inline_update_course', '1');
+            formData.append('course_id', courseId);
+            formData.append('field', 'year_semester');
+            formData.append('year', year);
+            formData.append('semester', semester);
+            
+            fetch('manage_courses.php', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    select.disabled = false;
+                    select.style.opacity = '1';
+                    if (data.success) {
+                        select.style.borderColor = '#198754';
+                        select.style.boxShadow = '0 0 0 3px rgba(25,135,84,0.25)';
+                        setTimeout(() => { select.style.borderColor = ''; select.style.boxShadow = ''; }, 1500);
+                        // Update data attributes for filtering
+                        row.dataset.year = year.toString();
+                        row.dataset.semester = semester;
+                    } else {
+                        select.style.borderColor = '#dc3545';
+                        alert('Update failed: ' + data.message);
+                        setTimeout(() => { select.style.borderColor = ''; }, 1500);
+                    }
+                })
+                .catch(() => {
+                    select.disabled = false;
+                    select.style.opacity = '1';
+                    select.style.borderColor = '#dc3545';
+                    alert('Network error. Please try again.');
+                });
+        }
 
         // ==========================================
         // Quick Filter: Program + Year/Semester
