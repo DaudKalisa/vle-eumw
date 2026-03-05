@@ -73,13 +73,6 @@ $_role_definitions = [
         'path' => '/odl_coordinator/dashboard.php',
         'description' => 'Distance Learning Coordination'
     ],
-    'student' => [
-        'label' => 'Student',
-        'icon' => 'bi-backpack-fill',
-        'gradient' => 'linear-gradient(135deg, #ec4899, #db2777)',
-        'path' => '/student/dashboard.php',
-        'description' => 'My Learning & Courses'
-    ],
 ];
 
 // Normalize: treat staff/admin as same for "current" check, and examination_manager as exam officer

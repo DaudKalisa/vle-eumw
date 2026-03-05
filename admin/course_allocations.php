@@ -57,8 +57,7 @@ $lecturers = [];
 $result = $conn->query("SELECT l.lecturer_id, l.full_name, l.department, l.position,
                         (SELECT COUNT(*) FROM vle_courses c WHERE c.lecturer_id = l.lecturer_id AND c.is_active = TRUE) as course_count
                         FROM lecturers l 
-                        LEFT JOIN users u ON l.lecturer_id = u.related_lecturer_id 
-                        WHERE l.is_active = TRUE AND (u.role = 'lecturer' OR FIND_IN_SET('lecturer', u.additional_roles) > 0 OR u.role IS NULL)
+                        WHERE l.is_active = TRUE
                         ORDER BY l.full_name");
 while ($row = $result->fetch_assoc()) {
     $lecturers[] = $row;

@@ -124,6 +124,9 @@ $where_conditions = [];
 $params = [];
 $types = '';
 
+// Always exclude students from admin user list (students managed separately)
+$where_conditions[] = "u.role != 'student'";
+
 if ($filter_role !== 'all') {
     $where_conditions[] = "(u.role = ? OR FIND_IN_SET(?, COALESCE(u.additional_roles, '')))";
     $params[] = $filter_role;
@@ -172,9 +175,9 @@ while ($row = $result->fetch_assoc()) {
     $users[] = $row;
 }
 
-// Get counts by role
+// Get counts by role (excluding students)
 $role_counts = [];
-$count_result = $conn->query("SELECT role, COUNT(*) as count FROM users GROUP BY role");
+$count_result = $conn->query("SELECT role, COUNT(*) as count FROM users WHERE role != 'student' GROUP BY role");
 while ($row = $count_result->fetch_assoc()) {
     $role_counts[$row['role']] = $row['count'];
 }
@@ -333,7 +336,6 @@ $total_users = array_sum($role_counts);
                         <label class="form-label">Role</label>
                         <select class="form-select" name="role">
                             <option value="all" <?php echo $filter_role === 'all' ? 'selected' : ''; ?>>All Roles</option>
-                            <option value="student" <?php echo $filter_role === 'student' ? 'selected' : ''; ?>>Student</option>
                             <option value="lecturer" <?php echo $filter_role === 'lecturer' ? 'selected' : ''; ?>>Lecturer</option>
                             <option value="staff" <?php echo $filter_role === 'staff' ? 'selected' : ''; ?>>Admin/Staff</option>
                             <option value="finance" <?php echo $filter_role === 'finance' ? 'selected' : ''; ?>>Finance</option>
