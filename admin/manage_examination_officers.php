@@ -7,6 +7,20 @@ requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
+// Ensure examination_manager role exists in ENUM
+try {
+    $col_check = $conn->query("SHOW COLUMNS FROM users LIKE 'role'");
+    if ($col_check && $row = $col_check->fetch_assoc()) {
+        if (strpos($row['Type'], 'examination_manager') === false) {
+            preg_match("/enum\((.*)\)/", $row['Type'], $matches);
+            if (!empty($matches[1])) {
+                $new_enum = str_replace(")", ",'examination_manager')", "enum(" . $matches[1] . ")");
+                $conn->query("ALTER TABLE users MODIFY COLUMN role " . $new_enum . " DEFAULT 'student'");
+            }
+        }
+    }
+} catch (Exception $e) { /* silently continue */ }
+
 $success = '';
 $error = '';
 
@@ -68,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             // Create user account
                             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                            $user_stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_staff_id) VALUES (?, ?, ?, 'staff', ?)");
+                            $user_stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_staff_id) VALUES (?, ?, ?, 'examination_manager', ?)");
                             $user_stmt->bind_param("sssi", $username, $email, $hashed_password, $manager_id);
                             $user_stmt->execute();
 

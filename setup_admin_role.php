@@ -11,7 +11,7 @@ echo "<h2>Setting up Admin Role</h2>";
 
 // Step 1: ALTER the role enum to include 'admin'
 echo "<h3>Step 1: Adding 'admin' to users.role enum...</h3>";
-$alter_sql = "ALTER TABLE users MODIFY COLUMN role ENUM('student','lecturer','staff','hod','dean','finance','admin') NOT NULL";
+$alter_sql = "ALTER TABLE users MODIFY COLUMN role ENUM('student','lecturer','staff','hod','dean','finance','admin','examination_manager','odl_coordinator') NOT NULL";
 if ($conn->query($alter_sql)) {
     echo "<p style='color:green;'>✅ 'admin' role added to users table enum successfully.</p>";
 } else {
