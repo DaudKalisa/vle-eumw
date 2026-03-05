@@ -150,7 +150,7 @@ $user = getCurrentUser();
 
     <div class="vle-content">
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
-            <h2 class="vle-page-title"><i class="bi bi-collection me-2"></i>My Assigned Modules</h2>
+            <h2 class="vle-page-title"><i class="bi bi-collection me-2"></i>My Assigned Courses</h2>
             <div>
                 <a href="live_classroom.php" class="btn btn-danger me-2"><i class="bi bi-camera-video me-1"></i> Live Classroom</a>
                 <a href="request_finance.php" class="btn btn-vle-accent me-2"><i class="bi bi-cash-coin me-1"></i> Finance</a>
@@ -161,7 +161,7 @@ $user = getCurrentUser();
         <?php if (empty($courses)): ?>
             <div class="alert vle-alert-info">
                 <i class="bi bi-info-circle me-2"></i>You haven't been assigned any VLE courses yet.
-                Please contact the administrator for module assignment.
+                Please contact the administrator for course assignment.
             </div>
         <?php else: ?>
             <div class="row">
@@ -388,6 +388,11 @@ $user = getCurrentUser();
                 <?php endif; ?>
             </div>
         </div>
+
+        <?php
+        $current_role_context = 'lecturer';
+        include '../includes/role_cards.php';
+        ?>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>

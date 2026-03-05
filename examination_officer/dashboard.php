@@ -442,6 +442,11 @@ $page_title = "Examination Dashboard";
                 </div>
             </div>
         </div>
+
+        <?php
+        $current_role_context = 'examination_manager';
+        include '../includes/role_cards.php';
+        ?>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>

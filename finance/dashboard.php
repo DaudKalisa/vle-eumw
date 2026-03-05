@@ -200,59 +200,69 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
             background: #f0f4f8;
         }
         
-        /* Welcome Card */
+        /* Welcome Card - Larger & More Prominent */
         .welcome-card {
             background: var(--finance-gradient);
-            border-radius: 20px;
-            padding: 1.5rem;
+            border-radius: 24px;
+            padding: 2rem;
             color: white;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 10px 40px rgba(30, 60, 114, 0.3);
+            margin-bottom: 2rem;
+            box-shadow: 0 15px 50px rgba(30, 60, 114, 0.35);
         }
         .welcome-card .profile-section {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 1.25rem;
         }
         .welcome-card .profile-avatar {
-            width: 60px;
-            height: 60px;
+            width: 72px;
+            height: 72px;
             border-radius: 50%;
             background: rgba(255,255,255,0.2);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             font-weight: 700;
-            border: 3px solid rgba(255,255,255,0.4);
+            border: 4px solid rgba(255,255,255,0.4);
         }
         .welcome-card .welcome-name {
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             font-weight: 700;
             margin: 0;
         }
+        @media (min-width: 992px) {
+            .welcome-card .welcome-name {
+                font-size: 2rem;
+            }
+            .welcome-card .profile-avatar {
+                width: 80px;
+                height: 80px;
+            }
+        }
         .welcome-card .welcome-role {
             opacity: 0.9;
-            font-size: 0.9rem;
+            font-size: 1rem;
         }
         .welcome-card .welcome-date {
             background: rgba(255,255,255,0.15);
-            padding: 0.5rem 1rem;
+            padding: 0.6rem 1.25rem;
             border-radius: 50px;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             margin-top: 1rem;
             display: inline-block;
         }
         
-        /* Stats Grid */
+        /* Stats Grid - Larger on Desktop */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 0.75rem;
+            gap: 1rem;
         }
         @media (min-width: 768px) {
             .stats-grid {
                 grid-template-columns: repeat(3, 1fr);
+                gap: 1.25rem;
             }
         }
         @media (min-width: 992px) {
@@ -262,31 +272,31 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
         }
         .stat-card {
             background: white;
-            border-radius: 16px;
-            padding: 1rem;
+            border-radius: 20px;
+            padding: 1.25rem;
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            gap: 1rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
             transition: all 0.3s ease;
             cursor: pointer;
-            border-left: 4px solid var(--accent-color, #1e3c72);
+            border-left: 5px solid var(--accent-color, #1e3c72);
             text-decoration: none;
             color: inherit;
         }
         .stat-card:hover {
             transform: var(--card-hover-transform);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+            box-shadow: 0 12px 35px rgba(0,0,0,0.15);
             color: inherit;
         }
         .stat-card .stat-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.25rem;
+            font-size: 1.5rem;
             color: white;
             flex-shrink: 0;
         }
@@ -295,14 +305,20 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
             min-width: 0;
         }
         .stat-card .stat-value {
-            font-size: 1.1rem;
+            font-size: 1.25rem;
             font-weight: 700;
             display: block;
         }
+        @media (min-width: 992px) {
+            .stat-card .stat-value {
+                font-size: 1.5rem;
+            }
+        }
         .stat-card .stat-label {
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             color: #64748b;
             display: block;
+            font-weight: 500;
         }
         
         /* Quick Actions */
@@ -1105,6 +1121,11 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
             </div>
         </div>
     </div><!-- End finance-wrapper -->
+
+    <?php
+    $current_role_context = 'finance';
+    include '../includes/role_cards.php';
+    ?>
                         </div>
                     </div>
                 </div>

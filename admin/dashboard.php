@@ -1248,6 +1248,11 @@ if ($result) {
                 </div>
             </div>
         </div>
+
+        <?php
+        $current_role_context = 'admin';
+        include '../includes/role_cards.php';
+        ?>
     </main>
     
     <!-- File Manager Login Modal -->
