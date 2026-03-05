@@ -189,14 +189,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all examination officers
+// Get all examination officers (from dedicated table + users with examination_manager role)
 $query = "
-    SELECT em.*, u.username, u.user_id,
+    SELECT em.*, u.username, u.user_id, u.additional_roles,
            (SELECT COUNT(*) FROM exams WHERE created_by = u.user_id) as exams_count,
            (SELECT COUNT(*) FROM exam_sessions WHERE exam_id IN (SELECT exam_id FROM exams WHERE created_by = u.user_id)) as sessions_count
     FROM examination_managers em
     LEFT JOIN users u ON em.manager_id = u.related_staff_id
-    ORDER BY em.created_at DESC
+    
+    UNION
+    
+    SELECT NULL as manager_id, 
+           COALESCE(l.full_name, u2.username) as full_name, 
+           u2.email, 
+           COALESCE(l.phone, '') as phone, 
+           COALESCE(l.department, 'Academic Affairs') as department, 
+           'Examination Officer' as position, 
+           u2.is_active, 
+           u2.created_at, 
+           u2.created_at as updated_at,
+           u2.username, u2.user_id, u2.additional_roles,
+           (SELECT COUNT(*) FROM exams WHERE created_by = u2.user_id) as exams_count,
+           (SELECT COUNT(*) FROM exam_sessions WHERE exam_id IN (SELECT exam_id FROM exams WHERE created_by = u2.user_id)) as sessions_count
+    FROM users u2
+    LEFT JOIN lecturers l ON u2.related_lecturer_id = l.lecturer_id
+    WHERE (u2.role = 'examination_manager' OR FIND_IN_SET('examination_manager', COALESCE(u2.additional_roles, '')))
+    AND u2.user_id NOT IN (SELECT COALESCE(u3.user_id, 0) FROM users u3 INNER JOIN examination_managers em2 ON u3.related_staff_id = em2.manager_id)
+    
+    ORDER BY full_name
 ";
 
 $result = $conn->query($query);

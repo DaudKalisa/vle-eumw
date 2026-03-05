@@ -195,12 +195,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all lecturers with usernames (only lecturer role, excluding admin and finance)
+// Get all lecturers with usernames (primary or additional lecturer role)
 $lecturers = [];
-$result = $conn->query("SELECT l.*, u.username, u.role 
+$result = $conn->query("SELECT l.*, u.username, u.role, u.additional_roles 
                         FROM lecturers l 
                         LEFT JOIN users u ON l.lecturer_id = u.related_lecturer_id 
-                        WHERE (u.role = 'lecturer' OR u.role IS NULL)
+                        WHERE (u.role = 'lecturer' OR FIND_IN_SET('lecturer', u.additional_roles) > 0 OR u.role IS NULL)
                         ORDER BY l.full_name");
 while ($row = $result->fetch_assoc()) {
     $lecturers[] = $row;
@@ -306,7 +306,11 @@ if ($courses_result) {
                                         <td><?php echo $lecturer['lecturer_id']; ?></td>
                                         <td><?php echo htmlspecialchars($lecturer['full_name']); ?></td>
                                         <td><?php echo htmlspecialchars($lecturer['email']); ?></td>
-                                        <td><strong><?php echo htmlspecialchars($lecturer['username'] ?? 'N/A'); ?></strong></td>
+                                        <td><strong><?php echo htmlspecialchars($lecturer['username'] ?? 'N/A'); ?></strong>
+                                        <?php if (!empty($lecturer['additional_roles'])): ?>
+                                            <br><small class="text-muted"><i class="bi bi-plus-circle me-1"></i><?php echo htmlspecialchars(str_replace(',', ', ', $lecturer['additional_roles'])); ?></small>
+                                        <?php endif; ?>
+                                        </td>
                                         <td><?php echo htmlspecialchars($lecturer['department']); ?></td>
                                         <td><?php echo htmlspecialchars($lecturer['position']); ?></td>
                                         <td>
@@ -467,6 +471,7 @@ if ($courses_result) {
                                     <option value="Mzuzu Campus">Mzuzu Campus</option>
                                     <option value="Lilongwe Campus">Lilongwe Campus</option>
                                     <option value="Blantyre Campus">Blantyre Campus</option>
+                                    <option value="ODel">ODel</option>
                                 </select>
                             </div>
                             <div class="col-md-3">

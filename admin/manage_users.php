@@ -125,9 +125,10 @@ $params = [];
 $types = '';
 
 if ($filter_role !== 'all') {
-    $where_conditions[] = "u.role = ?";
+    $where_conditions[] = "(u.role = ? OR FIND_IN_SET(?, COALESCE(u.additional_roles, '')))";
     $params[] = $filter_role;
-    $types .= 's';
+    $params[] = $filter_role;
+    $types .= 'ss';
 }
 
 if ($filter_status !== 'all') {
