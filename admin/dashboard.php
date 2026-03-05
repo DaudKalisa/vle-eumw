@@ -27,6 +27,9 @@ $stats['departments'] = $result->fetch_assoc()['total_departments'];
 $result = $conn->query("SELECT COUNT(*) as total_faculties FROM faculties");
 $stats['faculties'] = $result->fetch_assoc()['total_faculties'];
 
+$result = $conn->query("SELECT COUNT(*) as allocated FROM vle_courses WHERE is_active = TRUE AND lecturer_id IS NOT NULL");
+$stats['allocated_courses'] = $result ? $result->fetch_assoc()['allocated'] : 0;
+
 // Registration requests statistics
 $result = $conn->query("SELECT COUNT(*) as count FROM course_registration_requests WHERE status = 'pending'");
 $stats['pending_requests'] = $result ? $result->fetch_assoc()['count'] : 0;
@@ -1049,6 +1052,11 @@ if ($result) {
                 <div class="card-title">Programs</div>
                 <div class="card-subtitle">Academic programs</div>
             </a>
+            <a href="course_allocations.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #e11d48, #be123c);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #e11d48, #be123c);"><i class="bi bi-person-lines-fill"></i></div>
+                <div class="card-title">Course Allocations</div>
+                <div class="card-subtitle"><?php echo $stats['allocated_courses']; ?> allocated</div>
+            </a>
         </div>
         <div class="management-list mb-4" id="academicList">
             <a href="manage_faculties.php" class="list-item">
@@ -1072,6 +1080,14 @@ if ($result) {
                 <div class="list-content">
                     <div class="list-title">Programs</div>
                     <div class="list-subtitle">Academic programs</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="course_allocations.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #e11d48, #be123c);"><i class="bi bi-person-lines-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Course Allocations</div>
+                    <div class="list-subtitle"><?php echo $stats['allocated_courses']; ?> allocated</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
