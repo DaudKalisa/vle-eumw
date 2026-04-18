@@ -26,6 +26,7 @@ class ComposerStaticInitfcdcf69be28ddeae978891efb3b25de3
         ),
         'M' =>
         array (
+            'Mpdf\\QrCode\\' => 12,
             'Mpdf\\PsrLogAwareTrait\\' => 22,
             'Mpdf\\PsrHttpMessageShim\\' => 24,
             'Mpdf\\' => 5,
@@ -60,6 +61,10 @@ class ComposerStaticInitfcdcf69be28ddeae978891efb3b25de3
         'PHPMailer\\PHPMailer\\' =>
         array (
             0 => __DIR__ . '/..' . '/phpmailer/phpmailer/src',
+        ),
+        'Mpdf\\QrCode\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/mpdf/qrcode/src',
         ),
         'Mpdf\\PsrLogAwareTrait\\' =>
         array (

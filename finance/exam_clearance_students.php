@@ -129,9 +129,17 @@ $breadcrumbs = [['title' => 'Exam Clearance Students']];
             </div>
         </div>
         <div class="col-md-2 col-sm-4 mb-2">
+            <a href="?status=registered" class="text-decoration-none">
+            <div class="stat-card" style="background:#6f42c1;">
+                <small class="opacity-75">Pending Approval</small>
+                <h3><?= $stats['registered'] ?? 0 ?></h3>
+            </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-2">
             <div class="stat-card bg-info">
                 <small class="opacity-75">Invoiced</small>
-                <h3><?= ($stats['invoiced'] ?? 0) + ($stats['registered'] ?? 0) ?></h3>
+                <h3><?= $stats['invoiced'] ?? 0 ?></h3>
             </div>
         </div>
         <div class="col-md-2 col-sm-4 mb-2">
@@ -302,6 +310,13 @@ $breadcrumbs = [['title' => 'Exam Clearance Students']];
                             <td><small><?= date('M j, Y', strtotime($s['registered_at'])) ?></small></td>
                             <td>
                                 <a href="exam_clearance_review.php?id=<?= $s['clearance_id'] ?>" class="btn btn-sm btn-outline-primary" title="Review"><i class="bi bi-eye"></i></a>
+                                <?php if ($s['status'] === 'registered'): ?>
+                                    <form method="POST" action="exam_clearance_review.php?id=<?= $s['clearance_id'] ?>" class="d-inline" onsubmit="return confirm('Approve this registration and activate the student account?')">
+                                        <input type="hidden" name="action" value="approve_registration">
+                                        <input type="hidden" name="finance_notes" value="">
+                                        <button class="btn btn-sm btn-success" title="Approve Registration"><i class="bi bi-check-lg"></i></button>
+                                    </form>
+                                <?php endif; ?>
                                 <?php if ($s['status'] === 'cleared'): ?>
                                     <a href="exam_clearance_certificate.php?id=<?= $s['clearance_id'] ?>" class="btn btn-sm btn-outline-success" title="Certificate"><i class="bi bi-award"></i></a>
                                 <?php endif; ?>

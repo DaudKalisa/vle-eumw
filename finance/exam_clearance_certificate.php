@@ -94,6 +94,12 @@ if (file_exists($logo_path)) {
     $logo_html = '<img src="' . $logo_path . '" style="height:35px;margin-bottom:3px;">';
 }
 
+// Build verification URL for QR code
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'];
+$base_path = dirname(dirname($_SERVER['SCRIPT_NAME']));
+$verify_url = $protocol . '://' . $host . rtrim($base_path, '/') . '/verify_certificate.php?cert=' . urlencode($student['certificate_number']);
+
 // Build certificate HTML for one page
 function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
     extract($vars);
@@ -181,32 +187,37 @@ function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
                 </td></tr>
             </table>
             
-            <!-- Signatures -->
+            <!-- Signatures & QR Code -->
             <div style="margin-top:6px;padding-top:5px;border-top:1px dashed #dee2e6;">
                 <table style="width:100%;" cellpadding="0" cellspacing="0">
                     <tr>
-                        <td style="width:24%;text-align:center;padding:0 3px;">
-                            <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Director of Corporate Services</div>
+                        <td style="width:22%;text-align:center;padding:0 4px;vertical-align:bottom;">
+                            <div style="height:30px;"></div>
+                            <div style="border-bottom:1px solid #333;width:90%;margin:0 auto;"></div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:2px;">Director of Corporate Services</div>
                             <div style="font-size:6px;color:#666;">Finance Department</div>
                         </td>
-                        <td style="width:1%;"></td>
-                        <td style="width:24%;text-align:center;padding:0 3px;">
-                            <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Dean</div>
+                        <td style="width:22%;text-align:center;padding:0 4px;vertical-align:bottom;">
+                            <div style="height:30px;"></div>
+                            <div style="border-bottom:1px solid #333;width:90%;margin:0 auto;"></div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:2px;">Dean of Commerce</div>
                             <div style="font-size:6px;color:#666;">Faculty of Commerce</div>
                         </td>
-                        <td style="width:1%;"></td>
-                        <td style="width:24%;text-align:center;padding:0 3px;">
-                            <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Head of Department</div>
+                        <td style="width:22%;text-align:center;padding:0 4px;vertical-align:bottom;">
+                            <div style="height:30px;"></div>
+                            <div style="border-bottom:1px solid #333;width:90%;margin:0 auto;"></div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:2px;">Head of Department</div>
                             <div style="font-size:6px;color:#666;">Academic Department</div>
                         </td>
-                        <td style="width:1%;"></td>
-                        <td style="width:24%;text-align:center;padding:0 3px;">
-                            <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Dean of Students</div>
+                        <td style="width:22%;text-align:center;padding:0 4px;vertical-align:bottom;">
+                            <div style="height:30px;"></div>
+                            <div style="border-bottom:1px solid #333;width:90%;margin:0 auto;"></div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:2px;">Dean of Students</div>
                             <div style="font-size:6px;color:#666;">Student Affairs</div>
+                        </td>
+                        <td style="width:12%;text-align:center;vertical-align:bottom;padding-left:4px;">
+                            <barcode code="' . htmlspecialchars($verify_url) . '" type="QR" class="barcode" size="0.75" error="M" disableborder="1" />
+                            <div style="font-size:5px;color:#888;margin-top:1px;">Scan to verify</div>
                         </td>
                     </tr>
                 </table>
@@ -214,13 +225,8 @@ function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
         </div>
         
         <!-- Footer -->
-        <div style="background:#f8f9fa;padding:4px 12px;border-top:1px solid #dee2e6;font-size:7px;color:#666;">
-            <table style="width:100%;" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td><strong>Important:</strong> This is a computer-generated certificate. Verify at ' . htmlspecialchars($university_email) . '<br>Present this certificate at the examination venue.</td>
-                    <td style="text-align:right;"><strong>Generated:</strong> ' . date('Y-m-d H:i:s') . '<br>' . htmlspecialchars($university_website) . '</td>
-                </tr>
-            </table>
+        <div style="background:#f8f9fa;padding:3px 12px;border-top:1px solid #dee2e6;font-size:6px;color:#888;">
+            <strong>Notice:</strong> Computer-generated certificate. Verify at ' . htmlspecialchars($university_email) . ' | Present at examination venue. | Generated: ' . date('Y-m-d H:i:s') . ' | ' . htmlspecialchars($university_website) . '
         </div>
     </div>';
     
@@ -232,7 +238,7 @@ $vars = compact(
     'logo_html', 'university_name', 'university_address', 'university_phone', 'university_email', 'university_website',
     'theme_color', 'theme_color_dark', 'theme_badge_bg', 'theme_badge_text',
     'clearance_title', 'clearance_label', 'cleared_date', 'academic_year',
-    'tuition_amount', 'registration_fee', 'amount_paid', 'is_midsemester'
+    'tuition_amount', 'registration_fee', 'amount_paid', 'is_midsemester', 'verify_url'
 );
 
 // Create mPDF instance - A5 Landscape
