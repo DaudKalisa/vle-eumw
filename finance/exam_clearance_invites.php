@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $max_uses = (int)($_POST['max_uses'] ?? 0);
         $expires_days = (int)($_POST['expires_days'] ?? 30);
         
-        if (!in_array($program_type, ['degree', 'professional', 'masters', 'doctorate'])) {
+        if (!in_array($program_type, ['all', 'degree', 'professional', 'masters', 'doctorate'])) {
             $error = 'Invalid program type.';
         } elseif (!in_array($clearance_type, ['midsemester', 'endsemester'])) {
             $error = 'Invalid clearance type.';
@@ -113,12 +113,13 @@ $breadcrumbs = [['title' => 'Exam Clearance Invites']];
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Program Type</label>
                             <select name="program_type" class="form-select" required>
+                                <option value="all">All Programs</option>
                                 <option value="degree">Degree (Undergraduate)</option>
                                 <option value="professional">Professional</option>
                                 <option value="masters">Masters</option>
                                 <option value="doctorate">Doctorate</option>
                             </select>
-                            <small class="text-muted">Students will be invoiced based on this level.</small>
+                            <small class="text-muted">Select "All Programs" to create a single window for all students, or pick a specific level.</small>
                         </div>
                         
                         <div class="mb-3">

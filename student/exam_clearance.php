@@ -398,13 +398,22 @@ $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 
                         $student_program_type = strtolower($student_info['program_type'] ?? 'degree');
                         if (!in_array($student_program_type, ['degree', 'professional', 'masters', 'doctorate'])) $student_program_type = 'degree';
                         
-                        // Find best matching invite (same program type first, then any)
+                        // Find best matching invite (exact program type first, then 'all', then any)
                         $matched_invite = null;
+                        $all_invite = null;
                         foreach ($active_invites as $inv) {
-                            if (strtolower($inv['program_type']) === $student_program_type) {
+                            $inv_type = strtolower($inv['program_type']);
+                            if ($inv_type === $student_program_type) {
                                 $matched_invite = $inv;
                                 break;
                             }
+                            if ($inv_type === 'all' && !$all_invite) {
+                                $all_invite = $inv;
+                            }
+                        }
+                        // Fall back to 'all' program type invite
+                        if (!$matched_invite && $all_invite) {
+                            $matched_invite = $all_invite;
                         }
                         ?>
                         

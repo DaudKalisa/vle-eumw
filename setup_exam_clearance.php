@@ -12,7 +12,7 @@ $tables = [];
 $tables[] = "CREATE TABLE IF NOT EXISTS exam_clearance_invites (
     invite_id INT AUTO_INCREMENT PRIMARY KEY,
     invite_token VARCHAR(64) NOT NULL UNIQUE,
-    program_type ENUM('degree','professional','masters','doctorate') NOT NULL DEFAULT 'degree',
+    program_type ENUM('all','degree','professional','masters','doctorate') NOT NULL DEFAULT 'degree',
     clearance_type ENUM('midsemester','endsemester') NOT NULL DEFAULT 'endsemester',
     minimum_payment_percent INT DEFAULT 100 COMMENT '50 for mid-semester, 100 for end-semester',
     description VARCHAR(255) DEFAULT NULL,

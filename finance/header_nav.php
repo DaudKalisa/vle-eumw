@@ -78,7 +78,7 @@ $page_title = $page_title ?? 'Finance Portal';
                         <li><a class="dropdown-item" href="dissertation_fees.php"><i class="bi bi-mortarboard me-2"></i>Dissertation Fees</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="Finance_clearence_students.php"><i class="bi bi-person-check me-2"></i>Finance Clearance Students</a></li>
-                        <li><a class="dropdown-item" href="finance_clearance_invites.php"><i class="bi bi-link-45deg me-2"></i>Clearance Invite Links</a></li>
+                        <li><a class="dropdown-item" href="exam_clearance_invites.php"><i class="bi bi-link-45deg me-2"></i>Clearance Invite Links</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="exam_clearance_students.php"><i class="bi bi-shield-check me-2"></i>Exam Clearance Students</a></li>
                         <li><a class="dropdown-item" href="exam_clearance_invites.php"><i class="bi bi-calendar-check me-2"></i>Exam Clearance Windows</a></li>
