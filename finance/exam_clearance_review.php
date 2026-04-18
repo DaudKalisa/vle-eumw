@@ -446,6 +446,11 @@ $breadcrumbs = [
     <style>
         body { font-family: 'Inter', sans-serif; }
         .proof-image { max-width: 100%; max-height: 400px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        @media print {
+            .vle-navbar, .vle-page-header, .btn, form, .navbar, .d-flex.justify-content-between.align-items-center.mb-3 { display: none !important; }
+            .container-fluid { padding: 0 !important; }
+            .card { break-inside: avoid; border: 1px solid #ccc !important; box-shadow: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -459,6 +464,18 @@ $breadcrumbs = [
         <div class="alert alert-danger alert-dismissible fade show"><i class="bi bi-exclamation-triangle me-2"></i><?= htmlspecialchars($error) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
     <?php endif; ?>
     
+    <!-- Action Bar -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-person-check me-2"></i><?= htmlspecialchars($student['full_name']) ?></h4>
+        <div class="d-flex gap-2">
+            <a href="exam_clearance_students.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back to List</a>
+            <button onclick="window.print();" class="btn btn-outline-primary btn-sm"><i class="bi bi-printer me-1"></i>Print</button>
+            <?php if ($student['status'] === 'cleared'): ?>
+            <a href="exam_clearance_certificate.php?id=<?= $student['clearance_id'] ?>" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>Print Certificate</a>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <div class="row">
         <!-- Student Info -->
         <div class="col-lg-4 mb-4">
