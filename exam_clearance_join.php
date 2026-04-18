@@ -181,7 +181,7 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                     $stmt = $conn->prepare("INSERT INTO exam_clearance_students (student_id, full_name, email, phone, program, program_id, program_type, department, department_id, campus, year_of_study, gender, national_id, address, entry_type, semester, year_of_registration, invite_token, invoiced_amount, registration_fee, balance, status, is_system_student) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'registered', 0)");
                     $balance = $invoiced_amount;
                     $current_year = date('Y');
-                    $stmt->bind_param("sssssississssssssddd", $student_id, $full_name, $email, $phone, $program, $program_id, $program_type, $department, $department_id, $campus, $year_of_study, $gender, $national_id, $address, $entry_type, $semester, $current_year, $token, $invoiced_amount, $registration_fee, $balance);
+                    $stmt->bind_param("sssssississsssssssddd", $student_id, $full_name, $email, $phone, $program, $program_id, $program_type, $department, $department_id, $campus, $year_of_study, $gender, $national_id, $address, $entry_type, $semester, $current_year, $token, $invoiced_amount, $registration_fee, $balance);
                     
                     if ($stmt->execute()) {
                         $clearance_id = $conn->insert_id;

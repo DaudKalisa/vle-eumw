@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             $stmt = $conn->prepare("INSERT INTO finance_clearance_invites (invite_token, program_type, description, max_uses, created_by, expires_at) VALUES (?, ?, ?, ?, ?, ?)");
             $uid = (int)$user['user_id'];
-            $stmt->bind_param("sssiss", $token, $program_type, $description, $max_uses, $uid, $expires_at);
+            $stmt->bind_param("sssiis", $token, $program_type, $description, $max_uses, $uid, $expires_at);
             
             if ($stmt->execute()) {
                 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';

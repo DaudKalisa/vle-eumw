@@ -14,7 +14,7 @@ $user = getCurrentUser();
 $user_role = $_SESSION['vle_role'] ?? '';
 
 // Allow finance, admin, super_admin AND students (for their own)
-if (!in_array($user_role, ['finance', 'admin', 'super_admin', 'student'])) {
+if (!in_array($user_role, ['finance', 'admin', 'super_admin', 'student', 'exam_clearance_student'])) {
     header('Location: ../login.php');
     exit;
 }
@@ -39,6 +39,14 @@ if (!$student) {
 if ($user_role === 'student') {
     $sid = $_SESSION['vle_related_id'] ?? '';
     if ($student['student_id'] !== $sid) {
+        header('Location: ../student/exam_clearance.php');
+        exit;
+    }
+}
+if ($user_role === 'exam_clearance_student') {
+    // External exam clearance students: match by email
+    $ecs_email = $user['email'] ?? '';
+    if ($student['email'] !== $ecs_email) {
         header('Location: ../student/exam_clearance.php');
         exit;
     }

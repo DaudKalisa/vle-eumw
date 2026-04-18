@@ -471,7 +471,7 @@ $breadcrumbs = [
             <a href="exam_clearance_students.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back to List</a>
             <button onclick="window.print();" class="btn btn-outline-primary btn-sm"><i class="bi bi-printer me-1"></i>Print</button>
             <?php if ($student['status'] === 'cleared'): ?>
-            <a href="exam_clearance_certificate.php?id=<?= $student['clearance_id'] ?>" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>Print Certificate</a>
+            <a href="exam_clearance_certificate.php?id=<?= $student['clearance_id'] ?>" class="btn btn-success btn-sm" target="_blank"><i class="bi bi-file-earmark-pdf me-1"></i>Print Certificate</a>
             <?php endif; ?>
         </div>
     </div>
@@ -703,7 +703,7 @@ $breadcrumbs = [
                     <h5 class="text-success">Cleared for Examinations</h5>
                     <p class="text-muted">Certificate: <strong><?= htmlspecialchars($student['certificate_number']) ?></strong></p>
                     <p class="text-muted small">Cleared on <?= date('M j, Y H:i', strtotime($student['cleared_at'])) ?></p>
-                    <a href="exam_clearance_certificate.php?id=<?= $student['clearance_id'] ?>" class="btn btn-success"><i class="bi bi-printer me-2"></i>Print Certificate</a>
+                    <a href="exam_clearance_certificate.php?id=<?= $student['clearance_id'] ?>" class="btn btn-success" target="_blank"><i class="bi bi-printer me-2"></i>Print Certificate</a>
                 </div>
             </div>
             <?php endif; ?>

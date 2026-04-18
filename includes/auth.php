@@ -195,8 +195,29 @@ function login($username_email, $password) {
         $stmt->close();
     }
 
+    // If still no match, try looking up by student_id in exam_clearance_students table
+    if ($result->num_rows === 0) {
+        $ec_stmt = $conn->prepare(
+            "SELECT u.* FROM users u
+             INNER JOIN exam_clearance_students ecs ON u.email = ecs.email
+             WHERE ecs.student_id = ? AND u.role = 'exam_clearance_student'
+             LIMIT 1"
+        );
+        if ($ec_stmt) {
+            $ec_stmt->bind_param("s", $username_email);
+            $ec_stmt->execute();
+            $result = $ec_stmt->get_result();
+            $ec_stmt->close();
+        }
+    }
+
     if ($result->num_rows === 1) {
         $user = $result->fetch_assoc();
+
+        // Check if account is active
+        if (isset($user['is_active']) && (int)$user['is_active'] === 0) {
+            return ['success' => false, 'message' => 'Your account is pending approval. Please wait for administrator activation.'];
+        }
 
         if (password_verify($password, $user['password_hash'])) {
             // Set session variables
@@ -341,9 +362,10 @@ function requireRole($allowed_roles) {
     if (hasRole('exam_clearance_student')) {
         $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
         $is_exam_clearance_page = basename($script_name) === 'exam_clearance.php';
+        $is_exam_certificate_page = basename($script_name) === 'exam_clearance_certificate.php';
         $is_profile_page = basename($script_name) === 'profile.php';
         $is_change_pw = basename($script_name) === 'change_password.php';
-        if (!$is_exam_clearance_page && !$is_profile_page && !$is_change_pw) {
+        if (!$is_exam_clearance_page && !$is_exam_certificate_page && !$is_profile_page && !$is_change_pw) {
             $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
             header('Location: ' . $base . 'student/exam_clearance.php');
             exit();
