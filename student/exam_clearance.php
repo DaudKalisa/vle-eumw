@@ -116,6 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $student
             $program_type = strtolower($student_info['program_type'] ?? 'degree');
             if (!in_array($program_type, ['degree', 'professional', 'masters', 'doctorate'])) $program_type = 'degree';
             
+            $clearance_type = $invite['clearance_type'] ?? 'endsemester';
+            $min_percent = (int)($invite['minimum_payment_percent'] ?? 100);
+            
             $tuition_amount = 0;
             $registration_fee = 0;
             if ($fee_settings) {
@@ -144,9 +147,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $student
             $program_name = $student_info['program'] ?? '';
             $yr = $student_info['year_of_registration'] ?? date('Y');
             
-            $ins = $conn->prepare("INSERT INTO exam_clearance_students (student_id, full_name, email, phone, program, program_type, department, campus, year_of_study, gender, national_id, address, entry_type, semester, year_of_registration, invite_token, invoiced_amount, registration_fee, balance, status, is_system_student) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'invoiced', 1)");
+            $ins = $conn->prepare("INSERT INTO exam_clearance_students (student_id, full_name, email, phone, program, program_type, department, campus, year_of_study, gender, national_id, address, entry_type, semester, year_of_registration, invite_token, invoiced_amount, registration_fee, balance, clearance_type, status, is_system_student) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'invoiced', 1)");
             $yos = (int)($student_info['year_of_study'] ?? 1);
-            $ins->bind_param("ssssssssisssssssddd",
+            $ins->bind_param("ssssssssisssssssddds",
                 $student_id,
                 $student_info['full_name'],
                 $student_info['email'],
@@ -165,7 +168,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $student
                 $token,
                 $invoiced_amount,
                 $registration_fee,
-                $balance
+                $balance,
+                $clearance_type
             );
             
             if ($ins->execute()) {
@@ -356,6 +360,8 @@ $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 
                     $sc = ['registered'=>'secondary','invoiced'=>'info','proof_submitted'=>'warning','proof_requested'=>'orange','cleared'=>'success','rejected'=>'danger'];
                     ?>
                     <span class="badge bg-<?= $sc[$existing_clearance['status']] ?? 'secondary' ?> fs-6 px-3 py-2"><?= ucfirst(str_replace('_', ' ', $existing_clearance['status'])) ?></span>
+                    <br>
+                    <span class="badge bg-<?= ($existing_clearance['clearance_type'] ?? 'endsemester') === 'midsemester' ? 'warning text-dark' : 'success' ?> mt-2"><?= ($existing_clearance['clearance_type'] ?? 'endsemester') === 'midsemester' ? 'Mid-Semester Clearance' : 'End-of-Semester Clearance' ?></span>
                     <p class="text-muted small mt-2 mb-0">Applied: <?= date('M j, Y H:i', strtotime($existing_clearance['registered_at'])) ?></p>
                     <?php if ($existing_clearance['certificate_number']): ?>
                         <p class="text-success fw-bold mt-2 mb-0"><i class="bi bi-award me-1"></i>Certificate: <?= htmlspecialchars($existing_clearance['certificate_number']) ?></p>
@@ -456,10 +462,22 @@ $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 
                     <h5 class="mb-0"><i class="bi bi-2-circle-fill me-2"></i>Upload Proof of Payment</h5>
                 </div>
                 <div class="card-body">
-                    <?php if ($existing_clearance['status'] === 'proof_requested'): ?>
+                        <?php if ($existing_clearance['status'] === 'proof_requested'): ?>
                     <div class="alert alert-warning">
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
                         <strong>The Finance Office has requested proof of payment.</strong>
+                        <?php 
+                        $prt = $existing_clearance['proof_request_type'] ?? 'both';
+                        if ($prt === 'tuition'): ?>
+                            <br><span class="badge bg-info mt-1">Tuition Fee Payment Proof Required</span>
+                        <?php elseif ($prt === 'registration'): ?>
+                            <br><span class="badge bg-info mt-1">Registration Fee Payment Proof Required</span>
+                        <?php else: ?>
+                            <br><span class="badge bg-info mt-1">Both Tuition & Registration Fee Proof Required</span>
+                        <?php endif; ?>
+                        <?php if (!empty($existing_clearance['required_amount'])): ?>
+                            <br><span class="badge bg-danger mt-1">Required Amount: MWK <?= number_format($existing_clearance['required_amount'], 2) ?></span>
+                        <?php endif; ?>
                         <?php if (!empty($existing_clearance['finance_notes'])): ?>
                             <br><small><?= htmlspecialchars($existing_clearance['finance_notes']) ?></small>
                         <?php endif; ?>

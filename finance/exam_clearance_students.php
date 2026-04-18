@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 // Filters
 $filter_status = $_GET['status'] ?? '';
 $filter_program = $_GET['program_type'] ?? '';
+$filter_clearance_type = $_GET['clearance_type'] ?? '';
 $search = trim($_GET['search'] ?? '');
 
 $where = "1=1";
@@ -39,6 +40,11 @@ if ($filter_status && in_array($filter_status, ['registered', 'invoiced', 'proof
 if ($filter_program && in_array($filter_program, ['degree', 'professional', 'masters', 'doctorate'])) {
     $where .= " AND ecs.program_type = ?";
     $params[] = $filter_program;
+    $types .= 's';
+}
+if ($filter_clearance_type && in_array($filter_clearance_type, ['midsemester', 'endsemester'])) {
+    $where .= " AND ecs.clearance_type = ?";
+    $params[] = $filter_clearance_type;
     $types .= 's';
 }
 if ($search) {
@@ -224,9 +230,17 @@ $breadcrumbs = [['title' => 'Exam Clearance Students']];
                     </select>
                 </div>
                 <div class="col-md-2">
+                    <label class="form-label small fw-semibold">Clearance Type</label>
+                    <select name="clearance_type" class="form-select form-select-sm">
+                        <option value="">All</option>
+                        <option value="midsemester" <?= $filter_clearance_type === 'midsemester' ? 'selected' : '' ?>>Mid-Semester</option>
+                        <option value="endsemester" <?= $filter_clearance_type === 'endsemester' ? 'selected' : '' ?>>End-Semester</option>
+                    </select>
+                </div>
+                <div class="col-md-1">
                     <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-search me-1"></i>Filter</button>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <a href="exam_clearance_students.php" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
                 </div>
             </form>
@@ -244,6 +258,7 @@ $breadcrumbs = [['title' => 'Exam Clearance Students']];
                             <th>Student ID</th>
                             <th>Full Name</th>
                             <th>Program Type</th>
+                            <th>Type</th>
                             <th>Invoiced</th>
                             <th>Paid</th>
                             <th>Balance</th>
@@ -254,7 +269,7 @@ $breadcrumbs = [['title' => 'Exam Clearance Students']];
                     </thead>
                     <tbody>
                         <?php if (empty($students)): ?>
-                            <tr><td colspan="10" class="text-center text-muted py-4">No exam clearance students found.</td></tr>
+                            <tr><td colspan="11" class="text-center text-muted py-4">No exam clearance students found.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($students as $i => $s): ?>
                         <tr>
@@ -265,6 +280,10 @@ $breadcrumbs = [['title' => 'Exam Clearance Students']];
                                 <?php if ($s['email']): ?><br><small class="text-muted"><?= htmlspecialchars($s['email']) ?></small><?php endif; ?>
                             </td>
                             <td><span class="badge bg-<?= $s['program_type'] === 'masters' ? 'info' : ($s['program_type'] === 'doctorate' ? 'danger' : 'primary') ?>"><?= ucfirst($s['program_type']) ?></span></td>
+                            <td>
+                                <?php $ct = $s['clearance_type'] ?? 'endsemester'; ?>
+                                <span class="badge bg-<?= $ct === 'midsemester' ? 'warning text-dark' : 'success' ?>"><?= $ct === 'midsemester' ? 'Mid-Sem' : 'End-Sem' ?></span>
+                            </td>
                             <td>MWK <?= number_format($s['invoiced_amount'], 2) ?></td>
                             <td>MWK <?= number_format($s['total_approved'] ?? 0, 2) ?></td>
                             <td>

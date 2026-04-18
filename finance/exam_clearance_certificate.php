@@ -48,6 +48,18 @@ $cleared_date = date('jS F, Y', strtotime($student['cleared_at']));
 $academic_year = date('Y', strtotime($student['cleared_at'])) . '/' . (date('Y', strtotime($student['cleared_at'])) + 1);
 $tuition_amount = $student['invoiced_amount'] - ($student['registration_fee'] ?? 0);
 $registration_fee = $student['registration_fee'] ?? 0;
+$amount_paid = (float)($student['amount_paid'] ?? $student['amount_claimed'] ?? 0);
+$clearance_type = $student['clearance_type'] ?? 'endsemester';
+
+// Color theme based on clearance type
+$is_midsemester = ($clearance_type === 'midsemester');
+$theme_color = $is_midsemester ? '#f59e0b' : '#10b981';
+$theme_color_dark = $is_midsemester ? '#d97706' : '#059669';
+$theme_badge_bg = $is_midsemester ? '#fef3c7' : '#d1fae5';
+$theme_badge_text = $is_midsemester ? '#92400e' : '#065f46';
+$theme_watermark = $is_midsemester ? 'rgba(245, 158, 11, 0.08)' : 'rgba(16, 185, 129, 0.08)';
+$clearance_title = $is_midsemester ? 'MID-SEMESTER EXAMINATION CLEARANCE CERTIFICATE' : 'END-OF-SEMESTER EXAMINATION CLEARANCE CERTIFICATE';
+$clearance_label = $is_midsemester ? 'Mid-Semester' : 'End-of-Semester';
 
 // University settings
 $university_name = "Exploits University";
@@ -134,7 +146,7 @@ $conn->close();
             transform: translate(-50%, -50%) rotate(-25deg);
             font-size: 50px;
             font-weight: bold;
-            color: rgba(16, 185, 129, 0.08);
+            color: <?= $theme_watermark ?>;
             pointer-events: none;
             z-index: 0;
             letter-spacing: 8px;
@@ -167,9 +179,9 @@ $conn->close();
             font-size: 9px;
         }
         
-        /* Title bar - green matching receipt */
+        /* Title bar - themed color */
         .cert-title-bar {
-            background: #10b981;
+            background: <?= $theme_color ?>;
             color: white;
             text-align: center;
             padding: 8px;
@@ -256,9 +268,9 @@ $conn->close();
             width: 45%;
         }
         
-        /* Amount box - green gradient matching receipt */
+        /* Amount box - themed gradient */
         .amount-box {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            background: linear-gradient(135deg, <?= $theme_color ?> 0%, <?= $theme_color_dark ?> 100%);
             color: white;
             padding: 8px;
             border-radius: 8px;
@@ -287,23 +299,25 @@ $conn->close();
             text-transform: uppercase;
             letter-spacing: 1px;
             font-size: 9px;
-            background: #d1fae5;
-            color: #065f46;
-            border: 2px solid #10b981;
+            background: <?= $theme_badge_bg ?>;
+            color: <?= $theme_badge_text ?>;
+            border: 2px solid <?= $theme_color ?>;
         }
         
         /* Signatures - matching receipt style */
         .signature-section {
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
             margin-top: 12px;
             padding-top: 8px;
             border-top: 1px dashed #dee2e6;
+            gap: 8px 0;
         }
         
         .signature-box {
             text-align: center;
-            width: 45%;
+            width: 48%;
         }
         
         .signature-box .sig-line {
@@ -368,8 +382,8 @@ $conn->close();
             color: #fff;
         }
         
-        .btn-print { background: #10b981; }
-        .btn-print:hover { background: #059669; }
+        .btn-print { background: <?= $theme_color ?>; }
+        .btn-print:hover { background: <?= $theme_color_dark ?>; }
         .btn-back { background: #6c757d; color: #fff; }
         .btn-back:hover { background: #5a6268; color: #fff; }
     </style>
@@ -412,7 +426,7 @@ foreach ($copies as $copy):
     
     <!-- Title Bar -->
     <div class="cert-title-bar">
-        <i class="bi bi-shield-check"></i> EXAMINATION CLEARANCE CERTIFICATE
+        <i class="bi bi-shield-check"></i> <?= $clearance_title ?>
     </div>
     
     <div class="cert-body-area">
@@ -425,7 +439,7 @@ foreach ($copies as $copy):
         <div class="cert-body-text">
             This is to certify that
             <span class="student-name-display"><?= htmlspecialchars($student['full_name']) ?></span>
-            has been cleared for examinations having met all financial obligations for the academic year <?= $academic_year ?>.
+            has been cleared for <?= strtolower($clearance_label) ?> examinations having met all required financial obligations for the academic year <?= $academic_year ?>.
         </div>
         
         <!-- Student & Clearance Info Side by Side -->
@@ -448,17 +462,18 @@ foreach ($copies as $copy):
                     <tr><td>Tuition Fee:</td><td>MWK <?= number_format($tuition_amount, 2) ?></td></tr>
                     <tr><td>Registration Fee:</td><td>MWK <?= number_format($registration_fee, 2) ?></td></tr>
                     <tr><td style="border-top:1px solid #ddd;padding-top:3px"><strong>Total Invoiced:</strong></td><td style="border-top:1px solid #ddd;padding-top:3px"><strong>MWK <?= number_format($student['invoiced_amount'], 2) ?></strong></td></tr>
-                    <tr><td>Amount Paid:</td><td class="text-success">MWK <?= number_format($student['amount_claimed'], 2) ?></td></tr>
+                    <tr><td><strong>Amount Paid:</strong></td><td style="color:<?= $theme_color_dark ?>"><strong>MWK <?= number_format($amount_paid, 2) ?></strong></td></tr>
                     <tr><td>Balance:</td><td>MWK <?= number_format($student['balance'], 2) ?></td></tr>
+                    <tr><td>Clearance Type:</td><td><strong><?= $clearance_label ?></strong></td></tr>
                 </table>
             </div>
         </div>
         
         <!-- Status Box -->
         <div class="amount-box">
-            <p style="margin:0;">Clearance Status</p>
+            <p style="margin:0;"><?= $clearance_label ?> Clearance Status</p>
             <h2><i class="bi bi-patch-check-fill"></i> CLEARED FOR EXAMINATIONS</h2>
-            <p>Academic Year <?= $academic_year ?> | <?= ucfirst($student['program_type']) ?> Program</p>
+            <p>Amount Paid: MWK <?= number_format($amount_paid, 2) ?> | Academic Year <?= $academic_year ?> | <?= ucfirst($student['program_type']) ?> Program</p>
         </div>
         
         <!-- Verification Info -->
@@ -487,14 +502,21 @@ foreach ($copies as $copy):
                 <div class="sig-line"></div>
                 <p>Director of Corporate Services</p>
                 <small>Finance Department</small>
-                <?php if (!empty($student['cleared_by_name'])): ?>
-                    <br><small style="color:#555"><?= htmlspecialchars($student['cleared_by_name']) ?></small>
-                <?php endif; ?>
             </div>
             <div class="signature-box">
                 <div class="sig-line"></div>
-                <p>Official Stamp</p>
-                <small>University Seal</small>
+                <p>Dean of Commerce</p>
+                <small>Faculty of Commerce</small>
+            </div>
+            <div class="signature-box">
+                <div class="sig-line"></div>
+                <p>Head of Department</p>
+                <small>Academic Department</small>
+            </div>
+            <div class="signature-box">
+                <div class="sig-line"></div>
+                <p>Dean of Students</p>
+                <small>Student Affairs</small>
             </div>
         </div>
     </div>

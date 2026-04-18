@@ -70,6 +70,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             $success = "Payment $decision successfully.";
             
+            // AUTO-CLEAR: If balance is zero or less after approval, automatically clear the student
+            if ($decision === 'approved' && $new_balance <= 0 && $student['status'] !== 'cleared') {
+                $clearance_type = $student['clearance_type'] ?? 'endsemester';
+                $year = date('Y');
+                $prefix = ($clearance_type === 'midsemester') ? 'ECM' : 'EC';
+                $cnt_rs = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE certificate_number IS NOT NULL AND certificate_number LIKE '{$prefix}-$year%'");
+                $cnt = ($cnt_rs->fetch_assoc()['cnt'] ?? 0) + 1;
+                $cert_number = $prefix . '-' . $year . '-' . str_pad($cnt, 5, '0', STR_PAD_LEFT);
+                
+                $auto_stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'cleared', cleared_by = ?, cleared_at = NOW(), certificate_number = ?, finance_notes = 'Auto-cleared: balance fully paid', amount_paid = ? WHERE clearance_id = ?");
+                $auto_stmt->bind_param("isdi", $uid, $cert_number, $total_approved, $clearance_id);
+                $auto_stmt->execute();
+                
+                // Record revenue
+                $rev_check = $conn->query("SELECT revenue_recorded FROM exam_clearance_students WHERE clearance_id = $clearance_id");
+                $already_recorded = (int)($rev_check->fetch_assoc()['revenue_recorded'] ?? 0);
+                
+                if (!$already_recorded && $total_approved > 0) {
+                    $reg_fee = (float)($student['registration_fee'] ?? 0);
+                    $tuition_paid = $total_approved - $reg_fee;
+                    if ($tuition_paid < 0) { $tuition_paid = 0; $reg_fee = $total_approved; }
+                    $today = date('Y-m-d');
+                    $sid = $student['student_id'];
+                    $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
+                    
+                    if ($tuition_paid > 0) {
+                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?)");
+                        $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
+                        $rev_stmt->bind_param("sdsss", $sid, $tuition_paid, $today, $desc, $cert_number);
+                        $rev_stmt->execute();
+                    }
+                    if ($reg_fee > 0) {
+                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?)");
+                        $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
+                        $rev_stmt2->bind_param("sdsss", $sid, $reg_fee, $today, $desc2, $cert_number);
+                        $rev_stmt2->execute();
+                    }
+                    $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
+                }
+                
+                // Log auto-clearance
+                logExamClearanceActivity($conn, $clearance_id, 'cleared', 'system', $uid, 'System (Auto-Clear)', "Auto-cleared: balance fully paid. Certificate: {$cert_number}. Amount: MWK " . number_format($total_approved, 2));
+                
+                // Email student
+                notifyStudentCleared($conn, $student['email'], $student['full_name'], $cert_number, 'System (Auto-Clearance)');
+                
+                $success = "Payment approved. Student AUTO-CLEARED — balance is fully paid! Certificate: $cert_number";
+            }
+            
             // Reload
             $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
             $stmt2->bind_param("i", $clearance_id);
@@ -88,24 +137,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $finance_notes = trim($_POST['finance_notes'] ?? '');
         $uid = (int)$user['user_id'];
         
+        // Calculate total approved payments
+        $sum_rs = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM exam_clearance_payments WHERE clearance_id = $clearance_id AND status = 'approved'");
+        $clear_amount_paid = (float)($sum_rs->fetch_assoc()['total'] ?? 0);
+        
         // Generate certificate number: EC-YEAR-XXXXX
         $year = date('Y');
-        $cnt_rs = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE certificate_number IS NOT NULL AND certificate_number LIKE 'EC-$year%'");
+        $clearance_type = $student['clearance_type'] ?? 'endsemester';
+        $prefix = ($clearance_type === 'midsemester') ? 'ECM' : 'EC';
+        $cnt_rs = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE certificate_number IS NOT NULL AND certificate_number LIKE '{$prefix}-$year%'");
         $cnt = ($cnt_rs->fetch_assoc()['cnt'] ?? 0) + 1;
-        $cert_number = 'EC-' . $year . '-' . str_pad($cnt, 5, '0', STR_PAD_LEFT);
+        $cert_number = $prefix . '-' . $year . '-' . str_pad($cnt, 5, '0', STR_PAD_LEFT);
         
-        $stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'cleared', cleared_by = ?, cleared_at = NOW(), certificate_number = ?, finance_notes = ? WHERE clearance_id = ?");
-        $stmt->bind_param("issi", $uid, $cert_number, $finance_notes, $clearance_id);
+        $stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'cleared', cleared_by = ?, cleared_at = NOW(), certificate_number = ?, finance_notes = ?, amount_paid = ? WHERE clearance_id = ?");
+        $stmt->bind_param("issdi", $uid, $cert_number, $finance_notes, $clear_amount_paid, $clearance_id);
         
         if ($stmt->execute()) {
-            $success = "Student cleared for examinations! Certificate Number: $cert_number";
+            // Record revenue in payment_transactions (for finance reports)
+            $rev_check = $conn->query("SELECT revenue_recorded FROM exam_clearance_students WHERE clearance_id = $clearance_id");
+            $already_recorded = (int)($rev_check->fetch_assoc()['revenue_recorded'] ?? 0);
+            
+            if (!$already_recorded && $clear_amount_paid > 0) {
+                // Split revenue: registration fee + tuition
+                $reg_fee = (float)($student['registration_fee'] ?? 0);
+                $tuition_paid = $clear_amount_paid - $reg_fee;
+                if ($tuition_paid < 0) { $tuition_paid = 0; $reg_fee = $clear_amount_paid; }
+                
+                $today = date('Y-m-d');
+                $sid = $student['student_id'];
+                $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
+                
+                if ($tuition_paid > 0) {
+                    $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?)");
+                    $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
+                    $rev_stmt->bind_param("sdsss", $sid, $tuition_paid, $today, $desc, $cert_number);
+                    $rev_stmt->execute();
+                }
+                if ($reg_fee > 0) {
+                    $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?)");
+                    $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
+                    $rev_stmt2->bind_param("sdsss", $sid, $reg_fee, $today, $desc2, $cert_number);
+                    $rev_stmt2->execute();
+                }
+                
+                $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
+            }
+            
+            $success = "Student cleared for examinations! Certificate Number: $cert_number. Amount recorded: MWK " . number_format($clear_amount_paid, 2);
             $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
             $stmt2->bind_param("i", $clearance_id);
             $stmt2->execute();
             $student = $stmt2->get_result()->fetch_assoc();
             
             // Log activity
-            logExamClearanceActivity($conn, $clearance_id, 'cleared', 'finance', $uid, $user['full_name'] ?? $user['username'], "Student cleared. Certificate: {$cert_number}" . ($finance_notes ? ". Notes: {$finance_notes}" : ''));
+            logExamClearanceActivity($conn, $clearance_id, 'cleared', 'finance', $uid, $user['full_name'] ?? $user['username'], "Student cleared. Certificate: {$cert_number}. Amount Paid: MWK " . number_format($clear_amount_paid, 2) . ($finance_notes ? ". Notes: {$finance_notes}" : ''));
             
             // Email student
             notifyStudentCleared($conn, $student['email'], $student['full_name'], $cert_number, $user['full_name'] ?? $user['username']);
@@ -139,15 +224,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // Request proof of payment from student
     if ($_POST['action'] === 'request_proof') {
         $finance_notes = trim($_POST['finance_notes'] ?? '');
+        $proof_request_type = $_POST['proof_request_type'] ?? 'both';
+        $required_amount = !empty($_POST['required_amount']) ? (float)$_POST['required_amount'] : null;
         $uid = (int)$user['user_id'];
         
-        $stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'proof_requested', finance_notes = ? WHERE clearance_id = ?");
-        $stmt->bind_param("si", $finance_notes, $clearance_id);
+        if (!in_array($proof_request_type, ['tuition', 'registration', 'both'])) {
+            $proof_request_type = 'both';
+        }
+        
+        $stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'proof_requested', finance_notes = ?, proof_request_type = ?, required_amount = ? WHERE clearance_id = ?");
+        $stmt->bind_param("ssdi", $finance_notes, $proof_request_type, $required_amount, $clearance_id);
         $stmt->execute();
-        $success = 'Proof of payment has been requested from the student.';
+        
+        $type_labels = ['tuition' => 'Tuition Fee', 'registration' => 'Registration Fee', 'both' => 'Tuition & Registration Fees'];
+        $type_label = $type_labels[$proof_request_type] ?? 'Payment';
+        $success = "Proof of payment requested from student for: {$type_label}" . ($required_amount ? " (MWK " . number_format($required_amount, 2) . ")" : "") . ".";
         
         // Log activity
-        logExamClearanceActivity($conn, $clearance_id, 'proof_requested', 'finance', $uid, $user['full_name'] ?? $user['username'], "Requested proof of payment from student." . ($finance_notes ? " Notes: {$finance_notes}" : ''));
+        logExamClearanceActivity($conn, $clearance_id, 'proof_requested', 'finance', $uid, $user['full_name'] ?? $user['username'], "Requested {$type_label} proof." . ($required_amount ? " Required: MWK " . number_format($required_amount, 2) : '') . ($finance_notes ? " Notes: {$finance_notes}" : ''));
         
         // Email student
         notifyStudentProofRequested($conn, $student['email'], $student['full_name'], $finance_notes);
@@ -277,6 +371,7 @@ $breadcrumbs = [
                         <tr><td class="text-muted">Phone</td><td><?= htmlspecialchars($student['phone'] ?: '—') ?></td></tr>
                         <tr><td class="text-muted">Program</td><td><?= htmlspecialchars($student['program'] ?: '—') ?></td></tr>
                         <tr><td class="text-muted">Program Type</td><td><span class="badge bg-<?= $student['program_type'] === 'masters' ? 'info' : 'primary' ?>"><?= ucfirst($student['program_type']) ?></span></td></tr>
+                        <tr><td class="text-muted">Clearance Type</td><td><span class="badge bg-<?= ($student['clearance_type'] ?? 'endsemester') === 'midsemester' ? 'warning text-dark' : 'success' ?>"><?= ($student['clearance_type'] ?? 'endsemester') === 'midsemester' ? 'Mid-Semester (50%)' : 'End-of-Semester (100%)' ?></span></td></tr>
                         <tr><td class="text-muted">Department</td><td><?= htmlspecialchars($student['department'] ?: '—') ?></td></tr>
                         <tr><td class="text-muted">Campus</td><td><?= htmlspecialchars($student['campus'] ?: '—') ?></td></tr>
                         <tr><td class="text-muted">Year</td><td>Year <?= $student['year_of_study'] ?></td></tr>
@@ -305,10 +400,28 @@ $breadcrumbs = [
                     <h5 class="mb-0"><i class="bi bi-cash-stack me-2"></i>Financial Summary</h5>
                 </div>
                 <div class="card-body">
+                    <?php 
+                    $ctype = $student['clearance_type'] ?? 'endsemester';
+                    $min_pct = ($ctype === 'midsemester') ? 50 : 100;
+                    $min_required = $student['invoiced_amount'] * ($min_pct / 100);
+                    ?>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Clearance Type:</span>
+                        <span class="badge bg-<?= $ctype === 'midsemester' ? 'warning text-dark' : 'success' ?>"><?= $ctype === 'midsemester' ? 'Mid-Semester (50%)' : 'End-of-Semester (100%)' ?></span>
+                    </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Invoiced Amount:</span>
                         <strong>MWK <?= number_format($student['invoiced_amount'], 2) ?></strong>
                     </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Registration Fee:</span>
+                        <strong>MWK <?= number_format($student['registration_fee'] ?? 0, 2) ?></strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Minimum Required (<?= $min_pct ?>%):</span>
+                        <strong class="text-primary">MWK <?= number_format($min_required, 2) ?></strong>
+                    </div>
+                    <hr>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Approved Payments:</span>
                         <strong class="text-success">MWK <?= number_format($total_approved, 2) ?></strong>
@@ -317,13 +430,37 @@ $breadcrumbs = [
                         <span>Pending Payments:</span>
                         <strong class="text-warning">MWK <?= number_format($total_pending, 2) ?></strong>
                     </div>
+                    <?php if (!empty($student['amount_paid']) && $student['amount_paid'] > 0): ?>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Recorded Payment:</span>
+                        <strong class="text-info">MWK <?= number_format($student['amount_paid'], 2) ?></strong>
+                    </div>
+                    <?php endif; ?>
                     <hr>
-                    <div class="d-flex justify-content-between">
+                    <div class="d-flex justify-content-between mb-2">
                         <span class="fw-bold">Outstanding Balance:</span>
                         <strong class="<?= $balance > 0 ? 'text-danger' : 'text-success' ?> fs-5">MWK <?= number_format($balance, 2) ?></strong>
                     </div>
-                    <?php if ($balance <= 0): ?>
+                    <?php 
+                    $shortfall = $min_required - $total_approved;
+                    if ($shortfall > 0): ?>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="fw-bold">Still Needed for Clearance:</span>
+                            <strong class="text-danger">MWK <?= number_format($shortfall, 2) ?></strong>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($student['required_amount'])): ?>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Finance Required Amount:</span>
+                        <strong class="text-danger">MWK <?= number_format($student['required_amount'], 2) ?></strong>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($total_approved >= $min_required): ?>
+                        <div class="alert alert-success mt-3 mb-0 py-2"><i class="bi bi-check-circle me-2"></i>Meets <?= $min_pct ?>% payment requirement - eligible for <?= $ctype === 'midsemester' ? 'mid-semester' : 'end-of-semester' ?> exam clearance.</div>
+                    <?php elseif ($balance <= 0): ?>
                         <div class="alert alert-success mt-3 mb-0 py-2"><i class="bi bi-check-circle me-2"></i>No outstanding balance - eligible for exam clearance.</div>
+                    <?php else: ?>
+                        <div class="alert alert-warning mt-3 mb-0 py-2"><i class="bi bi-exclamation-triangle me-2"></i>Student has not met the <?= $min_pct ?>% payment requirement yet (MWK <?= number_format($shortfall, 2) ?> short).</div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -335,19 +472,70 @@ $breadcrumbs = [
                     <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Clearance Decision</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST">
+                    <!-- Clear / Reject Form -->
+                    <form method="POST" id="clearanceForm">
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Finance Notes</label>
                             <textarea name="finance_notes" class="form-control" rows="3" placeholder="Notes about the clearance decision..."><?= htmlspecialchars($student['finance_notes'] ?? '') ?></textarea>
                         </div>
                         <div class="d-grid gap-2">
-                            <button type="submit" name="action" value="clear_student" class="btn btn-success" onclick="return confirm('Clear this student for examinations? A certificate will be generated.')"><i class="bi bi-check-circle me-2"></i>Clear for Examinations</button>
-                            <button type="submit" name="action" value="request_proof" class="btn btn-outline-warning" onclick="return confirm('Request proof of payment from this student?')"><i class="bi bi-receipt me-2"></i>Request Proof of Payment</button>
+                            <button type="submit" name="action" value="clear_student" class="btn btn-success" onclick="return confirm('Clear this student for examinations? Amount paid (MWK <?= number_format($total_approved, 2) ?>) will be recorded and added to revenue.')"><i class="bi bi-check-circle me-2"></i>Clear for Examinations (Record MWK <?= number_format($total_approved, 2) ?>)</button>
                             <button type="submit" name="action" value="reject_student" class="btn btn-outline-danger" onclick="return confirm('Reject this student\'s exam clearance?')"><i class="bi bi-x-circle me-2"></i>Reject Clearance</button>
                         </div>
                     </form>
+                    
+                    <hr>
+                    
+                    <!-- Request Proof Form (separate) -->
+                    <h6 class="fw-bold text-warning"><i class="bi bi-receipt me-2"></i>Request Proof of Payment</h6>
+                    <form method="POST" id="proofRequestForm">
+                        <input type="hidden" name="action" value="request_proof">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Proof Type Required</label>
+                            <select name="proof_request_type" class="form-select" id="proofType">
+                                <option value="both" <?= ($student['proof_request_type'] ?? '') === 'both' ? 'selected' : '' ?>>Both Tuition & Registration Fee</option>
+                                <option value="tuition" <?= ($student['proof_request_type'] ?? '') === 'tuition' ? 'selected' : '' ?>>Tuition Fee Only</option>
+                                <option value="registration" <?= ($student['proof_request_type'] ?? '') === 'registration' ? 'selected' : '' ?>>Registration Fee Only</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Required Amount (MWK)</label>
+                            <div class="input-group">
+                                <input type="number" step="0.01" name="required_amount" id="requiredAmount" class="form-control" value="<?= htmlspecialchars($student['required_amount'] ?? '') ?>" placeholder="Enter exact amount required">
+                                <button type="button" class="btn btn-outline-secondary" id="calcBalance" title="Auto-calculate balance"><i class="bi bi-calculator"></i> Calculate</button>
+                            </div>
+                            <small class="text-muted">Leave blank for no specific amount, or click Calculate to auto-fill the outstanding balance.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Notes to Student</label>
+                            <textarea name="finance_notes" class="form-control" rows="2" placeholder="Explain what payment proof is needed..."><?= htmlspecialchars($student['finance_notes'] ?? '') ?></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-warning w-100" onclick="return confirm('Request proof of payment from this student?')"><i class="bi bi-receipt me-2"></i>Send Proof Request</button>
+                    </form>
                 </div>
             </div>
+            
+            <script>
+            document.getElementById('calcBalance')?.addEventListener('click', function() {
+                var invoiced = <?= (float)$student['invoiced_amount'] ?>;
+                var regFee = <?= (float)($student['registration_fee'] ?? 0) ?>;
+                var approved = <?= (float)$total_approved ?>;
+                var minPct = <?= $min_pct ?>;
+                var proofType = document.getElementById('proofType').value;
+                var required = 0;
+                
+                if (proofType === 'tuition') {
+                    var tuitionTotal = invoiced - regFee;
+                    required = Math.max(0, (tuitionTotal * minPct / 100) - Math.max(0, approved - regFee));
+                } else if (proofType === 'registration') {
+                    required = Math.max(0, regFee - Math.min(approved, regFee));
+                } else {
+                    required = Math.max(0, (invoiced * minPct / 100) - approved);
+                }
+                
+                document.getElementById('requiredAmount').value = required.toFixed(2);
+            });
+            </script>
             <?php else: ?>
             <div class="card shadow-sm border-0 mt-3">
                 <div class="card-body text-center">

@@ -16,19 +16,23 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'generate') {
         $program_type = $_POST['program_type'] ?? 'degree';
+        $clearance_type = $_POST['clearance_type'] ?? 'endsemester';
         $description = trim($_POST['description'] ?? '');
         $max_uses = (int)($_POST['max_uses'] ?? 0);
         $expires_days = (int)($_POST['expires_days'] ?? 30);
         
         if (!in_array($program_type, ['degree', 'professional', 'masters', 'doctorate'])) {
             $error = 'Invalid program type.';
+        } elseif (!in_array($clearance_type, ['midsemester', 'endsemester'])) {
+            $error = 'Invalid clearance type.';
         } else {
             $token = bin2hex(random_bytes(32));
             $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
+            $min_percent = ($clearance_type === 'midsemester') ? 50 : 100;
             
-            $stmt = $conn->prepare("INSERT INTO exam_clearance_invites (invite_token, program_type, description, max_uses, created_by, expires_at) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO exam_clearance_invites (invite_token, program_type, clearance_type, minimum_payment_percent, description, max_uses, created_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             $uid = (int)$user['user_id'];
-            $stmt->bind_param("sssiss", $token, $program_type, $description, $max_uses, $uid, $expires_at);
+            $stmt->bind_param("sssisiss", $token, $program_type, $clearance_type, $min_percent, $description, $max_uses, $uid, $expires_at);
             
             if ($stmt->execute()) {
                 $success = 'Exam clearance invite created! Students can now apply from their dashboard when this window is active.';
@@ -98,6 +102,15 @@ $breadcrumbs = [['title' => 'Exam Clearance Invites']];
                         <input type="hidden" name="action" value="generate">
                         
                         <div class="mb-3">
+                            <label class="form-label fw-semibold">Clearance Type</label>
+                            <select name="clearance_type" class="form-select" required id="clearanceType">
+                                <option value="midsemester">Mid-Semester (50% payment required)</option>
+                                <option value="endsemester" selected>End-of-Semester (100% payment required)</option>
+                            </select>
+                            <small class="text-muted" id="clearanceTypeHint">Students need to pay 100% of fees to be cleared.</small>
+                        </div>
+                        
+                        <div class="mb-3">
                             <label class="form-label fw-semibold">Program Type</label>
                             <select name="program_type" class="form-select" required>
                                 <option value="degree">Degree (Undergraduate)</option>
@@ -145,6 +158,7 @@ $breadcrumbs = [['title' => 'Exam Clearance Invites']];
                             <thead class="table-light">
                                 <tr>
                                     <th>Program</th>
+                                    <th>Type</th>
                                     <th>Description</th>
                                     <th>Uses</th>
                                     <th>Status</th>
@@ -163,6 +177,7 @@ $breadcrumbs = [['title' => 'Exam Clearance Invites']];
                                 ?>
                                 <tr class="<?= !$active ? 'table-secondary' : '' ?>">
                                     <td><span class="badge bg-<?= $inv['program_type'] === 'masters' ? 'info' : ($inv['program_type'] === 'doctorate' ? 'danger' : 'primary') ?>"><?= ucfirst($inv['program_type']) ?></span></td>
+                                    <td><span class="badge bg-<?= ($inv['clearance_type'] ?? 'endsemester') === 'midsemester' ? 'warning text-dark' : 'success' ?>"><?= ($inv['clearance_type'] ?? 'endsemester') === 'midsemester' ? 'Mid-Semester' : 'End-Semester' ?></span><br><small class="text-muted"><?= $inv['minimum_payment_percent'] ?? 100 ?>% required</small></td>
                                     <td><?= htmlspecialchars($inv['description'] ?: '—') ?></td>
                                     <td><?= $inv['times_used'] ?><?= $inv['max_uses'] > 0 ? '/' . $inv['max_uses'] : '' ?></td>
                                     <td>
@@ -203,5 +218,15 @@ $breadcrumbs = [['title' => 'Exam Clearance Invites']];
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.getElementById('clearanceType')?.addEventListener('change', function() {
+    var hint = document.getElementById('clearanceTypeHint');
+    if (this.value === 'midsemester') {
+        hint.textContent = 'Students need to pay at least 50% of fees to be cleared for mid-semester exams.';
+    } else {
+        hint.textContent = 'Students need to pay 100% of fees to be cleared for end-of-semester exams.';
+    }
+});
+</script>
 </body>
 </html>
