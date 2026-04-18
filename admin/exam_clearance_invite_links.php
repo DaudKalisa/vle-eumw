@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $max_uses     = (int)($_POST['max_uses'] ?? 0);
         $expires_days = (int)($_POST['expires_days'] ?? 60);
 
-        $program_type = 'general';
+        $program_type = 'degree';
 
         $token      = bin2hex(random_bytes(32));
         $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
