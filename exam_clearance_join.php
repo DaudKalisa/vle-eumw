@@ -77,9 +77,11 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
     
     if ($_POST['action'] === 'register') {
         $student_id = trim($_POST['student_id'] ?? '');
-        $surname = trim($_POST['surname'] ?? '');
+        $firstname = trim($_POST['firstname'] ?? '');
         $other_names = trim($_POST['other_names'] ?? '');
-        $full_name = trim($surname . ' ' . $other_names);
+        $surname = trim($_POST['surname'] ?? '');
+        $full_name = trim($firstname . ' ' . $other_names . ' ' . $surname);
+        $full_name = preg_replace('/\s+/', ' ', $full_name);
         $email = trim($_POST['email'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $program_id = (int)($_POST['program_id'] ?? 0);
@@ -114,8 +116,8 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
             if ($d_row) $department = $d_row['department_name'];
         }
         
-        if (empty($student_id) || empty($surname) || empty($other_names) || empty($email)) {
-            $error = 'Student ID, Surname, Other Name(s), and Email are required.';
+        if (empty($student_id) || empty($firstname) || empty($surname) || empty($email)) {
+            $error = 'Student ID, Firstname, Surname, and Email are required.';
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Please enter a valid email address.';
         } elseif (!in_array($gender, ['Male', 'Female', 'Other'])) {
@@ -614,15 +616,20 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                 <!-- Personal Information -->
                 <div class="section-title"><i class="bi bi-person-circle"></i> Personal Information</div>
                 <div class="row g-3 mb-4">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
+                        <label class="form-label">Firstname <span class="text-danger">*</span></label>
+                        <input type="text" name="firstname" class="form-control" required
+                               value="<?php echo htmlspecialchars($_POST['firstname'] ?? ''); ?>" placeholder="e.g. John">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Other Name(s)</label>
+                        <input type="text" name="other_names" class="form-control"
+                               value="<?php echo htmlspecialchars($_POST['other_names'] ?? ''); ?>" placeholder="e.g. James">
+                    </div>
+                    <div class="col-md-4">
                         <label class="form-label">Surname <span class="text-danger">*</span></label>
                         <input type="text" name="surname" class="form-control" required
                                value="<?php echo htmlspecialchars($_POST['surname'] ?? ''); ?>" placeholder="e.g. Banda">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Other Name(s) <span class="text-danger">*</span></label>
-                        <input type="text" name="other_names" class="form-control" required
-                               value="<?php echo htmlspecialchars($_POST['other_names'] ?? ''); ?>" placeholder="e.g. John">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Email Address <span class="text-danger">*</span></label>
