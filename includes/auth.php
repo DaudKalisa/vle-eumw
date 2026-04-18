@@ -360,6 +360,7 @@ function requireRole($allowed_roles) {
                 'dissertation.php',
                 'dissertation_guidelines.php',
                 'ethics_form_online.php',
+                'exam_clearance.php',
                 'profile.php',
                 'help.php',
                 'change_password.php'
