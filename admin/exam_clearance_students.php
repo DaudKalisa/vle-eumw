@@ -117,6 +117,27 @@ if ($search) {
     $types .= 'sss';
 }
 
+// Ensure exam_clearance_payments table exists
+$conn->query("CREATE TABLE IF NOT EXISTS exam_clearance_payments (
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    clearance_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    payment_method VARCHAR(50) DEFAULT NULL,
+    reference_number VARCHAR(100) DEFAULT NULL,
+    proof_file VARCHAR(255) DEFAULT NULL,
+    status ENUM('pending','approved','rejected') DEFAULT 'pending',
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at DATETIME DEFAULT NULL,
+    reviewed_by INT DEFAULT NULL
+)");
+
+// Ensure converted_to_student column exists
+$col_check = $conn->query("SHOW COLUMNS FROM exam_clearance_students LIKE 'converted_to_student'");
+if ($col_check && $col_check->num_rows === 0) {
+    $conn->query("ALTER TABLE exam_clearance_students ADD COLUMN converted_to_student TINYINT(1) DEFAULT 0");
+    $conn->query("ALTER TABLE exam_clearance_students ADD COLUMN converted_at DATETIME DEFAULT NULL");
+}
+
 $query = "SELECT ecs.*, 
           (SELECT COALESCE(SUM(ecp.amount), 0) FROM exam_clearance_payments ecp WHERE ecp.clearance_id = ecs.clearance_id AND ecp.status = 'approved') as total_approved
           FROM exam_clearance_students ecs 
@@ -124,11 +145,15 @@ $query = "SELECT ecs.*,
           ORDER BY ecs.registered_at DESC";
 
 $stmt = $conn->prepare($query);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
+if ($stmt) {
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $students = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+} else {
+    $students = [];
 }
-$stmt->execute();
-$students = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // Stats
 $stats_rs = $conn->query("SELECT 
@@ -137,7 +162,7 @@ $stats_rs = $conn->query("SELECT
     SUM(is_system_student = 0) as external_count,
     SUM(IFNULL(converted_to_student, 0) = 1) as converted_count
     FROM exam_clearance_students");
-$stats = $stats_rs->fetch_assoc();
+$stats = $stats_rs ? $stats_rs->fetch_assoc() : ['total' => 0, 'system_count' => 0, 'external_count' => 0, 'converted_count' => 0];
 
 $page_title = 'Manage Exam Clearance Students';
 $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 'Exam Clearance Students']];
