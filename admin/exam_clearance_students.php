@@ -5,7 +5,7 @@
  */
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['admin', 'super_admin']);
+requireRole(['admin', 'super_admin', 'staff']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();
