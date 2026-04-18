@@ -9,6 +9,26 @@ $student_id = $_SESSION['vle_related_id'];
 $_is_exam_clearance_only = (isset($_SESSION['vle_role']) && $_SESSION['vle_role'] === 'exam_clearance_student');
 $_is_dissertation_only = (isset($_SESSION['vle_role']) && $_SESSION['vle_role'] === 'dissertation_student');
 
+// For EC students, related_id may be null — resolve student_id via email from users table
+if ($_is_exam_clearance_only && empty($student_id)) {
+    $uid = $_SESSION['vle_user_id'] ?? 0;
+    $u_stmt = $conn->prepare("SELECT email FROM users WHERE user_id = ?");
+    $u_stmt->bind_param("i", $uid);
+    $u_stmt->execute();
+    $u_row = $u_stmt->get_result()->fetch_assoc();
+    $u_stmt->close();
+    if ($u_row) {
+        $ec_lookup = $conn->prepare("SELECT student_id FROM exam_clearance_students WHERE email = ? ORDER BY registered_at DESC LIMIT 1");
+        $ec_lookup->bind_param("s", $u_row['email']);
+        $ec_lookup->execute();
+        $ec_id_row = $ec_lookup->get_result()->fetch_assoc();
+        $ec_lookup->close();
+        if ($ec_id_row) {
+            $student_id = $ec_id_row['student_id'];
+        }
+    }
+}
+
 // Get student's financial information
 $finance_data = null;
 $student_info = null;
@@ -30,10 +50,10 @@ $stmt->close();
 
 // Fallback: if no record in students table, try exam_clearance_students (for EC students)
 if (!$student_info && $_is_exam_clearance_only) {
-    $ec_query = "SELECT ecs.*, ecs.full_name, ecs.email, ecs.phone, ecs.program, ecs.campus,
+    $ec_query = "SELECT ecs.full_name, ecs.email, ecs.phone, ecs.program, ecs.campus,
                         ecs.year_of_study, ecs.semester, ecs.gender, ecs.national_id, ecs.address,
-                        ecs.department as department_name, '' as department_code, '' as profile_picture
-                 FROM exam_clearance_students ecs WHERE ecs.student_id = ?";
+                        ecs.program as department_name, '' as department_code, '' as profile_picture
+                 FROM exam_clearance_students ecs WHERE ecs.student_id = ? ORDER BY registered_at DESC LIMIT 1";
     $ec_stmt = $conn->prepare($ec_query);
     if ($ec_stmt) {
         $ec_stmt->bind_param("s", $student_id);
