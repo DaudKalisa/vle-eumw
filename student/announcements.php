@@ -2,7 +2,7 @@
 // announcements.php - Student Announcements Page
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['student']);
+requireRole(['student', 'exam_clearance_student', 'dissertation_student']);
 
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];

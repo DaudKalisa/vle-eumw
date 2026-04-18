@@ -358,24 +358,34 @@ function requireRole($allowed_roles) {
         }
     }
 
-    // Exam clearance students can only access exam clearance pages.
+    // Exam clearance students can access exam clearance + shared pages.
     if (hasRole('exam_clearance_student')) {
         $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
-        $is_exam_clearance_page = basename($script_name) === 'exam_clearance.php';
-        $is_exam_certificate_page = basename($script_name) === 'exam_clearance_certificate.php';
-        $is_profile_page = basename($script_name) === 'profile.php';
-        $is_change_pw = basename($script_name) === 'change_password.php';
-        if (!$is_exam_clearance_page && !$is_exam_certificate_page && !$is_profile_page && !$is_change_pw) {
+        $page = basename($script_name);
+        $is_examination_page = strpos($script_name, '/examination/') !== false;
+        $allowed_ec_pages = [
+            'exam_clearance.php',
+            'exam_clearance_certificate.php',
+            'profile.php',
+            'change_password.php',
+            'payment_history.php',
+            'announcements.php',
+            'messages.php',
+            'resources.php',
+            'help.php'
+        ];
+        if (!in_array($page, $allowed_ec_pages, true) && !$is_examination_page) {
             $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
             header('Location: ' . $base . 'student/exam_clearance.php');
             exit();
         }
     }
 
-    // Dissertation-only students can only access dissertation workflow pages under student/.
+    // Dissertation-only students can access dissertation workflow + shared pages.
     if (hasRole('dissertation_student')) {
         $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
         $is_student_page = strpos($script_name, '/student/') !== false;
+        $is_examination_page = strpos($script_name, '/examination/') !== false;
         if ($is_student_page) {
             $student_page = basename($script_name);
             $allowed_dissertation_pages = [
@@ -386,13 +396,22 @@ function requireRole($allowed_roles) {
                 'exam_clearance_certificate.php',
                 'profile.php',
                 'help.php',
-                'change_password.php'
+                'change_password.php',
+                'payment_history.php',
+                'announcements.php',
+                'messages.php',
+                'resources.php'
             ];
             if (!in_array($student_page, $allowed_dissertation_pages, true)) {
                 $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
                 header('Location: ' . $base . 'student/dissertation.php');
                 exit();
             }
+        } elseif (!$is_examination_page) {
+            // Allow examination pages, redirect others
+            $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
+            header('Location: ' . $base . 'student/dissertation.php');
+            exit();
         }
     }
 

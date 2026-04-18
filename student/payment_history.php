@@ -2,7 +2,7 @@
 // student/payment_history.php - Student's own payment history and financial summary
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['student']);
+requireRole(['student', 'exam_clearance_student', 'dissertation_student']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();

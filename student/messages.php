@@ -6,7 +6,7 @@
 require_once '../includes/auth.php';
 require_once '../includes/email.php';
 requireLogin();
-requireRole(['student']);
+requireRole(['student', 'exam_clearance_student', 'dissertation_student']);
 
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];
