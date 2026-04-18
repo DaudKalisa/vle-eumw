@@ -13,6 +13,7 @@ $_nav_in_student_dir = (strpos($_SERVER['PHP_SELF'], '/student/') !== false);
 $_student_base = $_nav_in_student_dir ? '' : '../student/';
 $_root_base = '../';
 $_is_dissertation_only = function_exists('hasRole') && hasRole('dissertation_student');
+$_is_exam_clearance_only = function_exists('hasRole') && hasRole('exam_clearance_student');
 
 // Check dissertation eligibility (Year 3 Semester 2 or above)
 $_dissertation_eligible = false;
@@ -43,7 +44,7 @@ $page_title = isset($page_title) ? $page_title : 'Student Portal';
 
 <nav class="navbar navbar-expand-lg navbar-dark vle-navbar">
     <div class="container-fluid">
-        <a class="navbar-brand" href="<?= $_is_dissertation_only ? ($_student_base . 'dissertation.php') : ($_student_base . 'dashboard.php') ?>">
+        <a class="navbar-brand" href="<?= $_is_dissertation_only ? ($_student_base . 'dissertation.php') : ($_is_exam_clearance_only ? ($_student_base . 'exam_clearance.php') : ($_student_base . 'dashboard.php')) ?>">
             <img src="../assets/img/Logo.png" alt="Logo">
             <span>VLE-EUMW</span>
         </a>
@@ -56,6 +57,16 @@ $page_title = isset($page_title) ? $page_title : 'Student Portal';
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='dissertation.php')echo' active'; ?>" href="<?= $_student_base ?>dissertation.php"><i class="bi bi-mortarboard me-1"></i>Dissertation</a></li>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='dissertation_guidelines.php')echo' active'; ?>" href="<?= $_student_base ?>dissertation_guidelines.php"><i class="bi bi-journal-text me-1"></i>Guidelines</a></li>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='exam_clearance.php')echo' active'; ?>" href="<?= $_student_base ?>exam_clearance.php"><i class="bi bi-shield-check me-1"></i>Exam Clearance</a></li>
+                <?php elseif ($_is_exam_clearance_only): ?>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='exam_clearance.php')echo' active'; ?>" href="<?= $_student_base ?>exam_clearance.php"><i class="bi bi-shield-check me-1"></i>Exam Clearance</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='profile.php')echo' active'; ?>" href="<?= $_student_base ?>profile.php"><i class="bi bi-person-circle me-1"></i>My Profile</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='payment_history.php')echo' active'; ?>" href="<?= $_student_base ?>payment_history.php"><i class="bi bi-credit-card me-1"></i>Payments</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='announcements.php')echo' active'; ?>" href="<?= $_student_base ?>announcements.php"><i class="bi bi-megaphone me-1"></i>Announcements</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='messages.php' && $_nav_in_student_dir)echo' active'; ?>" href="<?= $_student_base ?>messages.php"><i class="bi bi-chat-dots me-1"></i>Messages</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(strpos($_SERVER['PHP_SELF'],'examination/')!==false)echo' active'; ?>" href="<?= $_root_base ?>examination/exams.php"><i class="bi bi-file-earmark-text me-1"></i>Examinations</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= $_student_base ?>resources.php"><i class="bi bi-folder2-open me-1"></i>Resources</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='mid_semester_report.php')echo' active'; ?>" href="<?= $_student_base ?>mid_semester_report.php"><i class="bi bi-file-earmark-text me-1"></i>Mid-Semester Report</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='semester_report.php')echo' active'; ?>" href="<?= $_student_base ?>semester_report.php"><i class="bi bi-file-earmark-bar-graph me-1"></i>Full Semester Report</a></li>
                 <?php else: ?>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='dashboard.php' && $_nav_in_student_dir)echo' active'; ?>" href="<?= $_student_base ?>dashboard.php"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='courses.php')echo' active'; ?>" href="<?= $_student_base ?>courses.php"><i class="bi bi-book me-1"></i>Course Access</a></li>
@@ -105,7 +116,7 @@ $page_title = isset($page_title) ? $page_title : 'Student Portal';
     <div class="container-fluid">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item"><a href="<?= $_is_dissertation_only ? ($_student_base . 'dissertation.php') : ($_student_base . 'dashboard.php') ?>"><i class="bi bi-house-door"></i> <?= $_is_dissertation_only ? 'Dissertation' : 'Dashboard' ?></a></li>
+                <li class="breadcrumb-item"><a href="<?= $_is_dissertation_only ? ($_student_base . 'dissertation.php') : ($_is_exam_clearance_only ? ($_student_base . 'exam_clearance.php') : ($_student_base . 'dashboard.php')) ?>"><i class="bi bi-house-door"></i> <?= $_is_dissertation_only ? 'Dissertation' : ($_is_exam_clearance_only ? 'Exam Clearance' : 'Dashboard') ?></a></li>
                 <?php foreach ($breadcrumbs as $breadcrumb): ?>
                     <?php if (isset($breadcrumb['url'])): ?>
                         <li class="breadcrumb-item"><a href="<?php echo $breadcrumb['url']; ?>"><?php echo htmlspecialchars($breadcrumb['title']); ?></a></li>
