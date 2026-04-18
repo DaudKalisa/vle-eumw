@@ -14,7 +14,7 @@ $user = getCurrentUser();
 $user_role = $_SESSION['vle_role'] ?? '';
 
 // Allow finance, admin, super_admin AND students (for their own)
-if (!in_array($user_role, ['finance', 'admin', 'super_admin', 'student', 'exam_clearance_student'])) {
+if (!in_array($user_role, ['finance', 'admin', 'super_admin', 'student', 'exam_clearance_student', 'dissertation_student'])) {
     header('Location: ../login.php');
     exit;
 }
@@ -47,6 +47,13 @@ if ($user_role === 'exam_clearance_student') {
     // External exam clearance students: match by email
     $ecs_email = $user['email'] ?? '';
     if ($student['email'] !== $ecs_email) {
+        header('Location: ../student/exam_clearance.php');
+        exit;
+    }
+}
+if ($user_role === 'dissertation_student') {
+    $sid = $_SESSION['vle_related_id'] ?? '';
+    if ($student['student_id'] !== $sid) {
         header('Location: ../student/exam_clearance.php');
         exit;
     }
@@ -139,7 +146,7 @@ function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
             <!-- Info Columns -->
             <table style="width:100%;margin-top:4px;" cellpadding="0" cellspacing="0">
                 <tr><td style="width:50%;vertical-align:top;padding-right:6px;">
-                    <div style="color:#1e3c72;border-bottom:2px solid #1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Student Information</div>
+                    <div style="color:#1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Student Information</div>
                     <table style="width:100%;font-size:8px;" cellpadding="1" cellspacing="0">
                         <tr><td style="font-weight:600;color:#555;width:42%;">Student ID:</td><td><strong>' . htmlspecialchars($student['student_id']) . '</strong></td></tr>
                         <tr><td style="font-weight:600;color:#555;">Full Name:</td><td>' . htmlspecialchars($student['full_name']) . '</td></tr>
@@ -149,7 +156,7 @@ function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
                         <tr><td style="font-weight:600;color:#555;">Year of Study:</td><td>Year ' . $student['year_of_study'] . '</td></tr>
                     </table>
                 </td><td style="width:50%;vertical-align:top;padding-left:6px;">
-                    <div style="color:#1e3c72;border-bottom:2px solid #1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Fee Breakdown</div>
+                    <div style="color:#1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Fee Breakdown</div>
                     <table style="width:100%;font-size:8px;" cellpadding="1" cellspacing="0">
                         <tr><td style="font-weight:600;color:#555;width:48%;">Tuition Fee:</td><td>MWK ' . number_format($tuition_amount, 2) . '</td></tr>
                         <tr><td style="font-weight:600;color:#555;">Registration Fee:</td><td>MWK ' . number_format($registration_fee, 2) . '</td></tr>
@@ -171,14 +178,14 @@ function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
             <!-- Verification & Details -->
             <table style="width:100%;margin-top:3px;" cellpadding="0" cellspacing="0">
                 <tr><td style="width:50%;vertical-align:top;padding-right:6px;">
-                    <div style="color:#1e3c72;border-bottom:2px solid #1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Verification</div>
+                    <div style="color:#1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Verification</div>
                     <table style="width:100%;font-size:8px;" cellpadding="1" cellspacing="0">
                         <tr><td style="font-weight:600;color:#555;width:42%;">Status:</td><td><span style="display:inline-block;padding:1px 8px;border-radius:50px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;font-size:7px;background:' . $theme_badge_bg . ';color:' . $theme_badge_text . ';border:1.5px solid ' . $theme_color . ';">CLEARED</span></td></tr>
                         <tr><td style="font-weight:600;color:#555;">Cleared By:</td><td><strong>' . htmlspecialchars($student['cleared_by_name'] ?? 'Finance Officer') . '</strong></td></tr>
                         <tr><td style="font-weight:600;color:#555;">Date:</td><td>' . date('M d, Y h:i A', strtotime($student['cleared_at'])) . '</td></tr>
                     </table>
                 </td><td style="width:50%;vertical-align:top;padding-left:6px;">
-                    <div style="color:#1e3c72;border-bottom:2px solid #1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Details</div>
+                    <div style="color:#1e3c72;padding-bottom:2px;font-size:9px;font-weight:bold;margin-bottom:3px;">Details</div>
                     <table style="width:100%;font-size:8px;" cellpadding="1" cellspacing="0">
                         <tr><td style="font-weight:600;color:#555;width:42%;">Certificate No:</td><td><strong>' . htmlspecialchars($student['certificate_number']) . '</strong></td></tr>
                         <tr><td style="font-weight:600;color:#555;">Semester:</td><td>' . htmlspecialchars($student['semester'] ?? '—') . '</td></tr>

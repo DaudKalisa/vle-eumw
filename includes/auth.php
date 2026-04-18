@@ -383,6 +383,7 @@ function requireRole($allowed_roles) {
                 'dissertation_guidelines.php',
                 'ethics_form_online.php',
                 'exam_clearance.php',
+                'exam_clearance_certificate.php',
                 'profile.php',
                 'help.php',
                 'change_password.php'
