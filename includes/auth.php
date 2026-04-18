@@ -199,7 +199,7 @@ function login($username_email, $password) {
     if ($result->num_rows === 0) {
         $ec_stmt = $conn->prepare(
             "SELECT u.* FROM users u
-             INNER JOIN exam_clearance_students ecs ON u.email = ecs.email
+             INNER JOIN exam_clearance_students ecs ON u.email COLLATE utf8mb4_general_ci = ecs.email COLLATE utf8mb4_general_ci
              WHERE ecs.student_id = ? AND u.role = 'exam_clearance_student'
              LIMIT 1"
         );
