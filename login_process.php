@@ -301,6 +301,15 @@ try {
             case 'research_coordinator':
                 $redirect_url = 'research_coordinator/dashboard.php';
                 break;
+            case 'exam_clearance_student':
+                $redirect_url = 'student/exam_clearance.php';
+                break;
+            case 'graduation_student':
+                $redirect_url = 'graduation_student/dashboard.php';
+                break;
+            case 'dissertation_student':
+                $redirect_url = 'student/dissertation.php';
+                break;
             default:
                 $redirect_url = 'dashboard.php';
         }

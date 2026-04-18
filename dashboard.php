@@ -89,6 +89,15 @@ switch ($user['role']) {
     case 'examination_officer':
         header('Location: examination_officer/dashboard.php');
         break;
+    case 'exam_clearance_student':
+        header('Location: student/exam_clearance.php');
+        break;
+    case 'graduation_student':
+        header('Location: graduation_student/dashboard.php');
+        break;
+    case 'dissertation_student':
+        header('Location: student/dissertation.php');
+        break;
     default:
         header('Location: access_denied.php');
         break;
