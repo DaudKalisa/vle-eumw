@@ -94,7 +94,7 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><a class="dropdown-item" href="../finance/Finance_clearence_students.php"><i class="bi bi-person-check me-2"></i>Finance Clearance Students</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="exam_clearance_invite_links.php"><i class="bi bi-link-45deg me-2"></i>Exam Clearance Invites</a></li>
-                        <li><a class="dropdown-item" href="../finance/exam_clearance_students.php"><i class="bi bi-person-badge me-2"></i>Exam Clearance Students</a></li>
+                        <li><a class="dropdown-item" href="exam_clearance_students.php"><i class="bi bi-person-badge me-2"></i>Exam Clearance Students</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="fee_settings.php"><i class="bi bi-currency-dollar me-2"></i>Fee Settings</a></li>
                         <li><a class="dropdown-item" href="smtp_settings.php"><i class="bi bi-envelope-gear me-2"></i>SMTP Settings</a></li>

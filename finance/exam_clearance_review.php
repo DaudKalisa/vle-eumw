@@ -121,57 +121,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $success = "Payment approved. Student AUTO-CLEARED — balance is fully paid! Certificate: $cert_number";
             }
             
-            // AUTO-CLEAR: If balance is zero or less after approval, automatically clear the student
-            if ($decision === 'approved' && $new_balance <= 0 && $student['status'] !== 'cleared') {
-                $clearance_type = $student['clearance_type'] ?? 'endsemester';
-                $year = date('Y');
-                $prefix = ($clearance_type === 'midsemester') ? 'ECM' : 'EC';
-                $cnt_rs = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE certificate_number IS NOT NULL AND certificate_number LIKE '{$prefix}-$year%'");
-                $cnt = ($cnt_rs->fetch_assoc()['cnt'] ?? 0) + 1;
-                $cert_number = $prefix . '-' . $year . '-' . str_pad($cnt, 5, '0', STR_PAD_LEFT);
-                
-                $auto_stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'cleared', cleared_by = ?, cleared_at = NOW(), certificate_number = ?, finance_notes = 'Auto-cleared: balance fully paid', amount_paid = ? WHERE clearance_id = ?");
-                $auto_stmt->bind_param("isdi", $uid, $cert_number, $total_approved, $clearance_id);
-                $auto_stmt->execute();
-                
-                // Record revenue
-                $rev_check = $conn->query("SELECT revenue_recorded FROM exam_clearance_students WHERE clearance_id = $clearance_id");
-                $already_recorded = (int)($rev_check->fetch_assoc()['revenue_recorded'] ?? 0);
-                
-                if (!$already_recorded && $total_approved > 0) {
-                    $reg_fee = (float)($student['registration_fee'] ?? 0);
-                    $tuition_paid = $total_approved - $reg_fee;
-                    if ($tuition_paid < 0) { $tuition_paid = 0; $reg_fee = $total_approved; }
-                    $today = date('Y-m-d');
-                    $sid = $student['student_id'];
-                    $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
-                    
-                    if ($tuition_paid > 0) {
-                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?, ?)");
-                        $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
-                        $recorded_by = $user['username'] ?? 'system';
-                        $rev_stmt->bind_param("sdssss", $sid, $tuition_paid, $today, $desc, $cert_number, $recorded_by);
-                        $rev_stmt->execute();
-                    }
-                    if ($reg_fee > 0) {
-                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?, ?)");
-                        $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
-                        $recorded_by2 = $user['username'] ?? 'system';
-                        $rev_stmt2->bind_param("sdssss", $sid, $reg_fee, $today, $desc2, $cert_number, $recorded_by2);
-                        $rev_stmt2->execute();
-                    }
-                    $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
-                }
-                
-                // Log auto-clearance
-                logExamClearanceActivity($conn, $clearance_id, 'cleared', 'system', $uid, 'System (Auto-Clear)', "Auto-cleared: balance fully paid. Certificate: {$cert_number}. Amount: MWK " . number_format($total_approved, 2));
-                
-                // Email student
-                notifyStudentCleared($conn, $student['email'], $student['full_name'], $cert_number, 'System (Auto-Clearance)');
-                
-                $success = "Payment approved. Student AUTO-CLEARED — balance is fully paid! Certificate: $cert_number";
-            }
-            
             // Reload
             $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
             $stmt2->bind_param("i", $clearance_id);
@@ -182,6 +131,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $pstmt2->bind_param("i", $clearance_id);
             $pstmt2->execute();
             $payments = $pstmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+    }
+    
+    // Approve registration (change status from 'registered' to 'invoiced' and activate user account)
+    if ($_POST['action'] === 'approve_registration') {
+        $finance_notes = trim($_POST['finance_notes'] ?? '');
+        $uid = (int)$user['user_id'];
+        
+        $stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'invoiced', finance_notes = ? WHERE clearance_id = ? AND status = 'registered'");
+        $stmt->bind_param("si", $finance_notes, $clearance_id);
+        
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            // Activate the user account
+            $conn->query("UPDATE users SET is_active = 1 WHERE email = '" . $conn->real_escape_string($student['email']) . "' AND role = 'exam_clearance_student'");
+            
+            $success = 'Registration approved! Student account has been activated. They can now log in and upload proof of payment.';
+            
+            // Log activity
+            logExamClearanceActivity($conn, $clearance_id, 'registration_approved', 'finance', $uid, $user['full_name'] ?? $user['username'], "Registration approved." . ($finance_notes ? " Notes: {$finance_notes}" : ''));
+            
+            // Email student that registration is approved
+            $reg_fee_fmt = number_format($student['registration_fee'], 2);
+            $tuition_fmt = number_format($student['invoiced_amount'] - $student['registration_fee'], 2);
+            $total_fmt = number_format($student['invoiced_amount'], 2);
+            $approve_content = "
+                <p class='greeting'>Dear {$student['full_name']},</p>
+                <p class='content-text'>Your examination clearance registration has been <strong>approved</strong>! Your account is now active.</p>
+                <div class='info-box'>
+                    <h3>Invoice Details</h3>
+                    <div class='info-row'><span class='info-label'>Registration Fee</span><span class='info-value'>MWK {$reg_fee_fmt}</span></div>
+                    <div class='info-row'><span class='info-label'>Tuition Fee</span><span class='info-value'>MWK {$tuition_fmt}</span></div>
+                    <div class='info-row'><span class='info-label'>Total Amount</span><span class='info-value'>MWK {$total_fmt}</span></div>
+                </div>
+                <p class='content-text'>Please log in to the Student Portal using your credentials (Student ID, Email, or Username) and upload your proof of payment to proceed with your clearance.</p>
+                <p class='content-text'><strong>Your password is: password123</strong> — Please change it after your first login.</p>
+            ";
+            sendExamClearanceEmail($student['email'], $student['full_name'], 'Registration Approved - Exam Clearance', $approve_content);
+            
+            // Reload student
+            $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
+            $stmt2->bind_param("i", $clearance_id);
+            $stmt2->execute();
+            $student = $stmt2->get_result()->fetch_assoc();
+        } else {
+            $error = 'Could not approve registration. Student may already be approved.';
+        }
+    }
+    
+    // Reject registration
+    if ($_POST['action'] === 'reject_registration') {
+        $finance_notes = trim($_POST['finance_notes'] ?? '');
+        $uid = (int)$user['user_id'];
+        
+        $stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'rejected', finance_notes = ? WHERE clearance_id = ? AND status = 'registered'");
+        $stmt->bind_param("si", $finance_notes, $clearance_id);
+        
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            $success = 'Registration rejected.';
+            
+            logExamClearanceActivity($conn, $clearance_id, 'registration_rejected', 'finance', $uid, $user['full_name'] ?? $user['username'], "Registration rejected." . ($finance_notes ? " Reason: {$finance_notes}" : ''));
+            
+            notifyStudentRejected($conn, $student['email'], $student['full_name'], $finance_notes);
+            
+            $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
+            $stmt2->bind_param("i", $clearance_id);
+            $stmt2->execute();
+            $student = $stmt2->get_result()->fetch_assoc();
+        } else {
+            $error = 'Could not reject registration.';
         }
     }
     
@@ -307,63 +325,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $student = $stmt2->get_result()->fetch_assoc();
     }
     
-    // Convert external student to full system student
-    if ($_POST['action'] === 'convert_to_student') {
-        // Ensure converted_to_student column exists
-        $col_check = $conn->query("SHOW COLUMNS FROM exam_clearance_students LIKE 'converted_to_student'");
-        if ($col_check && $col_check->num_rows === 0) {
-            $conn->query("ALTER TABLE exam_clearance_students ADD COLUMN converted_to_student TINYINT(1) DEFAULT 0 AFTER is_system_student");
-            $conn->query("ALTER TABLE exam_clearance_students ADD COLUMN converted_at DATETIME DEFAULT NULL AFTER converted_to_student");
-        }
+    // Record payment directly (finance enters payment without student uploading proof)
+    if ($_POST['action'] === 'record_payment') {
+        $amount = (float)($_POST['amount'] ?? 0);
+        $payment_reference = trim($_POST['payment_reference'] ?? '');
+        $payment_date = $_POST['payment_date'] ?? date('Y-m-d');
+        $bank_name = trim($_POST['bank_name'] ?? '');
+        $review_notes = trim($_POST['review_notes'] ?? '');
+        $uid = (int)$user['user_id'];
         
-        if (!empty($student['converted_to_student'])) {
-            $error = 'This student has already been converted to a full system student.';
+        if ($amount <= 0) {
+            $error = 'Please enter a valid payment amount.';
+        } elseif (empty($payment_reference)) {
+            $error = 'Payment reference is required.';
         } else {
-            // Check if student_id already exists in students table
-            $check_stmt = $conn->prepare("SELECT student_id FROM students WHERE student_id = ?");
-            $check_stmt->bind_param("s", $student['student_id']);
-            $check_stmt->execute();
-            if ($check_stmt->get_result()->num_rows > 0) {
-                $error = 'A student with ID ' . htmlspecialchars($student['student_id']) . ' already exists in the system.';
-            } else {
-                // Insert into students table
-                $ins = $conn->prepare("INSERT INTO students (student_id, full_name, email, phone, program, department, campus, year_of_study, gender, national_id, address, entry_type, semester, year_of_registration, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')");
-                $ins->bind_param("sssssssisssssi",
-                    $student['student_id'],
-                    $student['full_name'],
-                    $student['email'],
-                    $student['phone'],
-                    $student['program'],
-                    $student['department'],
-                    $student['campus'],
-                    $student['year_of_study'],
-                    $student['gender'],
-                    $student['national_id'],
-                    $student['address'],
-                    $student['entry_type'],
-                    $student['semester'],
-                    $student['year_of_registration']
-                );
+            // Insert as a pre-approved payment
+            $ins_stmt = $conn->prepare("INSERT INTO exam_clearance_payments (clearance_id, amount, payment_reference, payment_date, bank_name, notes, status, reviewed_by, reviewed_at, submitted_at) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, NOW(), NOW())");
+            $ins_stmt->bind_param("idsssis", $clearance_id, $amount, $payment_reference, $payment_date, $bank_name, $review_notes, $uid);
+            
+            if ($ins_stmt->execute()) {
+                // Recalculate balance
+                $sum_rs = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM exam_clearance_payments WHERE clearance_id = $clearance_id AND status = 'approved'");
+                $new_total = (float)$sum_rs->fetch_assoc()['total'];
+                $new_balance = $student['invoiced_amount'] - $new_total;
+                $conn->query("UPDATE exam_clearance_students SET balance = $new_balance, amount_claimed = $new_total, amount_paid = $new_total WHERE clearance_id = $clearance_id");
                 
-                if ($ins->execute()) {
-                    $new_student_id = $student['student_id'];
+                // Log activity
+                logExamClearanceActivity($conn, $clearance_id, 'payment_recorded', 'finance', $uid, $user['full_name'] ?? $user['username'], "Payment recorded by finance. Amount: MWK " . number_format($amount, 2) . ". Ref: {$payment_reference}" . ($review_notes ? ". Notes: {$review_notes}" : ''));
+                
+                $success = "Payment of MWK " . number_format($amount, 2) . " recorded and approved.";
+                
+                // AUTO-CLEAR if balance is now zero or less
+                if ($new_balance <= 0 && $student['status'] !== 'cleared') {
+                    $clearance_type = $student['clearance_type'] ?? 'endsemester';
+                    $year = date('Y');
+                    $prefix = ($clearance_type === 'midsemester') ? 'ECM' : 'EC';
+                    $cnt_rs = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE certificate_number IS NOT NULL AND certificate_number LIKE '{$prefix}-$year%'");
+                    $cnt = ($cnt_rs->fetch_assoc()['cnt'] ?? 0) + 1;
+                    $cert_number = $prefix . '-' . $year . '-' . str_pad($cnt, 5, '0', STR_PAD_LEFT);
                     
-                    // Update the user account role from exam_clearance_student to student
-                    $conn->query("UPDATE users SET role = 'student', related_student_id = '" . $conn->real_escape_string($new_student_id) . "' WHERE email = '" . $conn->real_escape_string($student['email']) . "' AND role = 'exam_clearance_student'");
+                    $auto_stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'cleared', cleared_by = ?, cleared_at = NOW(), certificate_number = ?, finance_notes = 'Auto-cleared: balance fully paid via recorded payment', amount_paid = ? WHERE clearance_id = ?");
+                    $auto_stmt->bind_param("isdi", $uid, $cert_number, $new_total, $clearance_id);
+                    $auto_stmt->execute();
                     
-                    // Mark as converted
-                    $conn->query("UPDATE exam_clearance_students SET converted_to_student = 1, converted_at = NOW(), is_system_student = 1 WHERE clearance_id = $clearance_id");
+                    // Record revenue
+                    $rev_check = $conn->query("SELECT revenue_recorded FROM exam_clearance_students WHERE clearance_id = $clearance_id");
+                    $already_recorded = (int)($rev_check->fetch_assoc()['revenue_recorded'] ?? 0);
+                    if (!$already_recorded && $new_total > 0) {
+                        $reg_fee = (float)($student['registration_fee'] ?? 0);
+                        $tuition_paid = $new_total - $reg_fee;
+                        if ($tuition_paid < 0) { $tuition_paid = 0; $reg_fee = $new_total; }
+                        $today = date('Y-m-d');
+                        $sid = $student['student_id'];
+                        $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
+                        if ($tuition_paid > 0) {
+                            $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?, ?)");
+                            $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
+                            $recorded_by = $user['username'] ?? 'system';
+                            $rev_stmt->bind_param("sdssss", $sid, $tuition_paid, $today, $desc, $cert_number, $recorded_by);
+                            $rev_stmt->execute();
+                        }
+                        if ($reg_fee > 0) {
+                            $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?, ?)");
+                            $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
+                            $recorded_by2 = $user['username'] ?? 'system';
+                            $rev_stmt2->bind_param("sdssss", $sid, $reg_fee, $today, $desc2, $cert_number, $recorded_by2);
+                            $rev_stmt2->execute();
+                        }
+                        $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
+                    }
                     
-                    $success = 'Student successfully converted to full system student! They can now access all student features.';
-                    
-                    // Reload
-                    $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
-                    $stmt2->bind_param("i", $clearance_id);
-                    $stmt2->execute();
-                    $student = $stmt2->get_result()->fetch_assoc();
-                } else {
-                    $error = 'Failed to convert student: ' . $conn->error;
+                    logExamClearanceActivity($conn, $clearance_id, 'cleared', 'system', $uid, 'System (Auto-Clear)', "Auto-cleared after recorded payment. Certificate: {$cert_number}. Amount: MWK " . number_format($new_total, 2));
+                    notifyStudentCleared($conn, $student['email'], $student['full_name'], $cert_number, 'System (Auto-Clearance)');
+                    $success = "Payment recorded. Student AUTO-CLEARED — balance fully paid! Certificate: $cert_number";
                 }
+                
+                // Reload
+                $pstmt2 = $conn->prepare("SELECT ecp.*, u.username as reviewer_name FROM exam_clearance_payments ecp LEFT JOIN users u ON ecp.reviewed_by = u.user_id WHERE ecp.clearance_id = ? ORDER BY ecp.submitted_at DESC");
+                $pstmt2->bind_param("i", $clearance_id);
+                $pstmt2->execute();
+                $payments = $pstmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+                
+                $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
+                $stmt2->bind_param("i", $clearance_id);
+                $stmt2->execute();
+                $student = $stmt2->get_result()->fetch_assoc();
+            } else {
+                $error = 'Failed to record payment.';
             }
         }
     }
@@ -520,6 +568,46 @@ $breadcrumbs = [
                 </div>
             </div>
             
+            <!-- Registration Approval (for 'registered' status) -->
+            <?php if ($student['status'] === 'registered'): ?>
+            <div class="card shadow-sm border-0 mt-3">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-person-check me-2"></i>Registration Approval</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info py-2 mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        This student has registered and is waiting for approval. Approving will activate their account so they can log in and upload proof of payment.
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <strong>Registration Fee:</strong><br>
+                            <span class="text-success fs-5">MWK <?= number_format($student['registration_fee'] ?? 0, 2) ?></span>
+                            <small class="text-muted d-block"><?= ($student['entry_type'] === 'CE') ? 'Continuing Student' : (($student['entry_type'] === 'ME') ? 'Mature Entry' : 'Normal Entry') ?></small>
+                        </div>
+                        <div class="col-6">
+                            <strong>Total Invoice:</strong><br>
+                            <span class="text-primary fs-5">MWK <?= number_format($student['invoiced_amount'], 2) ?></span>
+                        </div>
+                    </div>
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Notes (optional)</label>
+                            <textarea name="finance_notes" class="form-control" rows="2" placeholder="Any notes about the approval..."><?= htmlspecialchars($student['finance_notes'] ?? '') ?></textarea>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" name="action" value="approve_registration" class="btn btn-success btn-lg" onclick="return confirm('Approve this registration? The student\'s account will be activated.')">
+                                <i class="bi bi-check-circle me-2"></i>Approve Registration & Activate Account
+                            </button>
+                            <button type="submit" name="action" value="reject_registration" class="btn btn-outline-danger" onclick="return confirm('Reject this registration?')">
+                                <i class="bi bi-x-circle me-2"></i>Reject Registration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <?php endif; ?>
+            
             <!-- Clearance Actions -->
             <?php if ($student['status'] !== 'cleared'): ?>
             <div class="card shadow-sm border-0 mt-3">
@@ -603,31 +691,46 @@ $breadcrumbs = [
             </div>
             <?php endif; ?>
             
-            <!-- Convert to Full Student (external students only) -->
-            <?php if (!$student['is_system_student'] || (isset($student['converted_to_student']) && !$student['converted_to_student'])): ?>
-            <?php if (empty($student['converted_to_student'])): ?>
-            <div class="card shadow-sm border-0 mt-3 border-info">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0"><i class="bi bi-person-plus me-2"></i>Convert to System Student</h5>
+            <!-- Record Payment Directly (finance enters payment without student uploading) -->
+            <?php if ($student['status'] !== 'cleared'): ?>
+            <div class="card shadow-sm border-0 mt-3 border-primary">
+                <div class="card-header" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;">
+                    <h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Record Payment Directly</h5>
                 </div>
                 <div class="card-body">
-                    <p class="small text-muted">Convert this external exam clearance student to a full system student. This will create a record in the students table and update their user role to <code>student</code>.</p>
-                    <form method="POST" onsubmit="return confirm('Convert this student to a full system student? This action cannot be undone.')">
-                        <input type="hidden" name="action" value="convert_to_student">
-                        <button type="submit" class="btn btn-info w-100"><i class="bi bi-arrow-repeat me-2"></i>Convert to Full Student</button>
+                    <p class="small text-muted mb-3">Record a payment on behalf of the student. This will be automatically approved and credited to their balance.</p>
+                    <form method="POST" id="recordPaymentForm">
+                        <input type="hidden" name="action" value="record_payment">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Amount (MWK) <span class="text-danger">*</span></label>
+                                <input type="number" name="amount" class="form-control" required min="1" step="0.01" placeholder="e.g. 500000">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Payment Reference <span class="text-danger">*</span></label>
+                                <input type="text" name="payment_reference" class="form-control" required placeholder="Transaction/Receipt No.">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Payment Date</label>
+                                <input type="date" name="payment_date" class="form-control" value="<?= date('Y-m-d') ?>">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Bank Name</label>
+                                <input type="text" name="bank_name" class="form-control" placeholder="e.g. National Bank">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Notes</label>
+                            <textarea name="review_notes" class="form-control" rows="2" placeholder="Payment recording notes..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100" onclick="return confirm('Record this payment? It will be automatically approved.')">
+                            <i class="bi bi-cash-coin me-2"></i>Record & Approve Payment
+                        </button>
                     </form>
                 </div>
             </div>
-            <?php else: ?>
-            <div class="card shadow-sm border-0 mt-3">
-                <div class="card-body text-center py-3">
-                    <span class="badge bg-info"><i class="bi bi-check-circle me-1"></i>Converted to System Student</span>
-                    <?php if (!empty($student['converted_at'])): ?>
-                    <p class="small text-muted mt-1 mb-0">on <?= date('M j, Y H:i', strtotime($student['converted_at'])) ?></p>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <?php endif; ?>
             <?php endif; ?>
         </div>
         

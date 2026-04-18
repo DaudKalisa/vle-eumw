@@ -84,12 +84,16 @@ $check->execute();
 $existing_clearance = $check->get_result()->fetch_assoc();
 
 // Determine step
-$step = 'apply'; // apply, upload_proof, done
+$step = 'apply'; // apply, pending_approval, awaiting_action, upload_proof, done
 if ($existing_clearance) {
     if (in_array($existing_clearance['status'], ['proof_submitted', 'cleared', 'rejected'])) {
         $step = 'done';
-    } elseif (in_array($existing_clearance['status'], ['invoiced', 'registered', 'proof_requested'])) {
+    } elseif ($existing_clearance['status'] === 'registered') {
+        $step = 'pending_approval';
+    } elseif ($existing_clearance['status'] === 'proof_requested') {
         $step = 'upload_proof';
+    } elseif ($existing_clearance['status'] === 'invoiced') {
+        $step = 'awaiting_action'; // show balance banner but no upload form
     }
 }
 
@@ -455,6 +459,99 @@ $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 
                 </div>
             </div>
             
+            <?php elseif ($step === 'pending_approval' && $existing_clearance): ?>
+            <!-- PENDING APPROVAL -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">
+                    <h5 class="mb-0"><i class="bi bi-hourglass-split me-2"></i>Registration Pending Approval</h5>
+                </div>
+                <div class="card-body text-center py-4">
+                    <div style="width:80px;height:80px;border-radius:50%;background:#ede9fe;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                        <i class="bi bi-clock-history" style="font-size:2.5rem;color:#7c3aed;"></i>
+                    </div>
+                    <h4 class="fw-bold">Your registration is under review</h4>
+                    <p class="text-muted mb-3" style="max-width:500px;margin:0 auto;">
+                        Your examination clearance registration has been submitted and is waiting for approval by the administrator. 
+                        You will be notified via email once your registration is approved.
+                    </p>
+                    
+                    <div class="invoice-box" style="max-width:400px;margin:0 auto;">
+                        <p class="text-muted mb-1">Your Invoice</p>
+                        <div class="invoice-amount">MWK <?= number_format($existing_clearance['invoiced_amount'], 2) ?></div>
+                        <small class="text-muted"><?= ucfirst($existing_clearance['program_type']) ?> Program</small>
+                        <?php if (($existing_clearance['registration_fee'] ?? 0) > 0): ?>
+                        <div class="mt-2" style="font-size:0.85rem;color:#666;">
+                            Registration Fee: MWK <?= number_format($existing_clearance['registration_fee'], 2) ?> |
+                            Tuition: MWK <?= number_format($existing_clearance['invoiced_amount'] - $existing_clearance['registration_fee'], 2) ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3 mb-0" style="max-width:500px;margin:0 auto;">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Once approved, you'll be able to upload your proof of payment from this page.
+                    </div>
+                </div>
+            </div>
+
+            <?php elseif ($step === 'awaiting_action' && $existing_clearance): ?>
+            <!-- INVOICED: Show balance banner, but no upload form until finance requests it -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header" style="background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;">
+                    <h5 class="mb-0"><i class="bi bi-receipt-cutoff me-2"></i>Invoice & Fee Breakdown</h5>
+                </div>
+                <div class="card-body text-center py-4">
+                    <div style="width:80px;height:80px;border-radius:50%;background:#e0f2fe;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                        <i class="bi bi-hourglass-split" style="font-size:2.5rem;color:#0284c7;"></i>
+                    </div>
+                    <h4 class="fw-bold">Your Application is Being Processed</h4>
+                    <p class="text-muted mb-3" style="max-width:500px;margin:0 auto;">
+                        Your registration has been approved. The Finance Office will review your payment status. 
+                        You will be notified if proof of payment is required.
+                    </p>
+                    
+                    <!-- Balance Banner -->
+                    <div class="row justify-content-center mt-4">
+                        <div class="col-md-8">
+                            <div class="card border-0 shadow-sm" style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:12px;">
+                                <div class="card-body p-4">
+                                    <h6 class="fw-bold text-success mb-3"><i class="bi bi-cash-stack me-2"></i>Your Fee Summary</h6>
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span class="text-muted">Registration Fee:</span>
+                                        <strong>MWK <?= number_format($existing_clearance['registration_fee'] ?? 0, 2) ?></strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span class="text-muted">Tuition Fee:</span>
+                                        <strong>MWK <?= number_format(($existing_clearance['invoiced_amount'] ?? 0) - ($existing_clearance['registration_fee'] ?? 0), 2) ?></strong>
+                                    </div>
+                                    <hr>
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span class="fw-bold">Total Invoiced:</span>
+                                        <strong class="text-primary fs-5">MWK <?= number_format($existing_clearance['invoiced_amount'], 2) ?></strong>
+                                    </div>
+                                    <?php if (($existing_clearance['balance'] ?? $existing_clearance['invoiced_amount']) > 0): ?>
+                                    <div class="d-flex justify-content-between">
+                                        <span class="fw-bold">Balance:</span>
+                                        <strong class="text-danger fs-5">MWK <?= number_format($existing_clearance['balance'] ?? $existing_clearance['invoiced_amount'], 2) ?></strong>
+                                    </div>
+                                    <?php else: ?>
+                                    <div class="d-flex justify-content-between">
+                                        <span class="fw-bold">Balance:</span>
+                                        <strong class="text-success fs-5">Fully Paid</strong>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mt-4 mb-0" style="max-width:500px;margin:0 auto;">
+                        <i class="bi bi-info-circle me-1"></i>
+                        If the Finance Office requires proof of payment, you will be notified via email and the upload option will appear here.
+                    </div>
+                </div>
+            </div>
+
             <?php elseif ($step === 'upload_proof' && $existing_clearance): ?>
             <!-- STEP 2: Upload Proof -->
             <div class="card shadow-sm border-0">
@@ -484,15 +581,35 @@ $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 
                     </div>
                     <?php endif; ?>
                     
-                    <div class="invoice-box">
-                        <p class="mb-1 text-muted">Your Invoice Amount (<?= ucfirst($existing_clearance['program_type']) ?>)</p>
-                        <div class="invoice-amount">MWK <?= number_format($existing_clearance['invoiced_amount'], 2) ?></div>
-                        <p class="mb-0 small text-muted"><?= htmlspecialchars($existing_clearance['full_name']) ?> (<?= htmlspecialchars($existing_clearance['student_id']) ?>)</p>
-                        <?php if ($existing_clearance['balance'] > 0): ?>
-                            <span class="badge bg-danger mt-2">Balance: MWK <?= number_format($existing_clearance['balance'], 2) ?></span>
-                        <?php else: ?>
-                            <span class="badge bg-success mt-2">Fully Paid</span>
-                        <?php endif; ?>
+                    <!-- Fee Breakdown Banner -->
+                    <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:12px;">
+                        <div class="card-body p-4">
+                            <h6 class="fw-bold text-success mb-3"><i class="bi bi-cash-stack me-2"></i>Your Fee Summary</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Registration Fee:</span>
+                                <strong>MWK <?= number_format($existing_clearance['registration_fee'] ?? 0, 2) ?></strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Tuition Fee:</span>
+                                <strong>MWK <?= number_format(($existing_clearance['invoiced_amount'] ?? 0) - ($existing_clearance['registration_fee'] ?? 0), 2) ?></strong>
+                            </div>
+                            <hr>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="fw-bold">Total Invoiced:</span>
+                                <strong class="text-primary fs-5">MWK <?= number_format($existing_clearance['invoiced_amount'], 2) ?></strong>
+                            </div>
+                            <?php if (($existing_clearance['balance'] ?? $existing_clearance['invoiced_amount']) > 0): ?>
+                            <div class="d-flex justify-content-between">
+                                <span class="fw-bold">Balance:</span>
+                                <strong class="text-danger fs-5">MWK <?= number_format($existing_clearance['balance'] ?? $existing_clearance['invoiced_amount'], 2) ?></strong>
+                            </div>
+                            <?php else: ?>
+                            <div class="d-flex justify-content-between">
+                                <span class="fw-bold">Balance:</span>
+                                <strong class="text-success fs-5">Fully Paid</strong>
+                            </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
                     
                     <form method="POST" enctype="multipart/form-data">
