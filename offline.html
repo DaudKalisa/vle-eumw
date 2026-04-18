@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - EUMW VLE</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #1e293b;
+        }
+        .offline-card {
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+            padding: 50px 40px;
+            text-align: center;
+            max-width: 420px;
+            width: 100%;
+        }
+        .offline-icon {
+            width: 100px; height: 100px;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 48px;
+        }
+        h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 12px; }
+        p { color: #64748b; font-size: 0.95rem; line-height: 1.6; margin-bottom: 24px; }
+        .btn-retry {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 32px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn-retry:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(79,70,229,0.4);
+        }
+        .tips { 
+            margin-top: 24px; 
+            padding: 16px; 
+            background: #f8fafc; 
+            border-radius: 12px; 
+            text-align: left;
+            font-size: 0.85rem;
+            color: #475569;
+        }
+        .tips h3 { font-size: 0.85rem; margin-bottom: 8px; color: #1e293b; }
+        .tips ul { padding-left: 18px; margin: 0; }
+        .tips li { margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div class="offline-card">
+        <div class="offline-icon">&#9888;&#65039;</div>
+        <h1>You're Offline</h1>
+        <p>It looks like you've lost your internet connection. The EUMW VLE needs an internet connection to load your courses and content.</p>
+        <button class="btn-retry" onclick="window.location.reload()">
+            &#128260; Try Again
+        </button>
+        <div class="tips">
+            <h3>Troubleshooting Tips:</h3>
+            <ul>
+                <li>Check your Wi-Fi or mobile data connection</li>
+                <li>Try moving to an area with better signal</li>
+                <li>Turn airplane mode off if enabled</li>
+                <li>Restart your browser and try again</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

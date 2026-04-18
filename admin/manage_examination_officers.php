@@ -7,14 +7,14 @@ requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
-// Ensure examination_manager role exists in ENUM
+// Ensure examination_officer role exists in ENUM
 try {
     $col_check = $conn->query("SHOW COLUMNS FROM users LIKE 'role'");
     if ($col_check && $row = $col_check->fetch_assoc()) {
-        if (strpos($row['Type'], 'examination_manager') === false) {
+        if (strpos($row['Type'], 'examination_officer') === false) {
             preg_match("/enum\((.*)\)/", $row['Type'], $matches);
             if (!empty($matches[1])) {
-                $new_enum = str_replace(")", ",'examination_manager')", "enum(" . $matches[1] . ")");
+                $new_enum = str_replace(")", ",'examination_officer')", "enum(" . $matches[1] . ")");
                 $conn->query("ALTER TABLE users MODIFY COLUMN role " . $new_enum . " DEFAULT 'student'");
             }
         }
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone'] ?? '');
         $department = trim($_POST['department'] ?? 'Academic Affairs');
-        $position = trim($_POST['position'] ?? 'Examination Officer');
+        $position = 'Examination Officer';
         $username = trim($_POST['username']);
         $password = trim($_POST['password']);
 
@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             // Create user account
                             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                            $user_stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_staff_id) VALUES (?, ?, ?, 'examination_manager', ?)");
+                            $user_stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_staff_id) VALUES (?, ?, ?, 'examination_officer', ?)");
                             $user_stmt->bind_param("sssi", $username, $email, $hashed_password, $manager_id);
                             $user_stmt->execute();
 
@@ -90,22 +90,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $success = "Examination officer '$full_name' has been added successfully.";
 
                             // Send welcome email
+                            $login_url = defined('SYSTEM_URL') ? SYSTEM_URL . '/login.php' : '/vle-eumw/login.php';
                             $subject = "Welcome to VLE - Examination Officer Account";
                             $message = "
                             <html>
-                            <body>
-                                <h2>Welcome to the Virtual Learning Environment</h2>
-                                <p>Dear $full_name,</p>
-                                <p>Your examination officer account has been created successfully.</p>
-                                <p><strong>Login Details:</strong></p>
-                                <ul>
-                                    <li><strong>Username:</strong> $username</li>
-                                    <li><strong>Email:</strong> $email</li>
-                                    <li><strong>Password:</strong> $password</li>
-                                </ul>
-                                <p><strong>Dashboard:</strong> <a href='" . SYSTEM_URL . "/examination_officer/dashboard.php'>Examination Officer Dashboard</a></p>
-                                <p>Please change your password after first login for security purposes.</p>
-                                <p>Best regards,<br>VLE Administration Team</p>
+                            <body style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+                                <div style='background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:24px;text-align:center;color:#fff;border-radius:12px 12px 0 0;'>
+                                    <h2 style='margin:0;'>\u2705 Welcome to VLE</h2>
+                                    <p style='margin:8px 0 0;opacity:0.9;'>Examination Officer Account</p>
+                                </div>
+                                <div style='background:#fff;padding:24px;border:1px solid #e2e8f0;'>
+                                    <p>Dear <strong>" . htmlspecialchars($full_name) . "</strong>,</p>
+                                    <p>Your <strong>Examination Officer</strong> account has been created successfully.</p>
+                                    <div style='background:#f0fdf4;border:1px solid #bbf7d0;padding:16px;border-radius:8px;margin:16px 0;'>
+                                        <p style='margin:4px 0;'><strong>Username:</strong> " . htmlspecialchars($username) . "</p>
+                                        <p style='margin:4px 0;'><strong>Email:</strong> " . htmlspecialchars($email) . "</p>
+                                        <p style='margin:4px 0;'><strong>Password:</strong> " . htmlspecialchars($password) . "</p>
+                                    </div>
+                                    <p style='color:#dc2626;font-size:0.9em;'>\u26a0\ufe0f Please change your password after first login for security purposes.</p>
+                                    <div style='text-align:center;margin:20px 0;'>
+                                        <a href='" . htmlspecialchars($login_url) . "' style='display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;'>\ud83d\udd11 Login to Your Portal</a>
+                                    </div>
+                                    <p style='font-size:0.85em;color:#64748b;text-align:center;'>Or copy this link: <a href='" . htmlspecialchars($login_url) . "' style='color:#2563eb;'>" . htmlspecialchars($login_url) . "</a></p>
+                                </div>
                             </body>
                             </html>
                             ";
@@ -200,37 +207,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    } elseif (isset($_POST['delete_officer'])) {
+        $manager_id = (int)$_POST['manager_id'];
+        
+        $conn->begin_transaction();
+        try {
+            // Get officer info for logging
+            $info_stmt = $conn->prepare("SELECT full_name, email FROM examination_managers WHERE manager_id = ?");
+            $info_stmt->bind_param("i", $manager_id);
+            $info_stmt->execute();
+            $officer_info = $info_stmt->get_result()->fetch_assoc();
+            
+            // Delete from users table (linked via related_staff_id)
+            $delete_user_stmt = $conn->prepare("DELETE FROM users WHERE related_staff_id = ? AND role IN ('examination_manager','examination_officer')");
+            $delete_user_stmt->bind_param("i", $manager_id);
+            $delete_user_stmt->execute();
+            
+            // Delete from examination_managers table
+            $delete_manager_stmt = $conn->prepare("DELETE FROM examination_managers WHERE manager_id = ?");
+            $delete_manager_stmt->bind_param("i", $manager_id);
+            $delete_manager_stmt->execute();
+            
+            $conn->commit();
+            $success = "Examination officer '" . ($officer_info['full_name'] ?? 'Unknown') . "' has been permanently deleted.";
+        } catch (Exception $e) {
+            $conn->rollback();
+            $error = "Failed to delete examination officer: " . $e->getMessage();
+        }
     }
 }
 
-// Get all examination officers (from dedicated table + users with examination_manager role)
+// Get examination officers only (position = 'Examination Officer' from examination_managers table)
 $query = "
     SELECT em.*, u.username, u.user_id, u.additional_roles,
            (SELECT COUNT(*) FROM exams WHERE created_by = u.user_id) as exams_count,
            (SELECT COUNT(*) FROM exam_sessions WHERE exam_id IN (SELECT exam_id FROM exams WHERE created_by = u.user_id)) as sessions_count
     FROM examination_managers em
-    LEFT JOIN users u ON em.manager_id = u.related_staff_id
-    
-    UNION
-    
-    SELECT NULL as manager_id, 
-           COALESCE(l.full_name, u2.username) as full_name, 
-           u2.email, 
-           COALESCE(l.phone, '') as phone, 
-           COALESCE(l.department, 'Academic Affairs') as department, 
-           'Examination Officer' as position, 
-           u2.is_active, 
-           u2.created_at, 
-           u2.created_at as updated_at,
-           u2.username, u2.user_id, u2.additional_roles,
-           (SELECT COUNT(*) FROM exams WHERE created_by = u2.user_id) as exams_count,
-           (SELECT COUNT(*) FROM exam_sessions WHERE exam_id IN (SELECT exam_id FROM exams WHERE created_by = u2.user_id)) as sessions_count
-    FROM users u2
-    LEFT JOIN lecturers l ON u2.related_lecturer_id = l.lecturer_id
-    WHERE (u2.role = 'examination_manager' OR FIND_IN_SET('examination_manager', COALESCE(u2.additional_roles, '')))
-    AND u2.user_id NOT IN (SELECT COALESCE(u3.user_id, 0) FROM users u3 INNER JOIN examination_managers em2 ON u3.related_staff_id = em2.manager_id)
-    
-    ORDER BY full_name
+    LEFT JOIN users u ON em.manager_id = u.related_staff_id AND u.role IN ('examination_officer','examination_manager')
+    WHERE em.position = 'Examination Officer'
+    ORDER BY em.full_name
 ";
 
 $result = $conn->query($query);
@@ -243,6 +258,7 @@ $stats_query = "
         SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_officers,
         SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) as inactive_officers
     FROM examination_managers
+    WHERE position = 'Examination Officer'
 ";
 $stats_result = $conn->query($stats_query);
 $stats = $stats_result->fetch_assoc();
@@ -274,7 +290,7 @@ $stats = $stats_result->fetch_assoc();
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
             <div>
                 <h2 class="vle-page-title"><i class="bi bi-shield-check me-2"></i>Examination Officers</h2>
-                <p class="text-muted mb-0">Manage examination officer accounts and permissions</p>
+                <p class="text-muted mb-0">Manage examination officer accounts — officers handle day-to-day exam operations</p>
             </div>
             <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addOfficerModal">
                 <i class="bi bi-person-plus me-1"></i>Add Officer
@@ -389,6 +405,16 @@ $stats = $stats_result->fetch_assoc();
                                                     <i class="bi bi-<?= $officer['is_active'] ? 'pause-circle' : 'play-circle' ?>"></i>
                                                 </button>
                                             </form>
+                                            <?php if ($officer['manager_id']): ?>
+                                            <form method="post" style="display:inline;">
+                                                <input type="hidden" name="manager_id" value="<?= $officer['manager_id'] ?>">
+                                                <button type="submit" name="delete_officer" class="btn btn-outline-danger" 
+                                                        onclick="return confirm('Are you sure you want to PERMANENTLY DELETE this examination officer? This action cannot be undone.');"
+                                                        title="Delete Permanently">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -445,10 +471,6 @@ $stats = $stats_result->fetch_assoc();
                                 <input type="text" class="form-control" name="department" value="Academic Affairs">
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Position</label>
-                                <input type="text" class="form-control" name="position" value="Examination Officer">
-                            </div>
-                            <div class="col-md-6">
                                 <label class="form-label">Username <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" name="username" required>
                             </div>
@@ -500,13 +522,9 @@ $stats = $stats_result->fetch_assoc();
                                 <label class="form-label">Phone</label>
                                 <input type="tel" class="form-control" id="edit_phone" name="phone">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <label class="form-label">Department</label>
                                 <input type="text" class="form-control" id="edit_department" name="department">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Position</label>
-                                <input type="text" class="form-control" id="edit_position" name="position">
                             </div>
                         </div>
                     </div>
@@ -644,7 +662,6 @@ $stats = $stats_result->fetch_assoc();
                     document.getElementById('edit_email').value = data.officer.email;
                     document.getElementById('edit_phone').value = data.officer.phone || '';
                     document.getElementById('edit_department').value = data.officer.department;
-                    document.getElementById('edit_position').value = data.officer.position;
                     new bootstrap.Modal(document.getElementById('editOfficerModal')).show();
                 } else {
                     alert('Failed to load officer details');

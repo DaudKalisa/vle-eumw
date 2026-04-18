@@ -11,9 +11,12 @@ $is_local = (
         strpos($_SERVER['HTTP_HOST'], '127.0.0.1:') === 0 ||
         strpos($_SERVER['HTTP_HOST'], '192.168.') === 0 || // Local network
         strpos($_SERVER['HTTP_HOST'], '10.') === 0 ||      // Private network
-        strpos($_SERVER['HTTP_HOST'], '172.16.') === 0     // Private network
+        strpos($_SERVER['HTTP_HOST'], '172.16.') === 0 ||  // Private network
+        preg_match('/^[A-Za-z0-9\-]+$/', $_SERVER['HTTP_HOST']) || // Computer hostname without domain
+        preg_match('/^[A-Za-z0-9\-]+:\d+$/', $_SERVER['HTTP_HOST']) // Computer hostname with port
     )) ||
-    php_sapi_name() === 'cli' // Always treat CLI as local
+    php_sapi_name() === 'cli' || // Always treat CLI as local
+    !isset($_SERVER['HTTP_HOST']) // No host = local/CLI
 );
 
 if ($is_local) {
@@ -24,10 +27,14 @@ if ($is_local) {
     define('DB_NAME', 'university_portal');
     
     // Auto-detect the correct site URL based on the actual path
-    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'];
-    $script = dirname($_SERVER['SCRIPT_NAME']);
-    define('SITE_URL', $protocol . '://' . $host . $script);
+    if (isset($_SERVER['HTTP_HOST'])) {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'];
+        $script = isset($_SERVER['SCRIPT_NAME']) ? dirname($_SERVER['SCRIPT_NAME']) : '';
+        define('SITE_URL', $protocol . '://' . $host . $script);
+    } else {
+        define('SITE_URL', 'http://localhost/vle-eumw');
+    }
     
     define('APP_ENV', 'development');
     
@@ -58,41 +65,60 @@ function getDbConnection() {
 
     // Check if connection is null or was closed
     if ($conn === null || !@$conn->ping()) {
-        $conn = new mysqli(DB_HOST, DB_USER, DB_PASS);
+        try {
+            $conn = new mysqli(DB_HOST, DB_USER, DB_PASS);
 
-        if ($conn->connect_error) {
-            // In production, log error instead of displaying
+            if ($conn->connect_error) {
+                throw new Exception($conn->connect_error);
+            }
+
+            // Create database if it doesn't exist (local only)
+            if (defined('APP_ENV') && APP_ENV === 'development') {
+                $sql = "CREATE DATABASE IF NOT EXISTS " . DB_NAME;
+                if ($conn->query($sql) === FALSE) {
+                    throw new Exception("Error creating database: " . $conn->error);
+                }
+            }
+
+            // Select the database
+            if (!$conn->select_db(DB_NAME)) {
+                throw new Exception("Database selection failed: " . $conn->error);
+            }
+
+            if (!$conn->set_charset(DB_CHARSET)) {
+                throw new Exception("Failed to set database charset: " . $conn->error);
+            }
+        } catch (Throwable $e) {
+            // In production, log internal details and show generic error
             if (defined('APP_ENV') && APP_ENV === 'production') {
-                error_log("Database connection failed: " . $conn->connect_error);
+                error_log("Database connection/setup failed: " . $e->getMessage());
                 die("Database connection error. Please contact administrator.");
-            } else {
-                die("Connection failed: " . $conn->connect_error);
             }
-        }
 
-        // Create database if it doesn't exist (local only)
-        if (defined('APP_ENV') && APP_ENV === 'development') {
-            $sql = "CREATE DATABASE IF NOT EXISTS " . DB_NAME;
-            if ($conn->query($sql) === FALSE) {
-                die("Error creating database: " . $conn->error);
-            }
+            // Development error message
+            die("Database error: " . $e->getMessage());
         }
-
-        // Select the database
-        if (!$conn->select_db(DB_NAME)) {
-            if (defined('APP_ENV') && APP_ENV === 'production') {
-                error_log("Database selection failed: " . $conn->error);
-                die("Database error. Please contact administrator.");
-            } else {
-                die("Database selection failed: " . $conn->error);
-            }
-        }
-
-        $conn->set_charset(DB_CHARSET);
     }
 
     return $conn;
 }
+
+// Apply system timezone from database settings
+function applySystemTimezone() {
+    try {
+        $conn = getDbConnection();
+        $r = $conn->query("SELECT system_timezone FROM university_settings LIMIT 1");
+        if ($r && $row = $r->fetch_assoc()) {
+            $tz = $row['system_timezone'] ?? 'Africa/Blantyre';
+            if (in_array($tz, timezone_identifiers_list())) {
+                date_default_timezone_set($tz);
+                return;
+            }
+        }
+    } catch (Exception $e) {}
+    date_default_timezone_set('Africa/Blantyre');
+}
+applySystemTimezone();
 
 // Session timeout settings (15 minutes = 900 seconds)
 define('SESSION_TIMEOUT', 900); // 15 minutes in seconds

@@ -223,6 +223,10 @@ $user = getCurrentUser();
             position: sticky;
             top: 20px;
         }
+        .integrity-card { background: #f8f9ff; border: 1px solid #e0e4f5; border-radius: 8px; padding: 16px; }
+        .integrity-bar-label { font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; }
+        .integrity-bar { height: 22px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; line-height: 22px; }
+        .integrity-score { font-size: 1.1rem; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -552,6 +556,29 @@ $user = getCurrentUser();
                 `;
             }
 
+            // Plagiarism & AI Check Card
+            if (data.submission) {
+                const sid = data.submission.submission_id;
+                const hasPrev = data.submission.plagiarism_score !== null && data.submission.plagiarism_score !== undefined;
+                const pScore = hasPrev ? parseFloat(data.submission.plagiarism_score) : null;
+                const aScore = hasPrev ? parseFloat(data.submission.ai_score) : null;
+                const checkDate = data.submission.check_date || '';
+
+                html += `
+                    <div class="integrity-card mb-3" id="integrityCard_${sid}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0"><i class="bi bi-shield-check me-1"></i> Plagiarism & AI Check</h6>
+                            <button class="btn btn-sm btn-outline-primary" onclick="runIntegrityCheck(${sid})" id="checkBtn_${sid}">
+                                <i class="bi bi-search me-1"></i>${hasPrev ? 'Re-check' : 'Check Now'}
+                            </button>
+                        </div>
+                        <div id="integrityResults_${sid}">
+                            ${hasPrev ? renderIntegrityBars(pScore, aScore, checkDate) : '<p class="text-muted small mb-0">Click <strong>Check Now</strong> to scan for plagiarism similarity and AI-generated content.</p>'}
+                        </div>
+                    </div>
+                `;
+            }
+
             // Display text content
             if (data.submission && data.submission.text_content) {
                 html += `
@@ -651,6 +678,103 @@ $user = getCurrentUser();
                 return new bootstrap.Tooltip(tooltipTriggerEl);
             });
         });
+
+        function getBarColor(score, type) {
+            if (type === 'plagiarism') {
+                if (score <= 15) return '#28a745';
+                if (score <= 30) return '#ffc107';
+                if (score <= 50) return '#fd7e14';
+                return '#dc3545';
+            } else {
+                if (score <= 20) return '#28a745';
+                if (score <= 40) return '#ffc107';
+                if (score <= 60) return '#fd7e14';
+                return '#dc3545';
+            }
+        }
+
+        function getScoreLabel(score, type) {
+            if (type === 'plagiarism') {
+                if (score <= 15) return 'Original';
+                if (score <= 30) return 'Low Similarity';
+                if (score <= 50) return 'Moderate Similarity';
+                return 'High Similarity';
+            } else {
+                if (score <= 20) return 'Likely Human';
+                if (score <= 40) return 'Mostly Human';
+                if (score <= 60) return 'Mixed';
+                return 'Likely AI-Generated';
+            }
+        }
+
+        function renderIntegrityBars(pScore, aScore, checkDate) {
+            const pColor = getBarColor(pScore, 'plagiarism');
+            const aColor = getBarColor(aScore, 'ai');
+            const pLabel = getScoreLabel(pScore, 'plagiarism');
+            const aLabel = getScoreLabel(aScore, 'ai');
+
+            return `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="integrity-bar-label"><i class="bi bi-files me-1"></i>Plagiarism Similarity</span>
+                        <span class="integrity-score" style="color:${pColor}">${pScore}%</span>
+                    </div>
+                    <div class="progress" style="height:22px;">
+                        <div class="progress-bar integrity-bar" role="progressbar" 
+                             style="width:${pScore}%;background:${pColor};" 
+                             aria-valuenow="${pScore}" aria-valuemin="0" aria-valuemax="100">
+                             ${pScore > 10 ? pLabel : ''}
+                        </div>
+                    </div>
+                    <small class="text-muted">${pLabel}</small>
+                </div>
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="integrity-bar-label"><i class="bi bi-robot me-1"></i>AI-Generated Content</span>
+                        <span class="integrity-score" style="color:${aColor}">${aScore}%</span>
+                    </div>
+                    <div class="progress" style="height:22px;">
+                        <div class="progress-bar integrity-bar" role="progressbar" 
+                             style="width:${aScore}%;background:${aColor};" 
+                             aria-valuenow="${aScore}" aria-valuemin="0" aria-valuemax="100">
+                             ${aScore > 10 ? aLabel : ''}
+                        </div>
+                    </div>
+                    <small class="text-muted">${aLabel}</small>
+                </div>
+                ${checkDate ? '<div class="text-muted text-end" style="font-size:0.72rem;"><i class="bi bi-clock me-1"></i>Checked: ' + checkDate + '</div>' : ''}
+            `;
+        }
+
+        function runIntegrityCheck(submissionId) {
+            const btn = document.getElementById('checkBtn_' + submissionId);
+            const resultsDiv = document.getElementById('integrityResults_' + submissionId);
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Analyzing...';
+            resultsDiv.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div><p class="text-muted mt-2 small">Extracting text and running plagiarism & AI analysis...</p></div>';
+
+            fetch(`../api/check_submission.php?submission_id=${submissionId}`)
+                .then(r => r.json())
+                .then(data => {
+                    btn.disabled = false;
+                    if (data.success) {
+                        btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Re-check';
+                        resultsDiv.innerHTML = renderIntegrityBars(data.plagiarism_score, data.ai_score, data.check_date);
+                        if (data.word_count) {
+                            resultsDiv.innerHTML += `<div class="text-muted text-end" style="font-size:0.72rem;"><i class="bi bi-body-text me-1"></i>${data.word_count} words analyzed</div>`;
+                        }
+                    } else {
+                        btn.innerHTML = '<i class="bi bi-search me-1"></i>Check Now';
+                        resultsDiv.innerHTML = `<div class="alert alert-warning small mb-0"><i class="bi bi-exclamation-triangle me-1"></i>${data.error}</div>`;
+                    }
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-search me-1"></i>Retry';
+                    resultsDiv.innerHTML = '<div class="alert alert-danger small mb-0">Check failed. Please try again.</div>';
+                });
+        }
     </script>
 </body>
 </html>

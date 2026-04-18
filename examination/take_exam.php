@@ -118,8 +118,25 @@ if ($exam && !$session && !$error && !isset($need_token)) {
 
 // --- Load questions ---
 if ($exam && $session_id > 0 && !$error && !isset($need_token)) {
-    $order = $exam['shuffle_questions'] ? 'RAND()' : 'question_order ASC, question_id ASC';
-    $result = $conn->query("SELECT * FROM exam_questions WHERE exam_id = $exam_id ORDER BY $order");
+    // Load sections
+    $exam_sections = [];
+    $sec_r = $conn->query("SELECT * FROM exam_sections WHERE exam_id = $exam_id ORDER BY section_order");
+    if ($sec_r) while ($sr = $sec_r->fetch_assoc()) $exam_sections[$sr['section_id']] = $sr;
+    
+    $order = $exam['shuffle_questions'] ? 'RAND()' : 'section_id ASC, question_order ASC, question_id ASC';
+    $result = $conn->query("SELECT * FROM exam_questions WHERE exam_id = $exam_id AND (parent_question_id IS NULL OR parent_question_id = 0) ORDER BY $order");
+    // Also load sub-questions
+    $sub_questions = [];
+    $sub_r = $conn->query("SELECT * FROM exam_questions WHERE exam_id = $exam_id AND parent_question_id IS NOT NULL AND parent_question_id > 0 ORDER BY question_order ASC, question_id ASC");
+    if ($sub_r) while ($sq = $sub_r->fetch_assoc()) {
+        $sq['options_array'] = json_decode($sq['options'] ?? '[]', true) ?: [];
+        $ans_stmt2 = $conn->prepare("SELECT answer_text FROM exam_answers WHERE session_id = ? AND question_id = ?");
+        $ans_stmt2->bind_param("ii", $session_id, $sq['question_id']);
+        $ans_stmt2->execute();
+        $ans_row2 = $ans_stmt2->get_result()->fetch_assoc();
+        $sq['saved_answer'] = $ans_row2['answer_text'] ?? '';
+        $sub_questions[$sq['parent_question_id']][] = $sq;
+    }
     if ($result) while ($row = $result->fetch_assoc()) {
         // Decode options
         $row['options_array'] = json_decode($row['options'] ?? '[]', true) ?: [];
@@ -132,13 +149,18 @@ if ($exam && $session_id > 0 && !$error && !isset($need_token)) {
         $questions[] = $row;
     }
 
-    // Calculate time remaining
+    // Calculate time remaining using server time
     if (isset($session['started_at'])) {
-        $elapsed = time() - strtotime($session['started_at']);
+        $started_ts = strtotime($session['started_at']);
         $total_seconds = $exam['duration_minutes'] * 60;
-        $time_remaining = max(0, $total_seconds - $elapsed);
+        $exam_end_ts = $started_ts + $total_seconds;
+        $server_now_ts = time();
+        $time_remaining = max(0, $exam_end_ts - $server_now_ts);
     } else {
-        $time_remaining = ($session['time_remaining'] ?? $exam['duration_minutes'] * 60);
+        $total_seconds = $exam['duration_minutes'] * 60;
+        $exam_end_ts = time() + $total_seconds;
+        $server_now_ts = time();
+        $time_remaining = $total_seconds;
     }
 }
 
@@ -163,6 +185,9 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <script src="../assets/js/theme-switcher.js"></script>
+    <script src="../assets/js/auto-logout.js"></script>
+    <?php include '../includes/tinymce_head.php'; ?>
     <style>
         body.exam-mode { overflow: hidden; }
         .exam-topbar {
@@ -422,8 +447,24 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
                     <span class="badge bg-light text-dark"><?= $q['marks'] ?> mark(s)</span>
                 </div>
                 <div class="card-body">
-                    <div class="mb-4" style="font-size: 1.1rem; line-height: 1.6;">
-                        <?= nl2br(htmlspecialchars($q['question_text'])) ?>
+                    <?php
+                    // Section header if this is the first question in a section
+                    $q_sec = $q['section_id'] ?? null;
+                    if ($q_sec && isset($exam_sections[$q_sec])): 
+                        $sec = $exam_sections[$q_sec];
+                        // Only show section header once per section
+                        static $shown_sections = [];
+                        if (!in_array($q_sec, $shown_sections)):
+                            $shown_sections[] = $q_sec;
+                    ?>
+                    <div class="alert alert-dark mb-3 py-2">
+                        <strong>Section <?= htmlspecialchars($sec['section_label']) ?>: <?= htmlspecialchars($sec['section_title']) ?></strong>
+                        <?php if ($sec['instructions']): ?><br><small><?= htmlspecialchars($sec['instructions']) ?></small><?php endif; ?>
+                        <?php if ($sec['total_marks']): ?><span class="badge bg-light text-dark float-end"><?= $sec['total_marks'] ?> marks</span><?php endif; ?>
+                    </div>
+                    <?php endif; endif; ?>
+                    <div class="mb-4 question-rich-text" style="font-size: 1.1rem; line-height: 1.6;">
+                        <?= $q['question_text'] ?>
                     </div>
 
                     <?php if ($q['question_type'] === 'multiple_choice'): ?>
@@ -470,9 +511,41 @@ $breadcrumbs = [['title' => 'Examinations', 'url' => 'exams.php'], ['title' => '
                                onblur="saveAnswer(<?= $q['question_id'] ?>, this.value, <?= $i ?>)">
 
                     <?php elseif ($q['question_type'] === 'essay'): ?>
-                        <textarea class="form-control" id="answer_<?= $q['question_id'] ?>" rows="8" placeholder="Write your essay answer..."
-                                  onblur="saveAnswer(<?= $q['question_id'] ?>, this.value, <?= $i ?>)"><?= htmlspecialchars($q['saved_answer']) ?></textarea>
-                        <small class="text-muted mt-1 d-block">Auto-saves when you click outside the text area</small>
+                        <textarea class="form-control essay-tinymce" id="answer_<?= $q['question_id'] ?>" rows="8" 
+                                  data-qid="<?= $q['question_id'] ?>" data-index="<?= $i ?>"><?= htmlspecialchars($q['saved_answer']) ?></textarea>
+                        <small class="text-muted mt-1 d-block"><i class="bi bi-save me-1"></i>Auto-saves periodically</small>
+                    <?php endif; ?>
+                    
+                    <?php // Render sub-questions if any ?>
+                    <?php if (!empty($sub_questions[$q['question_id']])): ?>
+                    <div class="mt-4 border-start border-3 border-primary ps-3">
+                        <h6 class="text-muted mb-3"><i class="bi bi-diagram-3 me-1"></i>Sub-questions:</h6>
+                        <?php foreach ($sub_questions[$q['question_id']] as $si => $sq): 
+                            $sl = $sq['sub_label'] ?: chr(97 + $si);
+                        ?>
+                        <div class="card border-0 bg-light mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <strong>(<?= htmlspecialchars($sl) ?>)</strong>
+                                    <span class="badge bg-dark"><?= $sq['marks'] ?> mark(s)</span>
+                                </div>
+                                <div class="mb-3 question-rich-text"><?= $sq['question_text'] ?></div>
+                                <?php if ($sq['question_type'] === 'multiple_choice'): ?>
+                                    <?php foreach ($sq['options_array'] as $soi => $sopt): $sopt_text = is_array($sopt) ? ($sopt['text'] ?? '') : $sopt; ?>
+                                    <label class="option-label"><input type="radio" name="answer_<?= $sq['question_id'] ?>" value="<?= htmlspecialchars($sopt_text) ?>" class="form-check-input me-2" onchange="saveAnswer(<?= $sq['question_id'] ?>, this.value, <?= $i ?>)" <?= $sq['saved_answer'] === $sopt_text ? 'checked' : '' ?>><span class="option-text"><?= htmlspecialchars($sopt_text) ?></span></label>
+                                    <?php endforeach; ?>
+                                <?php elseif ($sq['question_type'] === 'true_false'): ?>
+                                    <label class="option-label"><input type="radio" name="answer_<?= $sq['question_id'] ?>" value="True" class="form-check-input me-2" onchange="saveAnswer(<?= $sq['question_id'] ?>, 'True', <?= $i ?>)" <?= $sq['saved_answer']==='True'?'checked':'' ?>><span class="option-text">True</span></label>
+                                    <label class="option-label"><input type="radio" name="answer_<?= $sq['question_id'] ?>" value="False" class="form-check-input me-2" onchange="saveAnswer(<?= $sq['question_id'] ?>, 'False', <?= $i ?>)" <?= $sq['saved_answer']==='False'?'checked':'' ?>><span class="option-text">False</span></label>
+                                <?php elseif ($sq['question_type'] === 'short_answer'): ?>
+                                    <input type="text" class="form-control" id="answer_<?= $sq['question_id'] ?>" value="<?= htmlspecialchars($sq['saved_answer']) ?>" placeholder="Type your answer" onblur="saveAnswer(<?= $sq['question_id'] ?>, this.value, <?= $i ?>)">
+                                <?php elseif ($sq['question_type'] === 'essay'): ?>
+                                    <textarea class="form-control essay-tinymce" id="answer_<?= $sq['question_id'] ?>" rows="5" data-qid="<?= $sq['question_id'] ?>" data-index="<?= $i ?>"><?= htmlspecialchars($sq['saved_answer']) ?></textarea>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
                     <?php endif; ?>
                 </div>
                 <div class="card-footer bg-white d-flex justify-content-between">
@@ -545,11 +618,30 @@ const REQUIRE_CAMERA = true; // Camera is ALWAYS required for invigilation
 const SNAPSHOT_INTERVAL = 30000; // Camera capture every 30 seconds
 const BASE_URL = '';
 
+// Server time sync: compute offset between server and client clocks
+const SERVER_NOW = <?= $server_now_ts ?? time() ?>;
+const EXAM_END_TS = <?= $exam_end_ts ?? (time() + ($time_remaining ?? 0)) ?>;
+const CLIENT_NOW = Math.floor(Date.now() / 1000);
+let serverOffset = SERVER_NOW - CLIENT_NOW; // positive = server ahead
+
 let currentQuestion = 0;
 let answeredSet = new Set();
-let timerSeconds = TIME_REMAINING;
 let violationCount = 0;
 let cameraStream = null;
+
+// Get server-synced current time
+function getServerTime() {
+    return Math.floor(Date.now() / 1000) + serverOffset;
+}
+
+// Periodically re-sync with server (every 60s)
+setInterval(function() {
+    fetch('server_time.php').then(r => r.json()).then(data => {
+        if (data.server_time) {
+            serverOffset = data.server_time - Math.floor(Date.now() / 1000);
+        }
+    }).catch(() => {});
+}, 60000);
 
 // Track initially answered questions
 <?php foreach ($questions as $i => $q): ?>
@@ -558,17 +650,18 @@ answeredSet.add(<?= $i ?>);
 <?php endif; ?>
 <?php endforeach; ?>
 
-// ===== TIMER =====
+// ===== TIMER (server-synced) =====
 function updateTimer() {
-    if (timerSeconds <= 0) { autoSubmit(); return; }
-    timerSeconds--;
-    const h = Math.floor(timerSeconds / 3600);
-    const m = Math.floor((timerSeconds % 3600) / 60);
-    const s = timerSeconds % 60;
+    const now = getServerTime();
+    const remaining = Math.max(0, EXAM_END_TS - now);
+    if (remaining <= 0) { autoSubmit(); return; }
+    const h = Math.floor(remaining / 3600);
+    const m = Math.floor((remaining % 3600) / 60);
+    const s = remaining % 60;
     const display = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
     const timerEl = document.getElementById('timer');
     timerEl.textContent = display;
-    timerEl.className = 'timer' + (timerSeconds < 60 ? ' danger' : (timerSeconds < 300 ? ' warning' : ''));
+    timerEl.className = 'timer' + (remaining < 60 ? ' danger' : (remaining < 300 ? ' warning' : ''));
 }
 setInterval(updateTimer, 1000);
 updateTimer();
@@ -843,12 +936,70 @@ function captureSnapshot() {
 // Start camera pre-check immediately
 requestCameraPreCheck();
 
+// ===== TINYMCE FOR ESSAY ANSWERS =====
+function initEssayEditors() {
+    document.querySelectorAll('.essay-tinymce').forEach(function(ta) {
+        const qid = ta.dataset.qid;
+        const index = parseInt(ta.dataset.index);
+        initTinyMCE('#' + ta.id, {
+            mode: 'exam_answer',
+            height: 350,
+            onChange: function(content) {
+                // Mark as answered
+                if (content && content.replace(/<[^>]*>/g, '').trim()) {
+                    answeredSet.add(index);
+                } else {
+                    answeredSet.delete(index);
+                }
+                const navBtn = document.querySelector(`.question-nav-btn[data-index="${index}"]`);
+                if (navBtn) navBtn.classList.toggle('answered', answeredSet.has(index));
+                updateCounts();
+            }
+        });
+    });
+}
+// Init after exam starts (after camera pre-check)
+const origProceed = window.proceedToExam;
+window.proceedToExam = function() {
+    origProceed();
+    setTimeout(initEssayEditors, 500);
+};
+
+// Auto-save essay answers every 30 seconds
+setInterval(function() {
+    document.querySelectorAll('.essay-tinymce').forEach(function(ta) {
+        const editor = tinymce.get(ta.id);
+        if (editor && editor.isDirty()) {
+            const content = editor.getContent();
+            const qid = ta.dataset.qid;
+            const index = parseInt(ta.dataset.index);
+            saveAnswer(parseInt(qid), content, index);
+            editor.setDirty(false);
+        }
+    });
+}, 30000);
+
+// Sync all TinyMCE editors before submit
+const origSubmit = window.submitExam;
+window.submitExam = function() {
+    document.querySelectorAll('.essay-tinymce').forEach(function(ta) {
+        const editor = tinymce.get(ta.id);
+        if (editor) {
+            const content = editor.getContent();
+            const qid = ta.dataset.qid;
+            const index = parseInt(ta.dataset.index);
+            saveAnswer(parseInt(qid), content, index);
+        }
+    });
+    setTimeout(origSubmit, 500);
+};
+
 // ===== PERIODIC SESSION UPDATE =====
 setInterval(function() {
     fetch('update_session.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ session_id: SESSION_ID, time_remaining: timerSeconds })
+        body: JSON.stringify({ session_id: SESSION_ID, time_remaining: Math.max(0, EXAM_END_TS - getServerTime()) })
     }).catch(err => console.error('Session update failed:', err));
 }, 30000); // Every 30 seconds
 </script>

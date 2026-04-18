@@ -97,18 +97,22 @@ while ($row = $result->fetch_assoc()) {
         <div class="row justify-content-center">
             <div class="col-lg-10">
                 <!-- Header -->
-                <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-                    <div>
-                        <h3><i class="bi bi-clipboard-check"></i> Student Answers Review</h3>
-                        <p class="text-muted mb-0"><?php echo htmlspecialchars($submission['assignment_title']); ?></p>
-                    </div>
-                    <div>
-                        <button onclick="window.print()" class="btn btn-outline-primary me-2">
-                            <i class="bi bi-printer"></i> Print
-                        </button>
-                        <a href="gradebook.php?course_id=<?php echo $submission['course_id']; ?>" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left"></i> Back
-                        </a>
+                <div class="card mb-4 shadow-sm no-print">
+                    <div class="card-header py-3" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h4 class="mb-0 text-white"><i class="bi bi-clipboard-check me-2"></i> Student Answers Review</h4>
+                                <p class="mb-0 mt-1 text-white-50"><?php echo htmlspecialchars($submission['assignment_title']); ?></p>
+                            </div>
+                            <div>
+                                <button onclick="window.print()" class="btn btn-light btn-sm me-2">
+                                    <i class="bi bi-printer"></i> Print
+                                </button>
+                                <a href="gradebook.php?course_id=<?php echo $submission['course_id']; ?>" class="btn btn-light btn-sm">
+                                    <i class="bi bi-arrow-left"></i> Back
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

@@ -1,0 +1,12 @@
+{
+    "enabled": true,
+    "backup_type": "full",
+    "frequency": "every_6h",
+    "retention_count": 5,
+    "custom_tables": [],
+    "last_backup": "2026-04-11 14:09:42",
+    "last_backup_file": "scheduled_full_2026-04-11_14-09-41.sql",
+    "secret_key": "72506f46a7b3a6142d289a43daa1ce28",
+    "created_at": "2026-03-04 00:22:00",
+    "total_backups_run": 8
+}

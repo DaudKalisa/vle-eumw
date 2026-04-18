@@ -44,9 +44,18 @@ try {
                 $types = '';
                 
                 if (!empty($status_filter)) {
-                    $where_conditions[] = "lfr.status = ?";
-                    $params[] = $status_filter;
-                    $types .= 's';
+                    if ($status_filter === 'ready_for_finance') {
+                        // Claims approved by ODL/Dean but pending finance action
+                        $where_conditions[] = "lfr.status = 'pending'";
+                        $where_conditions[] = "(
+                            (lfr.odl_approval_status = 'approved' AND (lfr.dean_approval_status IS NULL OR lfr.dean_approval_status = ''))
+                            OR (lfr.odl_approval_status IN ('approved','forwarded_to_dean') AND lfr.dean_approval_status = 'approved')
+                        )";
+                    } else {
+                        $where_conditions[] = "lfr.status = ?";
+                        $params[] = $status_filter;
+                        $types .= 's';
+                    }
                 }
                 
                 if (!empty($month_filter)) {

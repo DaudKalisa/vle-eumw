@@ -144,7 +144,13 @@ $breadcrumbs = [
         .student-list .student-item.marked { opacity: 0.7; }
         .marks-input { width: 80px; text-align: center; font-weight: 600; }
         .question-type-badge { font-size: 0.7rem; }
-        .essay-answer { background: #f8f9fa; border-radius: 8px; padding: 15px; font-family: 'Georgia', serif; line-height: 1.8; white-space: pre-wrap; }
+        .essay-answer { background: #f8f9fa; border-radius: 8px; padding: 15px; line-height: 1.8; }
+        .essay-answer img { max-width: 100%; height: auto; }
+        .essay-answer table { border-collapse: collapse; width: 100%; }
+        .essay-answer table td, .essay-answer table th { border: 1px solid #dee2e6; padding: 6px 10px; }
+        .question-rich-text img { max-width: 100%; height: auto; }
+        .question-rich-text table { border-collapse: collapse; width: 100%; }
+        .question-rich-text table td, .question-rich-text table th { border: 1px solid #dee2e6; padding: 6px 10px; }
     </style>
 </head>
 <body>
@@ -306,9 +312,9 @@ $breadcrumbs = [
                                         </div>
                                     </div>
 
-                                    <!-- Question Text -->
-                                    <div class="mb-3 p-2 bg-light rounded">
-                                        <?= nl2br(htmlspecialchars($q['question_text'])) ?>
+                                    <!-- Question Text (rich HTML from TinyMCE) -->
+                                    <div class="mb-3 p-2 bg-light rounded question-rich-text">
+                                        <?= $q['question_text'] ?>
                                     </div>
 
                                     <?php if ($is_auto): ?>
@@ -345,22 +351,22 @@ $breadcrumbs = [
                                             <?php if (empty($answer_text)): ?>
                                                 <div class="text-muted fst-italic p-3 bg-light rounded">(No answer provided)</div>
                                             <?php else: ?>
-                                                <div class="essay-answer"><?= nl2br(htmlspecialchars($answer_text)) ?></div>
+                                                <div class="essay-answer"><?= $answer_text ?></div>
                                             <?php endif; ?>
                                         </div>
                                         <?php if (!empty($q['correct_answer'])): ?>
                                             <div class="mb-2">
                                                 <label class="form-label small fw-bold text-muted">Model Answer / Key Points:</label>
-                                                <div class="p-2 border rounded bg-success bg-opacity-10 small">
-                                                    <?= nl2br(htmlspecialchars($q['correct_answer'])) ?>
+                                                <div class="p-2 border rounded bg-success bg-opacity-10 small question-rich-text">
+                                                    <?= $q['correct_answer'] ?>
                                                 </div>
                                             </div>
                                         <?php endif; ?>
                                         <?php if (!empty($q['explanation'])): ?>
                                             <details class="mt-2">
                                                 <summary class="text-muted small"><i class="bi bi-lightbulb me-1"></i>Marking Guide</summary>
-                                                <div class="p-2 mt-1 bg-info bg-opacity-10 rounded small">
-                                                    <?= nl2br(htmlspecialchars($q['explanation'])) ?>
+                                                <div class="p-2 mt-1 bg-info bg-opacity-10 rounded small question-rich-text">
+                                                    <?= $q['explanation'] ?>
                                                 </div>
                                             </details>
                                         <?php endif; ?>

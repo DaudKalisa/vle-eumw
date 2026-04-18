@@ -70,6 +70,10 @@ $conn->query("SET FOREIGN_KEY_CHECKS=1");
 $user = getCurrentUser();
 $student_id = $user['user_id'];
 
+// Auto-record attendance for accessing live sessions (only for paid students)
+require_once '../includes/student_attendance_helper.php';
+recordAutoAttendance($conn, $_SESSION['vle_related_id'] ?? $student_id, 'live_session');
+
 // Get pending invites
 $pending_invites = [];
 $result = $conn->query("

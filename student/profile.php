@@ -244,6 +244,7 @@ $user = getCurrentUser();
                             if ($campus == 'Mzuzu Campus') $campus_code = 'MZ';
                             elseif ($campus == 'Lilongwe Campus') $campus_code = 'LL';
                             elseif ($campus == 'Blantyre Campus') $campus_code = 'BT';
+                            elseif ($campus == 'ODel') $campus_code = 'ODL';
                             echo htmlspecialchars($campus);
                             if ($campus_code) echo ' <span class="vle-badge-primary">' . $campus_code . '</span>';
                             ?>

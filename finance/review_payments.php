@@ -6,14 +6,53 @@ require_once '../includes/notifications.php';
 requireLogin();
 requireRole(['finance', 'staff']);
 
+
 $conn = getDbConnection();
 $user_id = $_SESSION['vle_user_id'];
+
+// Handle admin upload of missing proof file
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_upload_proof'])) {
+    $submission_id = (int)$_POST['submission_id'];
+    if (isset($_FILES['admin_proof_file']) && $_FILES['admin_proof_file']['error'] === UPLOAD_ERR_OK) {
+        $upload_dir = '../uploads/payments/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+        $file_ext = strtolower(pathinfo($_FILES['admin_proof_file']['name'], PATHINFO_EXTENSION));
+        $allowed_exts = ['jpg', 'jpeg', 'png', 'pdf'];
+        if (in_array($file_ext, $allowed_exts)) {
+            if ($_FILES['admin_proof_file']['size'] <= 5242880) { // 5MB max
+                $proof_filename = 'admin_upload_' . $submission_id . '_' . time() . '.' . $file_ext;
+                $target_path = $upload_dir . $proof_filename;
+                if (move_uploaded_file($_FILES['admin_proof_file']['tmp_name'], $target_path)) {
+                    // Update DB
+                    $stmt = $conn->prepare("UPDATE payment_submissions SET proof_of_payment = ? WHERE submission_id = ?");
+                    $stmt->bind_param("si", $proof_filename, $submission_id);
+                    if ($stmt->execute()) {
+                        $success = "Proof of payment uploaded successfully.";
+                    } else {
+                        $error = "Failed to update proof in database.";
+                    }
+                } else {
+                    $error = "Failed to upload file.";
+                }
+            } else {
+                $error = "File size exceeds 5MB limit.";
+            }
+        } else {
+            $error = "Invalid file format. Only JPG, PNG, and PDF allowed.";
+        }
+    } else {
+        $error = "No file selected or upload error.";
+    }
+}
 
 // Handle approval/rejection
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
     $submission_id = (int)$_POST['submission_id'];
     $action = $_POST['action']; // 'approve' or 'reject'
     $notes = trim($_POST['review_notes'] ?? '');
+    $bank_deposited_to = trim($_POST['bank_deposited_to'] ?? '');
     
     if ($action === 'approve') {
         try {
@@ -40,7 +79,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
                 }
                 
                 // Record payment in payment_transactions table
-                $payment_notes = $submission['transaction_type'] . ' via ' . $submission['bank_name'] . ' - Ref: ' . $submission['payment_reference'];
+                $bank_info = !empty($bank_deposited_to) ? $bank_deposited_to : ($submission['bank_name'] ?? 'N/A');
+                $payment_notes = $submission['transaction_type'] . ' via ' . $bank_info . ' - Ref: ' . $submission['payment_reference'];
+                if (!empty($notes)) {
+                    $payment_notes .= ' | Notes: ' . $notes;
+                }
                 $stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, amount, payment_type, payment_date, notes, recorded_by) VALUES (?, ?, 'payment', ?, ?, ?)");
                 $stmt->bind_param("sdsss", $submission['student_id'], $submission['amount'], $submission['transaction_date'], $payment_notes, $user_id);
                 $stmt->execute();
@@ -64,9 +107,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
                 $stmt->bind_param("ddddddds", $amt, $amt, $amt, $amt, $amt, $amt, $amt, $submission['student_id']);
                 $stmt->execute();
                 
-                // Update submission status
-                $stmt = $conn->prepare("UPDATE payment_submissions SET status = 'approved', reviewed_by = ?, reviewed_date = NOW(), finance_id = ?, notes = ? WHERE submission_id = ?");
-                $stmt->bind_param("sisi", $user_id, $finance_id, $notes, $submission_id);
+                // Update submission status and bank deposited to
+                $review_notes_combined = $notes;
+                if (!empty($bank_deposited_to)) {
+                    $review_notes_combined = 'EU Bank Acc At: ' . $bank_deposited_to . (!empty($notes) ? ' | ' . $notes : '');
+                }
+                $stmt = $conn->prepare("UPDATE payment_submissions SET status = 'approved', reviewed_by = ?, reviewed_date = NOW(), finance_id = ?, notes = ?, bank_name = COALESCE(?, bank_name) WHERE submission_id = ?");
+                $stmt->bind_param("sissi", $user_id, $finance_id, $review_notes_combined, $bank_deposited_to, $submission_id);
                 $stmt->execute();
                 
                 $conn->commit();
@@ -129,6 +176,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_payment'])) {
     }
 }
 
+// Handle lecturer claim payment action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lecturer_payment_action'])) {
+    $request_id = (int)$_POST['request_id'];
+    $lect_action = $_POST['lect_action']; // 'pay' or 'reject' or 'delete'
+    $lect_notes = trim($_POST['lect_notes'] ?? '');
+    
+    if ($lect_action === 'pay') {
+        $stmt = $conn->prepare("UPDATE lecturer_finance_requests SET status = 'paid', finance_paid_at = NOW() WHERE request_id = ? AND status = 'approved'");
+        $stmt->bind_param("i", $request_id);
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            $success = "Lecturer payment processed successfully! <a href='print_lecturer_payment.php?id=$request_id' target='_blank' class='btn btn-sm btn-success ms-2'><i class='bi bi-printer'></i> Print Receipt</a>";
+        } else {
+            $error = "Failed to process lecturer payment. Claim must be approved first.";
+        }
+    } elseif ($lect_action === 'reject') {
+        $stmt = $conn->prepare("UPDATE lecturer_finance_requests SET status = 'rejected', finance_remarks = ?, finance_rejected_at = NOW() WHERE request_id = ?");
+        $stmt->bind_param("si", $lect_notes, $request_id);
+        if ($stmt->execute()) {
+            $success = "Lecturer claim rejected.";
+        } else {
+            $error = "Failed to reject lecturer claim.";
+        }
+    } elseif ($lect_action === 'delete') {
+        $stmt = $conn->prepare("DELETE FROM lecturer_finance_requests WHERE request_id = ? AND status IN ('pending', 'rejected')");
+        $stmt->bind_param("i", $request_id);
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            $success = "Lecturer claim deleted successfully.";
+        } else {
+            $error = "Failed to delete claim. Only pending or rejected claims can be deleted.";
+        }
+    }
+}
+
 // Get pending submissions
 $pending_query = "SELECT ps.*, s.full_name, s.email, sf.balance 
                   FROM payment_submissions ps
@@ -146,6 +226,34 @@ $reviewed_query = "SELECT ps.*, s.full_name, s.email
                    ORDER BY ps.reviewed_date DESC
                    LIMIT 50";
 $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
+
+// Get lecturer claims ready for payment (approved by finance)
+$lect_approved_query = "SELECT r.*, l.full_name AS lecturer_name, l.email AS lecturer_email, l.department, l.phone, l.position
+                        FROM lecturer_finance_requests r
+                        JOIN lecturers l ON r.lecturer_id = l.lecturer_id
+                        WHERE r.status = 'approved'
+                        ORDER BY r.submission_date ASC";
+$lect_approved_result = $conn->query($lect_approved_query);
+$lect_approved_claims = $lect_approved_result ? $lect_approved_result->fetch_all(MYSQLI_ASSOC) : [];
+
+// Get lecturer claims pending review (all non-paid, non-approved for overview)
+$lect_pending_query = "SELECT r.*, l.full_name AS lecturer_name, l.email AS lecturer_email, l.department, l.phone, l.position
+                       FROM lecturer_finance_requests r
+                       JOIN lecturers l ON r.lecturer_id = l.lecturer_id
+                       WHERE r.status = 'pending'
+                       ORDER BY r.submission_date ASC";
+$lect_pending_result = $conn->query($lect_pending_query);
+$lect_pending_claims = $lect_pending_result ? $lect_pending_result->fetch_all(MYSQLI_ASSOC) : [];
+
+// Get recently paid lecturer claims
+$lect_paid_query = "SELECT r.*, l.full_name AS lecturer_name, l.email AS lecturer_email, l.department
+                    FROM lecturer_finance_requests r
+                    JOIN lecturers l ON r.lecturer_id = l.lecturer_id
+                    WHERE r.status = 'paid'
+                    ORDER BY r.finance_paid_at DESC
+                    LIMIT 50";
+$lect_paid_result = $conn->query($lect_paid_query);
+$lect_paid_claims = $lect_paid_result ? $lect_paid_result->fetch_all(MYSQLI_ASSOC) : [];
 
 ?>
 
@@ -172,7 +280,7 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
     <div class="vle-content">
         <div class="vle-page-header mb-4">
             <h1 class="h3 mb-1"><i class="bi bi-check2-square me-2"></i>Review Payment Submissions</h1>
-            <p class="text-muted mb-0">Approve or reject student payment submissions</p>
+            <p class="text-muted mb-0">Approve or reject student and lecturer payment submissions</p>
         </div>
 
         <?php if (isset($success)): ?>
@@ -184,10 +292,33 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
 
         <?php if (isset($error)): ?>
             <div class="alert alert-danger alert-dismissible fade show">
-                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
+                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo htmlspecialchars($error); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
+
+        <!-- Tabs -->
+        <ul class="nav nav-tabs mb-4" id="paymentTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="student-tab" data-bs-toggle="tab" data-bs-target="#studentPayments" type="button" role="tab">
+                    <i class="bi bi-mortarboard me-1"></i>Student Payments 
+                    <span class="badge bg-warning text-dark"><?php echo count($pending_submissions); ?></span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="lecturer-tab" data-bs-toggle="tab" data-bs-target="#lecturerPayments" type="button" role="tab">
+                    <i class="bi bi-person-workspace me-1"></i>Lecturer Payments
+                    <span class="badge bg-success"><?php echo count($lect_approved_claims); ?></span>
+                    <?php if (count($lect_pending_claims) > 0): ?>
+                    <span class="badge bg-warning text-dark"><?php echo count($lect_pending_claims); ?> pending</span>
+                    <?php endif; ?>
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="paymentTabsContent">
+        <!-- Student Payments Tab -->
+        <div class="tab-pane fade show active" id="studentPayments" role="tabpanel">
 
         <!-- Pending Submissions -->
         <div class="card shadow-sm mb-4">
@@ -236,8 +367,38 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
                                                 <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#proofModal<?php echo $sub['submission_id']; ?>">
                                                     <i class="bi bi-eye"></i> View
                                                 </button>
+                                            <?php else: ?>
+                                                <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#uploadProofModal<?php echo $sub['submission_id']; ?>">
+                                                    <i class="bi bi-upload"></i> Upload
+                                                </button>
                                             <?php endif; ?>
                                         </td>
+                                                                            <!-- Admin Upload Proof Modal -->
+                                                                            <div class="modal fade" id="uploadProofModal<?php echo $sub['submission_id']; ?>" tabindex="-1">
+                                                                                <div class="modal-dialog">
+                                                                                    <div class="modal-content">
+                                                                                        <div class="modal-header bg-warning">
+                                                                                            <h5 class="modal-title"><i class="bi bi-upload"></i> Upload Missing Proof</h5>
+                                                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                                                        </div>
+                                                                                        <form method="POST" enctype="multipart/form-data">
+                                                                                            <div class="modal-body">
+                                                                                                <input type="hidden" name="submission_id" value="<?php echo $sub['submission_id']; ?>">
+                                                                                                <div class="mb-3">
+                                                                                                    <label class="form-label">Select Proof File (JPG, PNG, PDF, max 5MB)</label>
+                                                                                                    <input type="file" class="form-control" name="admin_proof_file" accept=".jpg,.jpeg,.png,.pdf" required>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            <div class="modal-footer">
+                                                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                                                <button type="submit" name="admin_upload_proof" class="btn btn-warning">
+                                                                                                    <i class="bi bi-upload"></i> Upload
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        </form>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
                                         <td>
                                             <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#reviewModal<?php echo $sub['submission_id']; ?>" data-action="approve">
                                                 <i class="bi bi-check-circle"></i> Approve
@@ -298,6 +459,17 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
                                                             <strong>Current Balance:</strong> K<?php echo number_format($sub['balance'] ?? 0); ?>
                                                         </div>
 
+                                                        <div class="mb-3 bank-deposited-field" id="bankField<?php echo $sub['submission_id']; ?>">
+                                                            <label class="form-label fw-bold"><i class="bi bi-bank me-1"></i>EU BANK ACC AT <span class="text-danger">*</span></label>
+                                                            <select class="form-select" name="bank_deposited_to" id="bankSelect<?php echo $sub['submission_id']; ?>">
+                                                                <option value="">-- Select Bank --</option>
+                                                                <option value="National Bank of Malawi" <?= ($sub['bank_name'] ?? '') === 'National Bank of Malawi' ? 'selected' : '' ?>>National Bank of Malawi</option>
+                                                                <option value="Standard Bank" <?= ($sub['bank_name'] ?? '') === 'Standard Bank' ? 'selected' : '' ?>>Standard Bank</option>
+                                                                <option value="FDH Bank" <?= ($sub['bank_name'] ?? '') === 'FDH Bank' ? 'selected' : '' ?>>FDH Bank</option>
+                                                            </select>
+                                                            <small class="text-muted">Select the EU bank account the payment was deposited to</small>
+                                                        </div>
+
                                                         <div class="mb-3">
                                                             <label class="form-label">Review Notes</label>
                                                             <textarea class="form-control" name="review_notes" rows="3" placeholder="Add any notes about this review..."></textarea>
@@ -326,6 +498,8 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
                                             var actionInput = modal.querySelector('#action<?php echo $sub['submission_id']; ?>');
                                             var approveBtn = modal.querySelector('#approveBtn<?php echo $sub['submission_id']; ?>');
                                             var rejectBtn = modal.querySelector('#rejectBtn<?php echo $sub['submission_id']; ?>');
+                                            var bankField = modal.querySelector('#bankField<?php echo $sub['submission_id']; ?>');
+                                            var bankSelect = modal.querySelector('#bankSelect<?php echo $sub['submission_id']; ?>');
                                             
                                             if (action === 'reject') {
                                                 actionInput.value = 'reject';
@@ -333,12 +507,18 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
                                                 rejectBtn.style.display = 'inline-block';
                                                 modal.querySelector('.modal-header').classList.remove('bg-primary');
                                                 modal.querySelector('.modal-header').classList.add('bg-danger');
+                                                // Hide bank field for rejection
+                                                if (bankField) bankField.style.display = 'none';
+                                                if (bankSelect) bankSelect.required = false;
                                             } else {
                                                 actionInput.value = 'approve';
                                                 approveBtn.style.display = 'inline-block';
                                                 rejectBtn.style.display = 'none';
                                                 modal.querySelector('.modal-header').classList.remove('bg-danger');
                                                 modal.querySelector('.modal-header').classList.add('bg-primary');
+                                                // Show bank field for approval
+                                                if (bankField) bankField.style.display = 'block';
+                                                if (bankSelect) bankSelect.required = true;
                                             }
                                         });
                                     </script>
@@ -405,6 +585,268 @@ $reviewed_submissions = $conn->query($reviewed_query)->fetch_all(MYSQLI_ASSOC);
                 <?php endif; ?>
             </div>
         </div>
+        </div><!-- End Student Payments Tab -->
+
+        <!-- Lecturer Payments Tab -->
+        <div class="tab-pane fade" id="lecturerPayments" role="tabpanel">
+        
+        <!-- Approved Claims Ready for Payment -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-cash-coin"></i> Ready for Payment 
+                    <span class="badge bg-light text-dark"><?php echo count($lect_approved_claims); ?></span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <?php if (empty($lect_approved_claims)): ?>
+                    <p class="text-muted text-center py-3">No lecturer claims ready for payment.</p>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Submitted</th>
+                                    <th>Lecturer</th>
+                                    <th>Department</th>
+                                    <th>Period</th>
+                                    <th>Hours</th>
+                                    <th>Amount</th>
+                                    <th>Workflow</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($lect_approved_claims as $lc): ?>
+                                <tr>
+                                    <td><small><?php echo date('M d, Y', strtotime($lc['submission_date'])); ?></small></td>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($lc['lecturer_name']); ?></strong><br>
+                                        <small class="text-muted"><?php echo htmlspecialchars($lc['lecturer_email']); ?></small>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($lc['department'] ?? 'N/A'); ?></td>
+                                    <td><?php echo date('M Y', mktime(0,0,0,$lc['month'],1,$lc['year'])); ?></td>
+                                    <td><?php echo number_format($lc['total_hours'], 1); ?></td>
+                                    <td><strong class="text-success">K<?php echo number_format($lc['total_amount']); ?></strong></td>
+                                    <td>
+                                        <small>
+                                            <span class="badge bg-success">ODL &#10003;</span>
+                                            <?php if (!empty($lc['dean_approval_status'])): ?>
+                                            <span class="badge bg-<?php echo $lc['dean_approval_status'] === 'approved' ? 'success' : 'warning'; ?>">
+                                                Dean <?php echo $lc['dean_approval_status'] === 'approved' ? '&#10003;' : '&#8987;'; ?>
+                                            </span>
+                                            <?php endif; ?>
+                                            <span class="badge bg-success">Finance &#10003;</span>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <a href="finance_request_pdf.php?id=<?php echo $lc['request_id']; ?>" class="btn btn-sm btn-outline-primary" target="_blank" title="View PDF">
+                                            <i class="bi bi-file-earmark-pdf"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#lectPayModal<?php echo $lc['request_id']; ?>">
+                                            <i class="bi bi-cash-coin"></i> Pay
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#lectRejectModal<?php echo $lc['request_id']; ?>">
+                                            <i class="bi bi-x-circle"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+
+                                <!-- Pay Lecturer Modal -->
+                                <div class="modal fade" id="lectPayModal<?php echo $lc['request_id']; ?>" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header bg-success text-white">
+                                                <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Process Lecturer Payment</h5>
+                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <form method="POST">
+                                                <div class="modal-body">
+                                                    <input type="hidden" name="request_id" value="<?php echo $lc['request_id']; ?>">
+                                                    <input type="hidden" name="lect_action" value="pay">
+                                                    <div class="alert alert-info">
+                                                        <strong>Lecturer:</strong> <?php echo htmlspecialchars($lc['lecturer_name']); ?><br>
+                                                        <strong>Department:</strong> <?php echo htmlspecialchars($lc['department'] ?? 'N/A'); ?><br>
+                                                        <strong>Period:</strong> <?php echo date('M Y', mktime(0,0,0,$lc['month'],1,$lc['year'])); ?><br>
+                                                        <strong>Hours:</strong> <?php echo number_format($lc['total_hours'], 1); ?><br>
+                                                        <strong>Amount:</strong> <span class="text-success fw-bold">K<?php echo number_format($lc['total_amount']); ?></span>
+                                                    </div>
+                                                    <p>Are you sure you want to mark this claim as <strong>paid</strong>?</p>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Notes (optional)</label>
+                                                        <textarea class="form-control" name="lect_notes" rows="2" placeholder="Payment reference or notes..."></textarea>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" name="lecturer_payment_action" class="btn btn-success">
+                                                        <i class="bi bi-check-circle"></i> Confirm Payment
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Reject Lecturer Modal -->
+                                <div class="modal fade" id="lectRejectModal<?php echo $lc['request_id']; ?>" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header bg-danger text-white">
+                                                <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject Lecturer Claim</h5>
+                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <form method="POST">
+                                                <div class="modal-body">
+                                                    <input type="hidden" name="request_id" value="<?php echo $lc['request_id']; ?>">
+                                                    <input type="hidden" name="lect_action" value="reject">
+                                                    <p>Are you sure you want to reject this claim from <strong><?php echo htmlspecialchars($lc['lecturer_name']); ?></strong>?</p>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Reason for rejection</label>
+                                                        <textarea class="form-control" name="lect_notes" rows="3" placeholder="Enter reason..." required></textarea>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" name="lecturer_payment_action" class="btn btn-danger">
+                                                        <i class="bi bi-x-circle"></i> Reject Claim
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Pending Lecturer Claims -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="bi bi-hourglass-split"></i> Pending Lecturer Claims 
+                    <span class="badge bg-dark"><?php echo count($lect_pending_claims); ?></span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <?php if (empty($lect_pending_claims)): ?>
+                    <p class="text-muted text-center py-3">No pending lecturer claims.</p>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Submitted</th>
+                                    <th>Lecturer</th>
+                                    <th>Department</th>
+                                    <th>Period</th>
+                                    <th>Hours</th>
+                                    <th>Amount</th>
+                                    <th>ODL Status</th>
+                                    <th>Dean Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($lect_pending_claims as $lc): ?>
+                                <tr>
+                                    <td><small><?php echo date('M d, Y', strtotime($lc['submission_date'])); ?></small></td>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($lc['lecturer_name']); ?></strong><br>
+                                        <small class="text-muted"><?php echo htmlspecialchars($lc['lecturer_email']); ?></small>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($lc['department'] ?? 'N/A'); ?></td>
+                                    <td><?php echo date('M Y', mktime(0,0,0,$lc['month'],1,$lc['year'])); ?></td>
+                                    <td><?php echo number_format($lc['total_hours'], 1); ?></td>
+                                    <td><strong>K<?php echo number_format($lc['total_amount']); ?></strong></td>
+                                    <td>
+                                        <?php 
+                                        $odl_st = $lc['odl_approval_status'] ?? 'pending';
+                                        $odl_cls = ['pending'=>'warning','approved'=>'success','rejected'=>'danger','returned'=>'secondary','forwarded_to_dean'=>'info'][$odl_st] ?? 'secondary';
+                                        ?>
+                                        <span class="badge bg-<?php echo $odl_cls; ?>"><?php echo ucfirst(str_replace('_',' ',$odl_st)); ?></span>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        $dean_st = $lc['dean_approval_status'] ?? '';
+                                        if ($dean_st) {
+                                            $dean_cls = ['pending'=>'warning','approved'=>'success','rejected'=>'danger'][$dean_st] ?? 'secondary';
+                                            echo '<span class="badge bg-'.$dean_cls.'">'.ucfirst($dean_st).'</span>';
+                                        } else {
+                                            echo '<span class="text-muted">-</span>';
+                                        }
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <a href="finance_request_pdf.php?id=<?php echo $lc['request_id']; ?>" class="btn btn-sm btn-outline-primary" target="_blank" title="View PDF">
+                                            <i class="bi bi-file-earmark-pdf"></i>
+                                        </a>
+                                        <form method="POST" class="d-inline" onsubmit="return confirm('Delete this pending claim permanently?');">
+                                            <input type="hidden" name="request_id" value="<?php echo $lc['request_id']; ?>">
+                                            <input type="hidden" name="lect_action" value="delete">
+                                            <button type="submit" name="lecturer_payment_action" class="btn btn-sm btn-outline-danger" title="Delete Claim">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Recently Paid Lecturer Claims -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recently Paid Lecturers</h5>
+            </div>
+            <div class="card-body">
+                <?php if (empty($lect_paid_claims)): ?>
+                    <p class="text-muted text-center py-3">No paid lecturer claims yet.</p>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Paid Date</th>
+                                    <th>Lecturer</th>
+                                    <th>Department</th>
+                                    <th>Period</th>
+                                    <th>Amount</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($lect_paid_claims as $lc): ?>
+                                <tr>
+                                    <td><?php echo $lc['finance_paid_at'] ? date('M d, Y', strtotime($lc['finance_paid_at'])) : 'N/A'; ?></td>
+                                    <td><?php echo htmlspecialchars($lc['lecturer_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($lc['department'] ?? 'N/A'); ?></td>
+                                    <td><?php echo date('M Y', mktime(0,0,0,$lc['month'],1,$lc['year'])); ?></td>
+                                    <td><strong class="text-success">K<?php echo number_format($lc['total_amount']); ?></strong></td>
+                                    <td>
+                                        <a href="print_lecturer_payment.php?id=<?php echo $lc['request_id']; ?>" class="btn btn-sm btn-primary" target="_blank">
+                                            <i class="bi bi-printer"></i> Receipt
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        </div><!-- End Lecturer Payments Tab -->
+        </div><!-- End Tab Content -->
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>

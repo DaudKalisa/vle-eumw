@@ -6,6 +6,12 @@ requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
+// Ensure system_timezone column exists
+$col_check = $conn->query("SHOW COLUMNS FROM university_settings LIKE 'system_timezone'");
+if ($col_check && $col_check->num_rows === 0) {
+    $conn->query("ALTER TABLE university_settings ADD COLUMN system_timezone VARCHAR(50) DEFAULT 'Africa/Blantyre' AFTER receipt_footer_text");
+}
+
 // Handle form submission
 $success = '';
 $error = '';
@@ -21,6 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_settings'])) {
     $email = trim($_POST['email']);
     $website = trim($_POST['website']);
     $footer_text = trim($_POST['footer_text']);
+    $system_timezone = trim($_POST['system_timezone'] ?? 'Africa/Blantyre');
+    
+    // Validate timezone
+    if (!in_array($system_timezone, timezone_identifiers_list())) {
+        $system_timezone = 'Africa/Blantyre';
+    }
     
     // Handle logo upload
     $logo_path = '';
@@ -70,9 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_settings'])) {
                     phone = ?,
                     email = ?,
                     website = ?,
-                    receipt_footer_text = ?";
+                    receipt_footer_text = ?,
+                    system_timezone = ?";
             
-            $params = [$university_name, $po_box, $area, $street, $city, $country, $phone, $email, $website, $footer_text];
+            $params = [$university_name, $po_box, $area, $street, $city, $country, $phone, $email, $website, $footer_text, $system_timezone];
             
             if ($logo_path) {
                 $sql .= ", logo_path = ?";
@@ -83,9 +96,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_settings'])) {
             
             $stmt = $conn->prepare($sql);
             if ($logo_path) {
-                $stmt->bind_param("sssssssssss", ...$params);
+                $stmt->bind_param("ssssssssssss", ...$params);
             } else {
-                $stmt->bind_param("ssssssssss", ...$params);
+                $stmt->bind_param("sssssssssss", ...$params);
             }
             
             if ($stmt->execute()) {
@@ -95,9 +108,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_settings'])) {
             }
         } else {
             // Insert new
-            $sql = "INSERT INTO university_settings (university_name, address_po_box, address_area, address_street, address_city, address_country, phone, email, website, receipt_footer_text, logo_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $sql = "INSERT INTO university_settings (university_name, address_po_box, address_area, address_street, address_city, address_country, phone, email, website, receipt_footer_text, system_timezone, logo_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param("sssssssssss", $university_name, $po_box, $area, $street, $city, $country, $phone, $email, $website, $footer_text, $logo_path);
+            $stmt->bind_param("ssssssssssss", $university_name, $po_box, $area, $street, $city, $country, $phone, $email, $website, $footer_text, $system_timezone, $logo_path);
             
             if ($stmt->execute()) {
                 $success = "University settings created successfully!";
@@ -122,7 +135,8 @@ if (!$settings) {
         'email' => '',
         'website' => '',
         'logo_path' => '',
-        'receipt_footer_text' => 'Thank you for your payment'
+        'receipt_footer_text' => 'Thank you for your payment',
+        'system_timezone' => 'Africa/Blantyre'
     ];
 }
 ?>
@@ -252,6 +266,56 @@ if (!$settings) {
                                 </div>
                             </div>
 
+                            <!-- System Date & Time -->
+                            <div class="mb-4">
+                                <h5 class="border-bottom pb-2"><i class="bi bi-clock"></i> System Date & Time</h5>
+                                <div class="alert alert-info py-2 mb-3" style="font-size:0.85rem;">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Current server time: <strong id="liveServerTime"><?= date('l, M j, Y \a\t h:i:s A') ?></strong>
+                                    <span class="badge bg-primary ms-2"><?= $settings['system_timezone'] ?? 'Africa/Blantyre' ?></span>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">System Timezone <span class="text-danger">*</span></label>
+                                        <select class="form-select" name="system_timezone" id="timezoneSelect">
+                                            <?php
+                                            $current_tz = $settings['system_timezone'] ?? 'Africa/Blantyre';
+                                            $regions = [
+                                                'Africa' => DateTimeZone::AFRICA,
+                                                'Americas' => DateTimeZone::AMERICA,
+                                                'Asia' => DateTimeZone::ASIA,
+                                                'Europe' => DateTimeZone::EUROPE,
+                                                'Pacific' => DateTimeZone::PACIFIC,
+                                                'Others' => DateTimeZone::ATLANTIC | DateTimeZone::INDIAN | DateTimeZone::ARCTIC | DateTimeZone::ANTARCTICA
+                                            ];
+                                            foreach ($regions as $region_name => $region_const):
+                                                $tzs = DateTimeZone::listIdentifiers($region_const);
+                                            ?>
+                                            <optgroup label="<?= $region_name ?>">
+                                                <?php foreach ($tzs as $tz):
+                                                    $dt = new DateTime('now', new DateTimeZone($tz));
+                                                    $offset = $dt->format('P');
+                                                    $label = str_replace('_', ' ', str_replace('/', ' / ', $tz));
+                                                ?>
+                                                <option value="<?= $tz ?>" <?= $current_tz === $tz ? 'selected' : '' ?>>(UTC<?= $offset ?>) <?= $label ?></option>
+                                                <?php endforeach; ?>
+                                            </optgroup>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <small class="text-muted">This timezone affects all dates and times displayed in the system</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Time Preview</label>
+                                        <div class="card bg-light">
+                                            <div class="card-body py-2 text-center">
+                                                <div style="font-size:1.5rem; font-weight:600;" id="timePreview"><?= date('h:i:s A') ?></div>
+                                                <div class="text-muted" style="font-size:0.85rem;" id="datePreview"><?= date('l, F j, Y') ?></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="text-end">
                                 <button type="submit" name="update_settings" class="btn btn-primary btn-lg">
                                     <i class="bi bi-save"></i> Save Settings
@@ -265,5 +329,24 @@ if (!$settings) {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Live clock update
+    function updateClock() {
+        var now = new Date();
+        var h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+        var ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        var time = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + ' ' + ampm;
+        var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        var date = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
+        var el = document.getElementById('timePreview');
+        if (el) el.textContent = time;
+        var el2 = document.getElementById('datePreview');
+        if (el2) el2.textContent = date;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+    </script>
 </body>
 </html>

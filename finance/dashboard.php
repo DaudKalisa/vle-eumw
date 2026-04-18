@@ -134,6 +134,25 @@ if ($result) {
     $pending_submissions = $result->fetch_assoc()['count'];
 }
 
+// ==================== GRADUATION CLEARANCE (FINANCE STEP) ====================
+$pending_graduation_clearance = 0;
+$grad_chk = $conn->query("SHOW TABLES LIKE 'graduation_applications'");
+if ($grad_chk && $grad_chk->num_rows > 0) {
+    $gr = $conn->query("SELECT COUNT(*) as c FROM graduation_applications WHERE current_step = 'finance' AND status IN ('pending','finance_referred')");
+    if ($gr) $pending_graduation_clearance = (int)$gr->fetch_assoc()['c'];
+}
+
+// ==================== EXAM CLEARANCE STATS ====================
+$pending_exam_clearance = 0;
+$active_exam_windows = 0;
+$ec_chk = $conn->query("SHOW TABLES LIKE 'exam_clearance_students'");
+if ($ec_chk && $ec_chk->num_rows > 0) {
+    $ec_r = $conn->query("SELECT COUNT(*) as c FROM exam_clearance_students WHERE status IN ('proof_submitted','invoiced','registered')");
+    if ($ec_r) $pending_exam_clearance = (int)$ec_r->fetch_assoc()['c'];
+    $aw_r = $conn->query("SELECT COUNT(*) as c FROM exam_clearance_invites WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > NOW()) AND (max_uses = 0 OR times_used < max_uses)");
+    if ($aw_r) $active_exam_windows = (int)$aw_r->fetch_assoc()['c'];
+}
+
 // ==================== RECENT PAYMENTS/REQUESTS ====================
 function getRecentPayments($conn) {
     $recent_payments = [];
@@ -176,9 +195,6 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#1e3c72">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Finance Dashboard - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -187,6 +203,7 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="../assets/css/global-theme.css" rel="stylesheet">
     <link href="../assets/css/finance-dashboard.css" rel="stylesheet">
+    <?php include_once __DIR__ . '/../includes/pwa-head.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <style>
         /* Interactive Finance Dashboard Styles */
@@ -893,6 +910,39 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
                 </div>
                 <span>Settings</span>
             </a>
+            <a href="graduation_clearance.php" class="action-btn" style="position:relative;">
+                <div class="action-icon" style="background: linear-gradient(135deg, #059669, #047857);">
+                    <i class="bi bi-mortarboard-fill"></i>
+                </div>
+                <?php if ($pending_graduation_clearance > 0): ?>
+                <span style="position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;"><?= $pending_graduation_clearance ?></span>
+                <?php endif; ?>
+                <span>Grad Clearance</span>
+            </a>
+            <a href="payment_deadlines.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #f97316, #ea580c);">
+                    <i class="bi bi-alarm"></i>
+                </div>
+                <span>Deadlines</span>
+            </a>
+            <a href="finance_manage_requests.php?filter=ready" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #14b8a6, #0d9488);">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <span>Lecturer Claims</span>
+            </a>
+            <a href="finance_clearance_invites.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #7c3aed, #5b21b6);">
+                    <i class="bi bi-link-45deg"></i>
+                </div>
+                <span>Clearance Invites</span>
+            </a>
+            <a href="Finance_clearence_students.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #0891b2, #0e7490);">
+                    <i class="bi bi-person-check"></i>
+                </div>
+                <span>Clearance Students</span>
+            </a>
         </div>
         
         <!-- Student Finances Section -->
@@ -923,6 +973,38 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
                 <div class="card-icon" style="background: linear-gradient(135deg, #06b6d4, #0891b2);"><i class="bi bi-arrow-right"></i></div>
                 <div class="card-title">View All</div>
                 <div class="card-subtitle">Student accounts</div>
+            </a>
+            <a href="dissertation_fees.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #8b5cf6, #6d28d9);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);"><i class="bi bi-mortarboard"></i></div>
+                <div class="card-title">Dissertation Fees</div>
+                <div class="card-subtitle">Manage & invoice</div>
+            </a>
+            <a href="graduation_clearance.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #059669, #047857); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #059669, #047857); position:relative;">
+                    <i class="bi bi-mortarboard-fill"></i>
+                    <?php if ($pending_graduation_clearance > 0): ?>
+                    <span style="position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:20px;height:20px;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;"><?= $pending_graduation_clearance ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="card-title">Graduation Clearance</div>
+                <div class="card-subtitle"><?= $pending_graduation_clearance ?> awaiting finance</div>
+            </a>
+            <a href="Finance_clearence_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #7c3aed, #5b21b6);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #7c3aed, #5b21b6);">
+                    <i class="bi bi-person-check"></i>
+                </div>
+                <div class="card-title">Finance Clearance</div>
+                <div class="card-subtitle">Invites & clearance</div>
+            </a>
+            <a href="exam_clearance_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0d9488, #0f766e); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0d9488, #0f766e); position:relative;">
+                    <i class="bi bi-shield-check"></i>
+                    <?php if ($pending_exam_clearance > 0): ?>
+                    <span style="position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:20px;height:20px;font-size:.65rem;font-weight:700;display:flex;align-items:center;justify-content:center;"><?= $pending_exam_clearance ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="card-title">Exam Clearance</div>
+                <div class="card-subtitle"><?= $pending_exam_clearance ?> pending review<?= $active_exam_windows ? '' : ' &middot; <span class="text-danger">No window</span>' ?></div>
             </a>
         </div>
         <div class="management-list mb-4" id="studentList">
@@ -955,6 +1037,22 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
                 <div class="list-content">
                     <div class="list-title">Outstanding Balances</div>
                     <div class="list-subtitle"><?php echo number_format($stats['students_with_balance']); ?> students with balance</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="graduation_clearance.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-mortarboard-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Graduation Clearance</div>
+                    <div class="list-subtitle"><?= $pending_graduation_clearance ?> awaiting finance check</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="exam_clearance_students.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #0d9488, #0f766e);"><i class="bi bi-shield-check"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Exam Clearance</div>
+                    <div class="list-subtitle"><?= $pending_exam_clearance ?> pending review<?= $active_exam_windows ? " &middot; {$active_exam_windows} active window" . ($active_exam_windows > 1 ? 's' : '') : ' &middot; <span class="text-danger">No open window</span>' ?></div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
@@ -1233,5 +1331,6 @@ $recent_lecturer_requests = getRecentLecturerRequests($conn);
             });
         });
     </script>
+    <?php include_once __DIR__ . '/../includes/pwa-footer.php'; ?>
 </body>
 </html>

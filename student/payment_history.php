@@ -88,6 +88,35 @@ $stmt->bind_param("s", $student_id);
 $stmt->execute();
 $submissions = $stmt->get_result();
 
+// Fetch upcoming payment deadlines
+$upcoming_deadlines = [];
+$dl_table_check = $conn->query("SHOW TABLES LIKE 'payment_deadlines'");
+if ($dl_table_check && $dl_table_check->num_rows > 0) {
+    $dl_result = $conn->query("SELECT * FROM payment_deadlines 
+        WHERE is_active = 1 AND deadline_date >= DATE_SUB(CURDATE(), INTERVAL 2 DAY) 
+        ORDER BY deadline_date ASC LIMIT 10");
+    if ($dl_result) {
+        while ($dl_row = $dl_result->fetch_assoc()) {
+            $upcoming_deadlines[] = $dl_row;
+        }
+    }
+}
+
+// Fetch dissertation fee data if student has one
+$diss_fee = null;
+$diss_fee_check = $conn->query("SHOW TABLES LIKE 'dissertation_fees'");
+if ($diss_fee_check && $diss_fee_check->num_rows > 0) {
+    $df_stmt = $conn->prepare("SELECT df.*, d.title as dissertation_title, d.current_phase
+        FROM dissertation_fees df
+        JOIN dissertations d ON df.dissertation_id = d.dissertation_id
+        WHERE df.student_id = ? ORDER BY df.invoiced_at DESC LIMIT 1");
+    if ($df_stmt) {
+        $df_stmt->bind_param("s", $student_id);
+        $df_stmt->execute();
+        $diss_fee = $df_stmt->get_result()->fetch_assoc();
+    }
+}
+
 $conn->close();
 ?>
 
@@ -211,6 +240,61 @@ $conn->close();
                 </div>
             </div>
         </div>
+
+        <!-- Upcoming Payment Deadlines -->
+        <?php if (!empty($upcoming_deadlines)): ?>
+        <div class="card shadow-sm mb-4 border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="bi bi-alarm"></i> Upcoming Payment Deadlines</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Payment</th><th>Deadline</th><th>Clearance By</th><th>Amount</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($upcoming_deadlines as $udl):
+                                $dl_today = date('Y-m-d');
+                                $dl_is_past = $udl['deadline_date'] < $dl_today;
+                                $dl_is_today = $udl['deadline_date'] === $dl_today;
+                                $dl_days = (int)((strtotime($udl['deadline_date']) - strtotime($dl_today)) / 86400);
+                            ?>
+                            <tr class="<?php echo $dl_is_past ? 'table-danger' : ($dl_is_today ? 'table-warning' : ''); ?>">
+                                <td><strong><?php echo htmlspecialchars($udl['installment_label']); ?></strong></td>
+                                <td>
+                                    <?php echo date('d M Y', strtotime($udl['deadline_date'])); ?>
+                                    <?php if ($dl_is_today): ?>
+                                        <span class="badge bg-danger">TODAY</span>
+                                    <?php elseif ($dl_is_past): ?>
+                                        <span class="badge bg-dark">OVERDUE</span>
+                                    <?php elseif ($dl_days <= 5): ?>
+                                        <span class="badge bg-warning text-dark"><?php echo $dl_days; ?> days</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-info"><?php echo $dl_days; ?> days</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo $udl['clearance_deadline'] ? date('d M Y', strtotime($udl['clearance_deadline'])) : '-'; ?></td>
+                                <td><?php echo $udl['amount_expected'] > 0 ? 'K' . number_format($udl['amount_expected'], 2) : '-'; ?></td>
+                                <td>
+                                    <?php if ($dl_is_past): ?>
+                                        <span class="text-danger"><i class="bi bi-exclamation-circle"></i> Overdue</span>
+                                    <?php elseif ($dl_is_today): ?>
+                                        <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Due Today</span>
+                                    <?php elseif ($dl_days <= 5): ?>
+                                        <span class="text-warning"><i class="bi bi-clock"></i> Due Soon</span>
+                                    <?php else: ?>
+                                        <span class="text-info"><i class="bi bi-calendar"></i> Upcoming</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <div class="row">
             <div class="col-md-12">
@@ -388,6 +472,89 @@ $conn->close();
                         <?php endif; ?>
                     </div>
                 </div>
+
+                <?php if ($diss_fee): ?>
+                <!-- Dissertation Fee Breakdown -->
+                <div class="card shadow-sm mb-4 border-purple" style="border-left: 4px solid #8b5cf6;">
+                    <div class="card-header text-white" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                        <h5 class="mb-0"><i class="bi bi-mortarboard"></i> Dissertation Fee</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-4 text-center">
+                                <small class="text-muted d-block">Total Fee</small>
+                                <h5 class="mb-0">K<?php echo number_format($diss_fee['fee_amount']); ?></h5>
+                            </div>
+                            <div class="col-md-4 text-center">
+                                <small class="text-muted d-block">Paid</small>
+                                <h5 class="mb-0 text-success">K<?php echo number_format($diss_fee['total_paid']); ?></h5>
+                            </div>
+                            <div class="col-md-4 text-center">
+                                <small class="text-muted d-block">Balance</small>
+                                <h5 class="mb-0 <?php echo $diss_fee['balance'] > 0 ? 'text-danger' : 'text-success'; ?>">K<?php echo number_format($diss_fee['balance']); ?></h5>
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mb-2">This fee is separate from tuition fees. Paid in 3 equal installments of K<?php echo number_format($diss_fee['installment_amount']); ?>.</small>
+                        <table class="table table-bordered table-sm">
+                            <thead class="table-light">
+                                <tr><th>Installment</th><th>Due When</th><th>Amount Due</th><th>Paid</th><th>Balance</th><th>Date</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $inst_labels = [
+                                    1 => 'After supervisor assigned',
+                                    2 => 'Before ethics & proposal defense',
+                                    3 => 'Before final presentation'
+                                ];
+                                for ($i = 1; $i <= 3; $i++):
+                                    $paid = (float)$diss_fee["installment_{$i}_paid"];
+                                    $due = (float)$diss_fee['installment_amount'];
+                                    $inst_bal = $due - $paid;
+                                    if ($inst_bal < 0) $inst_bal = 0;
+                                    $date = $diss_fee["installment_{$i}_date"];
+                                ?>
+                                <tr>
+                                    <td><strong><?php echo $i; ?><?php echo $i === 1 ? 'st' : ($i === 2 ? 'nd' : 'rd'); ?> Installment</strong></td>
+                                    <td><small><?php echo $inst_labels[$i]; ?></small></td>
+                                    <td>K<?php echo number_format($due); ?></td>
+                                    <td class="text-success">K<?php echo number_format($paid); ?></td>
+                                    <td class="text-danger">K<?php echo number_format($inst_bal); ?></td>
+                                    <td><?php echo $date ? date('M d, Y', strtotime($date)) : '-'; ?></td>
+                                    <td>
+                                        <?php if ($paid >= $due): ?>
+                                            <span class="badge bg-success">Paid</span>
+                                        <?php elseif ($paid > 0): ?>
+                                            <span class="badge bg-info">Partial</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-warning">Pending</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endfor; ?>
+                            </tbody>
+                        </table>
+                        <?php
+                        $lock_msgs = [];
+                        if ($diss_fee['lock_after_supervisor'] && $diss_fee['installment_1_paid'] < $diss_fee['installment_amount'])
+                            $lock_msgs[] = '1st installment required to continue after supervisor assignment';
+                        if ($diss_fee['lock_before_ethics'] && $diss_fee['installment_2_paid'] < $diss_fee['installment_amount'])
+                            $lock_msgs[] = '2nd installment required before ethics submission & proposal defense';
+                        if ($diss_fee['lock_before_final'] && $diss_fee['installment_3_paid'] < $diss_fee['installment_amount'])
+                            $lock_msgs[] = '3rd installment required before final dissertation presentation';
+                        ?>
+                        <?php if (!empty($lock_msgs)): ?>
+                        <div class="alert alert-warning py-2 mb-0">
+                            <small><i class="bi bi-lock me-1"></i><strong>Access restrictions active:</strong></small>
+                            <ul class="mb-0 small">
+                                <?php foreach ($lock_msgs as $lm): ?>
+                                <li><?php echo htmlspecialchars($lm); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <!-- Payment Transactions History -->
                 <div class="card shadow-sm mb-4">

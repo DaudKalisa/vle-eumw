@@ -57,13 +57,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lecturer_id = $conn->insert_id;
 
                 // Create user account
-                $password_hash = password_hash('password123', PASSWORD_DEFAULT);
+                $temp_password = substr(str_shuffle('abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$'), 0, 10);
+                $password_hash = password_hash($temp_password, PASSWORD_DEFAULT);
                 $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_lecturer_id, must_change_password) VALUES (?, ?, ?, 'lecturer', ?, 1)");
                 $stmt->bind_param("sssi", $username, $email, $password_hash, $lecturer_id);
                 $stmt->execute();
 
                 // Send welcome email with credentials
-                $temp_password = 'password123';
                 if (isEmailEnabled()) {
                     sendLecturerWelcomeEmail($email, $full_name, $username, $temp_password, $department, $position);
                 }
@@ -311,8 +311,8 @@ if ($courses_result) {
                                             <br><small class="text-muted"><i class="bi bi-plus-circle me-1"></i><?php echo htmlspecialchars(str_replace(',', ', ', $lecturer['additional_roles'])); ?></small>
                                         <?php endif; ?>
                                         </td>
-                                        <td><?php echo htmlspecialchars($lecturer['department']); ?></td>
-                                        <td><?php echo htmlspecialchars($lecturer['position']); ?></td>
+                                        <td><?php echo htmlspecialchars($lecturer['department'] ?? ''); ?></td>
+                                        <td><?php echo htmlspecialchars($lecturer['position'] ?? ''); ?></td>
                                         <td>
                                             <a href="edit_lecturer.php?id=<?php echo $lecturer['lecturer_id']; ?>" class="btn btn-sm btn-success">
                                                 <i class="bi bi-pencil-square"></i> Edit
@@ -378,7 +378,14 @@ if ($courses_result) {
                                                         </div>
                                                         
                                                         <?php if (!empty($all_courses)): ?>
-                                                        <div class="row">
+                                                        <!-- Search box -->
+                                                        <div class="mb-3">
+                                                            <input type="text" class="form-control course-search-input" 
+                                                                   data-lecturer="<?php echo $lecturer['lecturer_id']; ?>"
+                                                                   placeholder="Search courses by code, name or program..." 
+                                                                   autocomplete="off">
+                                                        </div>
+                                                        <div class="row course-list-<?php echo $lecturer['lecturer_id']; ?>">
                                                             <?php foreach ($all_courses as $course): ?>
                                                                 <div class="col-md-6 mb-2">
                                                                     <div class="form-check">
@@ -585,6 +592,19 @@ if ($courses_result) {
             document.getElementById('lec_email').value = username + '@exploitsonline.com';
         }
     }
+
+    // Course search filter for Assign Courses modals
+    document.querySelectorAll('.course-search-input').forEach(function(input) {
+        input.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            const lecturerId = this.getAttribute('data-lecturer');
+            const items = document.querySelectorAll('.course-list-' + lecturerId + ' > .col-md-6');
+            items.forEach(function(item) {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+    });
     </script>
 </body>
 </html>

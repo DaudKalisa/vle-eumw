@@ -115,20 +115,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         // Send welcome email
                         if (function_exists('isEmailEnabled') && isEmailEnabled()) {
+                            $login_url = defined('SYSTEM_URL') ? SYSTEM_URL . '/login.php' : '/vle-eumw/login.php';
                             $subject = "Welcome to VLE - ODL Coordinator Account";
                             $message = "
-                            <html><body>
-                                <h2>Welcome to the Virtual Learning Environment</h2>
-                                <p>Dear $full_name,</p>
-                                <p>Your ODL Coordinator account has been created successfully.</p>
-                                <p><strong>Login Details:</strong></p>
-                                <ul>
-                                    <li><strong>Username:</strong> $username</li>
-                                    <li><strong>Email:</strong> $email</li>
-                                    <li><strong>Password:</strong> $password</li>
-                                </ul>
-                                <p>Please change your password after first login for security purposes.</p>
-                                <p>Best regards,<br>VLE Administration Team</p>
+                            <html><body style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+                                <div style='background:linear-gradient(135deg,#0891b2,#0e7490);padding:24px;text-align:center;color:#fff;border-radius:12px 12px 0 0;'>
+                                    <h2 style='margin:0;'>\u2705 Welcome to VLE</h2>
+                                    <p style='margin:8px 0 0;opacity:0.9;'>ODL Coordinator Account</p>
+                                </div>
+                                <div style='background:#fff;padding:24px;border:1px solid #e2e8f0;'>
+                                    <p>Dear <strong>" . htmlspecialchars($full_name) . "</strong>,</p>
+                                    <p>Your <strong>ODL Coordinator</strong> account has been created successfully.</p>
+                                    <div style='background:#f0fdf4;border:1px solid #bbf7d0;padding:16px;border-radius:8px;margin:16px 0;'>
+                                        <p style='margin:4px 0;'><strong>Username:</strong> " . htmlspecialchars($username) . "</p>
+                                        <p style='margin:4px 0;'><strong>Email:</strong> " . htmlspecialchars($email) . "</p>
+                                        <p style='margin:4px 0;'><strong>Password:</strong> " . htmlspecialchars($password) . "</p>
+                                    </div>
+                                    <p style='color:#dc2626;font-size:0.9em;'>\u26a0\ufe0f Please change your password after first login for security purposes.</p>
+                                    <div style='text-align:center;margin:20px 0;'>
+                                        <a href='" . htmlspecialchars($login_url) . "' style='display:inline-block;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;'>\ud83d\udd11 Login to Your Portal</a>
+                                    </div>
+                                    <p style='font-size:0.85em;color:#64748b;text-align:center;'>Or copy this link: <a href='" . htmlspecialchars($login_url) . "' style='color:#0891b2;'>" . htmlspecialchars($login_url) . "</a></p>
+                                </div>
                             </body></html>";
                             @sendEmail($email, $full_name, $subject, $message);
                         }

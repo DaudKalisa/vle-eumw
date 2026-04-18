@@ -348,7 +348,7 @@ $outstanding_totals = $conn->query("SELECT
                                     </select>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold">Module/Course Name *</label>
+                                    <label class="form-label fw-bold">Course Name *</label>
                                     <input type="text" name="module_name" class="form-control" placeholder="e.g., ICT101 - Introduction to Computing" required>
                                 </div>
                                 <div class="col-md-6">

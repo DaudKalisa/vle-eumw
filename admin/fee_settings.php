@@ -21,6 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_fees'])) {
     $tuition_doctorate = floatval($_POST['tuition_doctorate']);
     $supplementary_exam = floatval($_POST['supplementary_exam_fee']);
     $deferred_exam = floatval($_POST['deferred_exam_fee']);
+    $dissertation_fee = floatval($_POST['dissertation_fee'] ?? 250000);
+    $lecturer_hourly_rate = floatval($_POST['lecturer_hourly_rate'] ?? 9500);
+    $lecturer_airtime_rate = floatval($_POST['lecturer_airtime_rate'] ?? 15000);
+    
+    // Ensure new columns exist
+    $conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS dissertation_fee DECIMAL(12,2) DEFAULT 250000.00");
+    $conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS lecturer_hourly_rate DECIMAL(10,2) DEFAULT 9500.00");
+    $conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS lecturer_airtime_rate DECIMAL(10,2) DEFAULT 15000.00");
     
     $stmt = $conn->prepare("UPDATE fee_settings SET 
         application_fee = ?,
@@ -32,10 +40,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_fees'])) {
         tuition_masters = ?,
         tuition_doctorate = ?,
         supplementary_exam_fee = ?,
-        deferred_exam_fee = ?
+        deferred_exam_fee = ?,
+        dissertation_fee = ?,
+        lecturer_hourly_rate = ?,
+        lecturer_airtime_rate = ?
         WHERE id = 1");
     
-    $stmt->bind_param("dddddddddd", $application_fee, $registration_fee, $new_student_reg_fee, $continuing_reg_fee, $tuition_degree, $tuition_professional, $tuition_masters, $tuition_doctorate, $supplementary_exam, $deferred_exam);
+    $stmt->bind_param("ddddddddddddd", $application_fee, $registration_fee, $new_student_reg_fee, $continuing_reg_fee, $tuition_degree, $tuition_professional, $tuition_masters, $tuition_doctorate, $supplementary_exam, $deferred_exam, $dissertation_fee, $lecturer_hourly_rate, $lecturer_airtime_rate);
     
     if ($stmt->execute()) {
         $success = "Fee settings updated successfully!";
@@ -44,7 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_fees'])) {
     }
 }
 
-// Get current fees
+// Get current fees - ensure all columns exist
+$conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS dissertation_fee DECIMAL(12,2) DEFAULT 250000.00");
+$conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS lecturer_hourly_rate DECIMAL(10,2) DEFAULT 9500.00");
+$conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS lecturer_airtime_rate DECIMAL(10,2) DEFAULT 15000.00");
 $fees = $conn->query("SELECT * FROM fee_settings LIMIT 1")->fetch_assoc();
 if (!$fees) {
     $fees = [
@@ -57,7 +71,10 @@ if (!$fees) {
         'tuition_masters' => 1100000,
         'tuition_doctorate' => 2200000,
         'supplementary_exam_fee' => 50000,
-        'deferred_exam_fee' => 50000
+        'deferred_exam_fee' => 50000,
+        'dissertation_fee' => 250000,
+        'lecturer_hourly_rate' => 9500,
+        'lecturer_airtime_rate' => 15000
     ];
 }
 ?>
@@ -176,6 +193,35 @@ if (!$fees) {
                                         <label class="form-label">Deferred Exam Fee (K) <span class="text-danger">*</span></label>
                                         <input type="number" class="form-control" name="deferred_exam_fee" value="<?php echo $fees['deferred_exam_fee']; ?>" step="0.01" required>
                                         <small class="text-muted">Per deferred exam</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Dissertation Fee -->
+                            <div class="mb-4">
+                                <h5 class="border-bottom pb-2"><i class="bi bi-mortarboard"></i> Dissertation Fee</h5>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Dissertation Fee (K) <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" name="dissertation_fee" value="<?php echo $fees['dissertation_fee'] ?? 250000; ?>" step="0.01" required>
+                                        <small class="text-muted">Charged in 3 equal installments to dissertation students</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Lecturer Claim Rates -->
+                            <div class="mb-4">
+                                <h5 class="border-bottom pb-2"><i class="bi bi-person-badge"></i> Lecturer Claim Rates</h5>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Lecturer Hourly Rate (K) <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" name="lecturer_hourly_rate" value="<?php echo $fees['lecturer_hourly_rate'] ?? 9500; ?>" step="0.01" required>
+                                        <small class="text-muted">Default rate per hour for lecturer claims</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Lecturer Airtime/Bundle Rate (K) <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" name="lecturer_airtime_rate" value="<?php echo $fees['lecturer_airtime_rate'] ?? 15000; ?>" step="0.01" required>
+                                        <small class="text-muted">Fixed airtime/data allowance per claim</small>
                                     </div>
                                 </div>
                             </div>

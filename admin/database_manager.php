@@ -696,6 +696,164 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $error = "Backup file not found: $filename";
         }
     }
+
+    // Merge/Update data from stored backup - INSERT ... ON DUPLICATE KEY UPDATE
+    if ($_POST['action'] === 'merge_data' && isset($_POST['filename'])) {
+        $filename = basename($_POST['filename']);
+        $filepath = $backup_dir . $filename;
+
+        if (!file_exists($filepath)) {
+            $error = 'Backup file not found.';
+        } elseif (!isset($_POST['confirm_merge'])) {
+            $error = 'Please confirm the merge operation.';
+        } else {
+            try {
+                $sql_content = file_get_contents($filepath);
+                $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+                mysqli_report(MYSQLI_REPORT_OFF);
+
+                // Skip DROP TABLE
+                $sql_content = preg_replace('/DROP TABLE[^;]*;/i', '', $sql_content);
+                // CREATE TABLE IF NOT EXISTS
+                $sql_content = preg_replace('/CREATE TABLE\s+`/i', 'CREATE TABLE IF NOT EXISTS `', $sql_content);
+                $sql_content = preg_replace('/CREATE TABLE IF NOT EXISTS IF NOT EXISTS/i', 'CREATE TABLE IF NOT EXISTS', $sql_content);
+                // Clean comments
+                $sql_content = preg_replace('/^--.*$/m', '', $sql_content);
+                $sql_content = preg_replace('/\/\*.*?\*\//s', '', $sql_content);
+
+                $lines = explode("\n", $sql_content);
+                $nonInsertStatements = [];
+                $insertStatements = [];
+                $buffer = '';
+                foreach ($lines as $line) {
+                    $trimmed = trim($line);
+                    if ($trimmed === '') continue;
+                    $buffer .= $line . "\n";
+                    if (substr(rtrim($trimmed), -1) === ';') {
+                        $stmt = trim($buffer);
+                        if (preg_match('/^INSERT\s+(IGNORE\s+)?INTO/i', $stmt)) {
+                            $insertStatements[] = $stmt;
+                        } else {
+                            $nonInsertStatements[] = $stmt;
+                        }
+                        $buffer = '';
+                    }
+                }
+
+                // Execute structure statements (skip non-fatal errors)
+                foreach ($nonInsertStatements as $stmt) {
+                    if (empty($stmt)) continue;
+                    try { @$conn->query($stmt); } catch (Exception $e) { /* skip */ }
+                }
+
+                // Process INSERT as ON DUPLICATE KEY UPDATE
+                $mergedRows = 0;
+                $mergeErrors = 0;
+                foreach ($insertStatements as $insert) {
+                    try {
+                        if (preg_match('/INSERT\s+(?:IGNORE\s+)?INTO\s+`?(\w+)`?\s+\(([^)]+)\)\s+VALUES\s*\((.+)\);?$/is', $insert, $m)) {
+                            $tbl = $m[1];
+                            $colsPart = $m[2];
+                            $cols = array_map(function($c) { return trim($c, " `\t\n\r"); }, explode(',', $colsPart));
+                            $updateParts = [];
+                            foreach ($cols as $col) {
+                                $updateParts[] = "`{$col}` = VALUES(`{$col}`)";
+                            }
+                            $mergeSQL = "INSERT INTO `{$tbl}` ({$colsPart}) VALUES ({$m[3]}) ON DUPLICATE KEY UPDATE " . implode(', ', $updateParts);
+                            if (@$conn->query($mergeSQL)) { $mergedRows++; } else { $mergeErrors++; }
+                        } else {
+                            $fallback = preg_replace('/^INSERT\s+INTO/i', 'INSERT IGNORE INTO', $insert);
+                            if (@$conn->query($fallback)) { $mergedRows++; } else { $mergeErrors++; }
+                        }
+                    } catch (Exception $e) { $mergeErrors++; }
+                }
+
+                mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+                $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                $message = "Data merge completed from '<strong>" . htmlspecialchars($filename) . "</strong>'. {$mergedRows} rows processed" . ($mergeErrors > 0 ? ", {$mergeErrors} skipped" : "") . ". Existing records updated, new records added.";
+            } catch (Exception $e) {
+                @$conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                $error = 'Data merge failed: ' . $e->getMessage();
+            }
+        }
+    }
+
+    // Merge/Update data from uploaded file
+    if ($_POST['action'] === 'upload_merge_data' && isset($_FILES['merge_file'])) {
+        $uploadedFile = $_FILES['merge_file'];
+        if ($uploadedFile['error'] !== UPLOAD_ERR_OK) {
+            $error = 'No file uploaded or upload error occurred.';
+        } elseif (strtolower(pathinfo($uploadedFile['name'], PATHINFO_EXTENSION)) !== 'sql') {
+            $error = 'Only .sql files are allowed.';
+        } elseif (!isset($_POST['confirm_upload_merge'])) {
+            $error = 'Please confirm the merge operation.';
+        } else {
+            try {
+                $sql_content = file_get_contents($uploadedFile['tmp_name']);
+                $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+                mysqli_report(MYSQLI_REPORT_OFF);
+
+                $sql_content = preg_replace('/DROP TABLE[^;]*;/i', '', $sql_content);
+                $sql_content = preg_replace('/CREATE TABLE\s+`/i', 'CREATE TABLE IF NOT EXISTS `', $sql_content);
+                $sql_content = preg_replace('/CREATE TABLE IF NOT EXISTS IF NOT EXISTS/i', 'CREATE TABLE IF NOT EXISTS', $sql_content);
+                $sql_content = preg_replace('/^--.*$/m', '', $sql_content);
+                $sql_content = preg_replace('/\/\*.*?\*\//s', '', $sql_content);
+
+                $lines = explode("\n", $sql_content);
+                $nonInsertStatements = [];
+                $insertStatements = [];
+                $buffer = '';
+                foreach ($lines as $line) {
+                    $trimmed = trim($line);
+                    if ($trimmed === '') continue;
+                    $buffer .= $line . "\n";
+                    if (substr(rtrim($trimmed), -1) === ';') {
+                        $stmt = trim($buffer);
+                        if (preg_match('/^INSERT\s+(IGNORE\s+)?INTO/i', $stmt)) {
+                            $insertStatements[] = $stmt;
+                        } else {
+                            $nonInsertStatements[] = $stmt;
+                        }
+                        $buffer = '';
+                    }
+                }
+
+                foreach ($nonInsertStatements as $stmt) {
+                    if (empty($stmt)) continue;
+                    try { @$conn->query($stmt); } catch (Exception $e) { /* skip */ }
+                }
+
+                $mergedRows = 0;
+                $mergeErrors = 0;
+                foreach ($insertStatements as $insert) {
+                    try {
+                        if (preg_match('/INSERT\s+(?:IGNORE\s+)?INTO\s+`?(\w+)`?\s+\(([^)]+)\)\s+VALUES\s*\((.+)\);?$/is', $insert, $m)) {
+                            $tbl = $m[1];
+                            $colsPart = $m[2];
+                            $cols = array_map(function($c) { return trim($c, " `\t\n\r"); }, explode(',', $colsPart));
+                            $updateParts = [];
+                            foreach ($cols as $col) {
+                                $updateParts[] = "`{$col}` = VALUES(`{$col}`)";
+                            }
+                            $mergeSQL = "INSERT INTO `{$tbl}` ({$colsPart}) VALUES ({$m[3]}) ON DUPLICATE KEY UPDATE " . implode(', ', $updateParts);
+                            if (@$conn->query($mergeSQL)) { $mergedRows++; } else { $mergeErrors++; }
+                        } else {
+                            $fallback = preg_replace('/^INSERT\s+INTO/i', 'INSERT IGNORE INTO', $insert);
+                            if (@$conn->query($fallback)) { $mergedRows++; } else { $mergeErrors++; }
+                        }
+                    } catch (Exception $e) { $mergeErrors++; }
+                }
+
+                mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+                $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                $uploadName = htmlspecialchars(basename($uploadedFile['name']));
+                $message = "Data merge completed from uploaded file '<strong>{$uploadName}</strong>'. {$mergedRows} rows processed" . ($mergeErrors > 0 ? ", {$mergeErrors} skipped" : "") . ". Existing records updated, new records added.";
+            } catch (Exception $e) {
+                @$conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                $error = 'Data merge failed: ' . $e->getMessage();
+            }
+        }
+    }
 }
 
 // Get existing backups
@@ -917,6 +1075,82 @@ $truncate_categories = [
             </div>
         </div>
         
+        <!-- Data Update / Merge Section -->
+        <div class="card mb-4">
+            <div class="card-header text-white" style="background: linear-gradient(135deg, #20c997, #0ca678);">
+                <h5 class="mb-0"><i class="bi bi-arrow-repeat me-2"></i>Data Update / Merge</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>How Data Update Works</h6>
+                    <p class="mb-2">This feature <strong>updates existing records</strong> with new values from the backup file and <strong>inserts new records</strong> that don't exist yet. <strong>No data is deleted.</strong></p>
+                    <p class="mb-0"><code>INSERT ... ON DUPLICATE KEY UPDATE</code> is used so existing rows are updated and new rows are added.</p>
+                </div>
+                <div class="alert alert-warning mb-3">
+                    <h6 class="alert-heading"><i class="bi bi-arrow-left-right me-2"></i>Difference from Import</h6>
+                    <ul class="mb-0">
+                        <li><strong>Import (full restore):</strong> Drops and recreates tables — <em>all existing data is replaced</em>.</li>
+                        <li><strong>Data Update / Merge:</strong> Updates existing rows with newer values and adds new rows — <em>no data is deleted</em>.</li>
+                    </ul>
+                </div>
+                <div class="row">
+                    <div class="col-lg-6 mb-3">
+                        <h6><i class="bi bi-cloud-upload me-2"></i>Upload SQL File to Merge</h6>
+                        <form method="POST" enctype="multipart/form-data">
+                            <input type="hidden" name="action" value="upload_merge_data">
+                            <div class="mb-3">
+                                <label class="form-label"><i class="bi bi-file-earmark-arrow-up me-1"></i>Browse SQL File</label>
+                                <input type="file" class="form-control" name="merge_file" accept=".sql" required>
+                                <small class="text-muted">Upload a .sql backup file to merge into the database</small>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="confirm_upload_merge" id="confirmUploadMerge" required>
+                                <label class="form-check-label" for="confirmUploadMerge">
+                                    I understand this will update existing records and add new ones
+                                </label>
+                            </div>
+                            <button type="submit" class="btn btn-lg w-100" style="background-color: #20c997; color: white;">
+                                <i class="bi bi-cloud-upload me-2"></i>Upload &amp; Merge Data
+                            </button>
+                        </form>
+                    </div>
+                    <div class="col-lg-6 mb-3">
+                        <h6><i class="bi bi-archive me-2"></i>Merge from Stored Backup</h6>
+                        <?php if (!empty($backups)): ?>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="merge_data">
+                                <div class="mb-3">
+                                    <label class="form-label"><i class="bi bi-file-earmark-text me-1"></i>Select Backup</label>
+                                    <select class="form-select" name="filename" required>
+                                        <option value="">-- Select a backup --</option>
+                                        <?php foreach ($backups as $backup): ?>
+                                            <option value="<?= htmlspecialchars($backup['filename']) ?>">
+                                                <?= htmlspecialchars($backup['filename']) ?> (<?= number_format($backup['size'] / 1024, 1) ?> KB) - <?= date('M d, Y H:i', $backup['date']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" name="confirm_merge" id="confirmMerge" required>
+                                    <label class="form-check-label" for="confirmMerge">
+                                        I understand this will update existing records and add new ones
+                                    </label>
+                                </div>
+                                <button type="submit" class="btn btn-lg w-100" style="background-color: #20c997; color: white;">
+                                    <i class="bi bi-arrow-repeat me-2"></i>Merge Data
+                                </button>
+                            </form>
+                        <?php else: ?>
+                            <div class="text-center py-4">
+                                <i class="bi bi-archive fs-1 text-muted"></i>
+                                <p class="text-muted mt-2">No stored backups available. Create a backup first or upload a file.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Existing Backups -->
         <div class="card mb-4">
             <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:var(--vle-gradient-primary);">

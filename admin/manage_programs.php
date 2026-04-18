@@ -52,11 +52,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (isset($_POST['delete_program'])) {
         $program_id = (int)$_POST['program_id'];
 
+        // Remove all course associations for this program first
+        $conn->query("DELETE FROM course_programs WHERE program_id = $program_id");
+
+        // Permanently delete the program
         $stmt = $conn->prepare("DELETE FROM programs WHERE program_id = ?");
         $stmt->bind_param("i", $program_id);
         
         if ($stmt->execute()) {
-            $success = "Program deleted successfully!";
+            $success = "Program permanently deleted!";
         } else {
             $error = "Failed to delete program. It might be in use.";
         }

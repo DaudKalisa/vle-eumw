@@ -46,10 +46,10 @@ $lecturers = $stmt->fetch_all(MYSQLI_ASSOC);
                         <tbody>
                         <?php foreach ($lecturers as $lecturer): ?>
                             <tr>
-                                <td><?php echo htmlspecialchars($lecturer['full_name']); ?></td>
-                                <td><?php echo htmlspecialchars($lecturer['email']); ?></td>
-                                <td><?php echo htmlspecialchars($lecturer['position']); ?></td>
-                                <td><?php echo htmlspecialchars($lecturer['department']); ?></td>
+                                <td><?php echo htmlspecialchars($lecturer['full_name'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($lecturer['email'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($lecturer['position'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($lecturer['department'] ?? ''); ?></td>
                                 <td><?php echo $lecturer['is_active'] ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'; ?></td>
                             </tr>
                         <?php endforeach; ?>

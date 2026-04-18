@@ -30,8 +30,10 @@ switch ($user['role']) {
 
 // Enforce password change at first login
 $force_change = false;
+$temp_verified = false;
 if (isset($_SESSION['force_password_change']) && $_SESSION['force_password_change']) {
     $force_change = true;
+    $temp_verified = !empty($_SESSION['temp_password_verified']);
 }
 
 // Handle password change submission
@@ -41,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $confirm_password = $_POST['confirm_password'] ?? '';
 
     // Validation
-    if (empty($current_password)) {
+    if (!$force_change && !$temp_verified && empty($current_password)) {
         $error_message = "Please enter your current password.";
     } elseif (empty($new_password)) {
         $error_message = "Please enter a new password.";
@@ -50,14 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif ($new_password !== $confirm_password) {
         $error_message = "New passwords do not match.";
     } else {
-        // Verify current password
-        $stmt = $conn->prepare("SELECT password_hash FROM users WHERE user_id = ?");
-        $stmt->bind_param("i", $user['user_id']);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $user_data = $result->fetch_assoc();
+        $password_ok = false;
 
-        if (!password_verify($current_password, $user_data['password_hash'])) {
+        if ($force_change && $temp_verified) {
+            // User already authenticated via login with temp password — skip re-verification
+            $password_ok = true;
+        } else {
+            // Verify current password
+            $stmt = $conn->prepare("SELECT password_hash FROM users WHERE user_id = ?");
+            $stmt->bind_param("i", $user['user_id']);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $user_data = $result->fetch_assoc();
+            $password_ok = password_verify($current_password, $user_data['password_hash']);
+        }
+
+        if (!$password_ok) {
             $error_message = "Current password is incorrect.";
         } else {
             // Update password and clear must_change_password flag
@@ -71,6 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $_POST = [];
                 if ($force_change) {
                     unset($_SESSION['force_password_change']);
+                    unset($_SESSION['temp_password_verified']);
                     // Redirect to dashboard after password change
                     header('Location: ' . $dashboard_path);
                     exit();
@@ -90,7 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Change Password - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="assets/css/global-theme.css" rel="stylesheet">
     <style>
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -146,10 +158,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <small class="text-muted"><?php echo htmlspecialchars($user['email'] ?? ucfirst($user['role'])); ?></small>
                         </div>
 
-                        <?php if ($force_change): ?>
+                        <?php if ($force_change && $temp_verified): ?>
+                            <div class="alert alert-info">
+                                <i class="bi bi-shield-check me-1"></i>
+                                <strong>Welcome, <?= htmlspecialchars($user['display_name']) ?>!</strong><br>
+                                Your password was reset by an administrator. Please set a new password to continue.
+                            </div>
+                        <?php elseif ($force_change): ?>
                             <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> For security, you must change your password before accessing the system.</div>
                         <?php endif; ?>
                         <form method="POST" action="" id="changePasswordForm">
+                            <?php if (!$force_change || !$temp_verified): ?>
                             <div class="mb-3">
                                 <label class="form-label">Current Password <span class="text-danger">*</span></label>
                                 <div class="input-group">
@@ -160,6 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                     </button>
                                 </div>
                             </div>
+                            <?php endif; ?>
 
                             <div class="mb-3">
                                 <label class="form-label">New Password <span class="text-danger">*</span></label>

@@ -6,7 +6,7 @@ requireLogin();
 requireRole(['lecturer']);
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 $user = getCurrentUser();
 
 // Handle sending messages

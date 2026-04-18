@@ -29,11 +29,14 @@ $nav_items = [
     ['url' => 'lecturer_finance_requests.php', 'icon' => 'bi-person-workspace', 'title' => 'Lecturer Requests'],
     ['url' => 'review_payments.php', 'icon' => 'bi-check2-square', 'title' => 'Review Payments'],
     ['url' => 'finance_reports.php', 'icon' => 'bi-graph-up', 'title' => 'Reports'],
+    ['url' => 'student_payment_report.php', 'icon' => 'bi-file-earmark-spreadsheet', 'title' => 'Payment Report'],
 ];
 
 // Get page title from breadcrumbs or default
 $page_title = $page_title ?? 'Finance Portal';
 ?>
+<!-- Bootstrap Icons 1.10.0 -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
 <!-- Finance Header Navigation -->
 <nav class="navbar navbar-expand-lg navbar-dark vle-navbar finance-nav">
     <div class="container-fluid">
@@ -71,6 +74,15 @@ $page_title = $page_title ?? 'Finance Portal';
                         <li><a class="dropdown-item" href="payment_history.php"><i class="bi bi-clock-history me-2"></i>Payment History</a></li>
                         <li><a class="dropdown-item" href="record_payment.php"><i class="bi bi-plus-circle me-2"></i>Record Payment</a></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="payment_deadlines.php"><i class="bi bi-alarm me-2"></i>Payment Deadlines & Reminders</a></li>
+                        <li><a class="dropdown-item" href="dissertation_fees.php"><i class="bi bi-mortarboard me-2"></i>Dissertation Fees</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="Finance_clearence_students.php"><i class="bi bi-person-check me-2"></i>Finance Clearance Students</a></li>
+                        <li><a class="dropdown-item" href="finance_clearance_invites.php"><i class="bi bi-link-45deg me-2"></i>Clearance Invite Links</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="exam_clearance_students.php"><i class="bi bi-shield-check me-2"></i>Exam Clearance Students</a></li>
+                        <li><a class="dropdown-item" href="exam_clearance_invites.php"><i class="bi bi-calendar-check me-2"></i>Exam Clearance Windows</a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="fee_settings.php"><i class="bi bi-gear me-2"></i>Fee Settings</a></li>
                     </ul>
                 </li>
@@ -103,6 +115,7 @@ $page_title = $page_title ?? 'Finance Portal';
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
                         <li><a class="dropdown-item" href="../change_password.php"><i class="bi bi-key me-2"></i>Change Password</a></li>
+                        <li><a class="dropdown-item" href="help.php"><i class="bi bi-question-circle me-2"></i>Help & Guide</a></li>
                         <li><a class="dropdown-item" href="fee_settings.php"><i class="bi bi-gear me-2"></i>Fee Settings</a></li>
                         <li><a class="dropdown-item" href="../theme_settings.php"><i class="bi bi-palette me-2"></i>Theme</a></li>
                         <li><hr class="dropdown-divider"></li>

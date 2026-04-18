@@ -67,27 +67,16 @@ $user = getCurrentUser();
     include 'header_nav.php'; 
     ?>
 
-    <div class="vle-content">
-            </div>
+    <div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+        <div class="mb-3">
+            <button class="btn btn-outline-secondary" onclick="window.history.back();">
+                <i class="bi bi-arrow-left"></i> Back
+            </button>
         </div>
-    </nav>
-    <!-- Centered Back Button in Header -->
-    <div class="w-100 d-flex justify-content-center align-items-center" style="position:relative;top:-10px;z-index:1051;">
-        <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();">
-            <i class="bi bi-arrow-left"></i> Back
-        </button>
-    </div>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Forums - VLE System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="card shadow">
-            <div class="card-header">
-                <h4>Forums for <?php echo htmlspecialchars($course['course_name']); ?></h4>
-
+        
+        <div class="card shadow-sm">
+            <div class="card-header py-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h4 class="mb-0 text-white"><i class="bi bi-chat-dots me-2"></i>Forums for <?php echo htmlspecialchars($course['course_name']); ?></h4>
             </div>
             <div class="card-body">
                 <!-- Create New Forum -->
@@ -136,5 +125,6 @@ $user = getCurrentUser();
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/js/global-theme.js"></script>
 </body>
 </html>

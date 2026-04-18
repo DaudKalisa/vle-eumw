@@ -430,7 +430,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
     <!-- Top Bar -->
     <div class="eu-topbar d-none d-md-block">
         <div class="container d-flex justify-content-between align-items-center">
-            <div><i class="bi bi-envelope me-1"></i> <a href="mailto:info@exploitsonline.com">info@exploitsonline.com</a> <span class="mx-2">|</span> <i class="bi bi-telephone me-1"></i> +265 999 000 000</div>
+            <div><i class="bi bi-envelope me-1"></i> <a href="mailto:info@exploitsonline.com">info@exploitsonline.com</a> <span class="mx-2">|</span> <i class="bi bi-telephone me-1"></i> +265 998 955 220</div>
             <div><a href="https://exploitsmw.com" target="_blank"><i class="bi bi-globe me-1"></i> exploitsmw.com</a> <span class="mx-2">|</span> <a href="https://vle.exploitsonline.com"><i class="bi bi-mortarboard me-1"></i> VLE Portal</a></div>
         </div>
     </div>
@@ -712,7 +712,7 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
                 <div class="col-lg-4 col-md-6">
                     <a href="campus.php#mzuzu" class="text-decoration-none">
                         <div class="eu-campus-card">
-                            <div style="overflow:hidden"><img src="pictures/Slider-3.jpg" alt="Mzuzu Campus"></div>
+                            <div style="overflow:hidden"><img src="pictures/Slider-4.jpg" alt="Mzuzu Campus"></div>
                             <div class="campus-overlay"><h6>Mzuzu Campus <i class="bi bi-arrow-right-short"></i></h6><small>Northern Region</small></div>
                         </div>
                     </a>

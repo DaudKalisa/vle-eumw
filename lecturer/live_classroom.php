@@ -6,123 +6,126 @@ requireRole(['lecturer']);
 
 $conn = getDbConnection();
 
-// Create live session tables if they don't exist
-// Temporarily disable foreign key checks to avoid constraint errors
-$conn->query("SET FOREIGN_KEY_CHECKS=0");
-
-$create_tables = "
-CREATE TABLE IF NOT EXISTS vle_live_sessions (
-    session_id INT PRIMARY KEY AUTO_INCREMENT,
-    course_id INT NOT NULL,
-    lecturer_id VARCHAR(50) NOT NULL,
-    session_name VARCHAR(255) NOT NULL,
-    session_code VARCHAR(50) UNIQUE NOT NULL,
-    status ENUM('pending', 'active', 'completed') DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP NULL,
-    ended_at TIMESTAMP NULL,
-    max_participants INT DEFAULT 50,
-    meeting_url VARCHAR(500),
-    recording_url VARCHAR(500) DEFAULT NULL,
-    INDEX idx_course (course_id),
-    INDEX idx_lecturer (lecturer_id),
-    INDEX idx_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS vle_session_participants (
-    participant_id INT PRIMARY KEY AUTO_INCREMENT,
-    session_id INT NOT NULL,
-    student_id VARCHAR(50) NOT NULL,
-    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    left_at TIMESTAMP NULL,
-    status ENUM('invited', 'joined', 'completed') DEFAULT 'invited',
-    INDEX idx_session (session_id),
-    INDEX idx_student (student_id),
-    UNIQUE (session_id, student_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS vle_session_invites (
-    invite_id INT PRIMARY KEY AUTO_INCREMENT,
-    session_id INT NOT NULL,
-    student_id VARCHAR(50) NOT NULL,
-    invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    viewed_at TIMESTAMP NULL,
-    status ENUM('pending', 'accepted', 'declined') DEFAULT 'pending',
-    INDEX idx_session (session_id),
-    INDEX idx_student (student_id),
-    UNIQUE (session_id, student_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-";
-
-// Execute table creation
-if (mysqli_multi_query($conn, $create_tables)) {
-    // Clear all results from multi_query
-    do {
-        if ($result = $conn->store_result()) {
-            $result->free();
-        }
-    } while ($conn->next_result());
+// One-time table creation: only run if the main table doesn't exist yet
+// This avoids the costly CREATE TABLE + mysqli_multi_query on every page load
+$table_check = $conn->query("SHOW TABLES LIKE 'vle_live_sessions'");
+if (!$table_check || $table_check->num_rows === 0) {
+    // Tables don't exist — create them one at a time (safer than multi_query)
+    $conn->query("SET FOREIGN_KEY_CHECKS=0");
+    
+    $conn->query("CREATE TABLE IF NOT EXISTS vle_live_sessions (
+        session_id INT PRIMARY KEY AUTO_INCREMENT,
+        course_id INT NOT NULL,
+        lecturer_id VARCHAR(50) NOT NULL,
+        session_name VARCHAR(255) NOT NULL,
+        session_code VARCHAR(50) UNIQUE NOT NULL,
+        status ENUM('pending', 'active', 'completed') DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        started_at TIMESTAMP NULL,
+        ended_at TIMESTAMP NULL,
+        max_participants INT DEFAULT 50,
+        meeting_url VARCHAR(500),
+        recording_url VARCHAR(500) DEFAULT NULL,
+        INDEX idx_course (course_id),
+        INDEX idx_lecturer (lecturer_id),
+        INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    
+    $conn->query("CREATE TABLE IF NOT EXISTS vle_session_participants (
+        participant_id INT PRIMARY KEY AUTO_INCREMENT,
+        session_id INT NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        left_at TIMESTAMP NULL,
+        status ENUM('invited', 'joined', 'completed') DEFAULT 'invited',
+        INDEX idx_session (session_id),
+        INDEX idx_student (student_id),
+        UNIQUE (session_id, student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    
+    $conn->query("CREATE TABLE IF NOT EXISTS vle_session_invites (
+        invite_id INT PRIMARY KEY AUTO_INCREMENT,
+        session_id INT NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        viewed_at TIMESTAMP NULL,
+        status ENUM('pending', 'accepted', 'declined') DEFAULT 'pending',
+        INDEX idx_session (session_id),
+        INDEX idx_student (student_id),
+        UNIQUE (session_id, student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    
+    $conn->query("SET FOREIGN_KEY_CHECKS=1");
 }
 
-// Re-enable foreign key checks
-$conn->query("SET FOREIGN_KEY_CHECKS=1");
-
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 if (!$lecturer_id) {
-    die("Error: Lecturer ID not found.");
+    $_SESSION['vle_error'] = 'Lecturer profile not linked to your account. Please contact administrator.';
+    header('Location: ../dashboard.php');
+    exit();
 }
 
 // Get lecturer's courses
 $courses = [];
-$result = $conn->query("
-    SELECT * FROM vle_courses 
-    WHERE lecturer_id = '$lecturer_id'
-    ORDER BY course_name
-");
+$stmt = $conn->prepare("SELECT * FROM vle_courses WHERE lecturer_id = ? ORDER BY course_name");
+$stmt->bind_param("s", $lecturer_id);
+$stmt->execute();
+$result = $stmt->get_result();
 
 while ($row = $result->fetch_assoc()) {
     $courses[] = $row;
 }
+$stmt->close();
 
 // Get current/active sessions
 $active_sessions = [];
-$result = $conn->query("
+$stmt = $conn->prepare("
     SELECT vls.*, vcs.course_name,
            COUNT(DISTINCT CASE WHEN vsp.status = 'joined' THEN vsp.participant_id END) as active_participants,
            COUNT(DISTINCT vsp.participant_id) as total_participants
     FROM vle_live_sessions vls
     JOIN vle_courses vcs ON vls.course_id = vcs.course_id
     LEFT JOIN vle_session_participants vsp ON vls.session_id = vsp.session_id
-    WHERE vls.lecturer_id = '$lecturer_id' AND vls.status = 'active'
+    WHERE vls.lecturer_id = ? AND vls.status = 'active'
     GROUP BY vls.session_id
     ORDER BY vls.started_at DESC
 ");
+$stmt->bind_param("s", $lecturer_id);
+$stmt->execute();
+$result = $stmt->get_result();
 
 while ($row = $result->fetch_assoc()) {
     $active_sessions[] = $row;
 }
+$stmt->close();
 
 $user = getCurrentUser();
 
-// Ensure recording_url column exists
-$conn->query("ALTER TABLE vle_live_sessions ADD COLUMN IF NOT EXISTS recording_url VARCHAR(500) DEFAULT NULL");
+// One-time check: ensure recording_url column exists (only if column is missing)
+$col_check = $conn->query("SHOW COLUMNS FROM vle_live_sessions LIKE 'recording_url'");
+if ($col_check && $col_check->num_rows === 0) {
+    $conn->query("ALTER TABLE vle_live_sessions ADD COLUMN recording_url VARCHAR(500) DEFAULT NULL");
+}
 
 // Get recorded sessions for this lecturer
 $recorded_sessions = [];
-$result = $conn->query("
+$stmt = $conn->prepare("
     SELECT vls.*, vcs.course_name,
            COUNT(DISTINCT vsp.participant_id) as total_participants
     FROM vle_live_sessions vls
     JOIN vle_courses vcs ON vls.course_id = vcs.course_id
     LEFT JOIN vle_session_participants vsp ON vls.session_id = vsp.session_id
-    WHERE vls.lecturer_id = '$lecturer_id' 
+    WHERE vls.lecturer_id = ? 
       AND vls.status = 'completed'
       AND vls.recording_url IS NOT NULL
       AND vls.recording_url != ''
     GROUP BY vls.session_id
     ORDER BY vls.ended_at DESC
 ");
+$stmt->bind_param("s", $lecturer_id);
+$stmt->execute();
+$result = $stmt->get_result();
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $recorded_sessions[] = $row;
@@ -242,11 +245,18 @@ if ($result) {
                 <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Start New Live Session</h5>
             </div>
             <div class="card-body">
+                <?php if (!empty($active_sessions)): ?>
+                    <div class="alert alert-warning" role="alert">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>You already have an active session!</strong> 
+                        You can only run one live session at a time. Please end your current session before starting a new one.
+                    </div>
+                <?php endif; ?>
                 <form id="startSessionForm" class="start-session-form">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label"><i class="bi bi-book me-1"></i>Select Course</label>
-                            <select name="course_id" id="courseSelect" class="form-select" required>
+                            <select name="course_id" id="courseSelect" class="form-select" required <?php echo !empty($active_sessions) ? 'disabled' : ''; ?>>
                                 <option value="">-- Choose a course --</option>
                                 <?php foreach ($courses as $course): ?>
                                     <option value="<?php echo $course['course_id']; ?>">
@@ -258,16 +268,21 @@ if ($result) {
                         <div class="col-md-6 mb-3">
                             <label class="form-label"><i class="bi bi-chat-left-dots me-1"></i>Session Topic/Name</label>
                             <input type="text" name="session_name" id="sessionName" class="form-control" 
-                                   placeholder="e.g., Lecture 5: Advanced Topics" required>
+                                   placeholder="e.g., Lecture 5: Advanced Topics" required <?php echo !empty($active_sessions) ? 'disabled' : ''; ?>>
                         </div>
                     </div>
                     <div class="alert alert-info" role="alert">
                         <i class="bi bi-info-circle me-2"></i>
                         <strong>Note:</strong> When you start a live session, all enrolled students will receive an invite notification to join the classroom.
                     </div>
-                    <button type="submit" class="btn btn-success btn-lg">
-                        <i class="bi bi-play-circle me-2"></i>Start Live Session
-                    </button>
+                    <div class="d-flex gap-3 align-items-center">
+                        <button type="submit" class="btn btn-success btn-lg" <?php echo !empty($active_sessions) ? 'disabled' : ''; ?>>
+                            <i class="bi bi-play-circle me-2"></i>Start Live Session
+                        </button>
+                        <button type="button" class="btn btn-danger btn-lg" id="btnStopAll" onclick="endAllSessions()">
+                            <i class="bi bi-stop-circle me-2"></i>Stop Live Session
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -714,7 +729,7 @@ if ($result) {
             }
         }
 
-        // End session
+        // End a specific session
         async function endSession(sessionId) {
             if (!confirm('Are you sure you want to end this live session?')) {
                 return;
@@ -740,6 +755,43 @@ if ($result) {
                 }
             } catch (error) {
                 alert('Error ending session: ' + error.message);
+            }
+        }
+
+        // End ALL active sessions at once
+        async function endAllSessions() {
+            if (!confirm('Are you sure you want to stop ALL active live sessions?')) {
+                return;
+            }
+            
+            const btn = document.getElementById('btnStopAll');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Stopping...';
+            
+            try {
+                const response = await fetch('../api/live_session_api.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: 'action=end_all_sessions'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message || 'All sessions ended successfully');
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error stopping sessions: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         }
     </script>

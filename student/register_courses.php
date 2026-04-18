@@ -181,8 +181,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_course'])) {
         // Validate program and year match
         if ($course['program_of_study'] !== $student['program']) {
             $error = "This course is for " . htmlspecialchars($course['program_of_study']) . " program. Your program is " . htmlspecialchars($student['program']) . ".";
-        } elseif ($course['year_of_study'] != $student['year_of_study']) {
-            $error = "This course is for Year " . $course['year_of_study'] . " students. You are in Year " . $student['year_of_study'] . ".";
+        } elseif ($course['year_of_study'] != $student['year_of_study'] && 
+                 !in_array((string)$student['year_of_study'], explode(',', $course['applicable_years'] ?? ''))) {
+            $all_years = [$course['year_of_study']];
+            if (!empty($course['applicable_years'])) $all_years = array_merge($all_years, explode(',', $course['applicable_years']));
+            sort($all_years);
+            $error = "This course is for Year " . implode(',', $all_years) . " students. You are in Year " . $student['year_of_study'] . ".";
         } else {
             // Check if already enrolled
             $enrolled_check = $conn->prepare("SELECT enrollment_id FROM vle_enrollments WHERE student_id = ? AND course_id = ?");
@@ -240,9 +244,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_course'])) {
     }
 }
 
+// Helper function to display all applicable years for a course
+function displayCourseYears($course) {
+    $years = [(int)$course['year_of_study']];
+    if (!empty($course['applicable_years'])) {
+        foreach (explode(',', $course['applicable_years']) as $y) {
+            $y = (int)trim($y);
+            if ($y > 0 && !in_array($y, $years)) $years[] = $y;
+        }
+    }
+    sort($years);
+    return 'Year ' . implode(',', $years);
+}
+
 // Get available semester courses (not already enrolled or requested)
-// Strategy: Show courses matching student's year + program first (from modules/courses)
-// All Year 1 students take the same Year 1 courses, Year 2 same Year 2 courses, etc.
+// Strategy: Show courses matching student's year + program + semester first
+// All Year 1 Semester 1 students take the same Year 1 Semester 1 courses, etc.
 
 $student_year = (int)($student['year_of_study'] ?? 1);
 $student_program = $student['program'] ?? '';
@@ -251,9 +268,9 @@ $student_semester_val = $student['semester'] ?? 'One';
 // Determine which department to filter by (handle "Other Departments" request)
 $show_other_depts = isset($_GET['show_all']) && $_GET['show_all'] === '1';
 
-// Primary query: Courses for student's year and program (via semester_courses)
-$available_courses_query = "SELECT c.*, l.full_name as lecturer_name, sc.semester, sc.academic_year,
-                            c.program_of_study,
+// Primary query: Courses for student's year, program, and semester (via semester_courses)
+$available_courses_query = "SELECT DISTINCT c.*, l.full_name as lecturer_name, sc.semester as sc_semester, sc.academic_year,
+                            c.program_of_study, c.semester as course_semester,
                             CASE 
                                 WHEN e.enrollment_id IS NOT NULL THEN 'enrolled'
                                 WHEN r.request_id IS NOT NULL THEN r.status
@@ -267,61 +284,73 @@ $available_courses_query = "SELECT c.*, l.full_name as lecturer_name, sc.semeste
                                                                       AND r.student_id = ? 
                                                                       AND r.status = 'pending'
                             WHERE sc.is_active = TRUE
-                            ORDER BY c.program_of_study, c.year_of_study, sc.semester, c.course_code";
+                            GROUP BY c.course_id
+                            ORDER BY c.program_of_study, c.year_of_study, c.semester, c.course_code";
 
 $available_stmt = $conn->prepare($available_courses_query);
 $available_stmt->bind_param("ss", $student['student_id'], $student['student_id']);
 $available_stmt->execute();
 $all_courses_result = $available_stmt->get_result();
 
-// Separate courses into: my program/year, my program/other years, other departments
-$my_courses = [];        // Student's program + year
-$other_year_courses = []; // Student's program + different year
-$other_dept_courses = []; // Other departments
+// Get student's program_id for checking course_programs associations
+$student_program_id = 0;
+$prog_stmt = $conn->prepare("SELECT program_id FROM programs WHERE program_name = ? OR program_name LIKE ?");
+$prog_like = '%' . $student_program . '%';
+$prog_stmt->bind_param("ss", $student_program, $prog_like);
+$prog_stmt->execute();
+$prog_result = $prog_stmt->get_result()->fetch_assoc();
+if ($prog_result) {
+    $student_program_id = (int)$prog_result['program_id'];
+}
+$prog_stmt->close();
+
+// Get all course IDs associated with student's program via course_programs table
+$associated_course_ids = [];
+if ($student_program_id > 0) {
+    $assoc_result = $conn->query("SELECT course_id FROM course_programs WHERE program_id = $student_program_id");
+    while ($row = $assoc_result->fetch_assoc()) {
+        $associated_course_ids[] = (int)$row['course_id'];
+    }
+}
+
+// Separate courses into: my program/year/semester, my program/other semesters, other departments (same year)
+$my_courses = [];        // Student's program + year + semester
+$other_year_courses = []; // Student's program + different year or semester
+$other_dept_courses = []; // Other departments but SAME year as student
 
 while ($course = $all_courses_result->fetch_assoc()) {
     $course_year = (int)($course['year_of_study'] ?? 0);
     $course_program = $course['program_of_study'] ?? '';
+    $course_semester = $course['course_semester'] ?? 'One';
+    $course_id = (int)$course['course_id'];
+    $course_applicable_years = !empty($course['applicable_years']) ? explode(',', $course['applicable_years']) : [];
     
     // Check if course program matches student's program/department
+    // Either by direct program_of_study match OR via course_programs association
     $is_my_program = (
         $course_program === $student_program ||
         (is_numeric($student_program) && false) || // handled by department lookup
         stripos($course_program, $student_program) !== false ||
-        stripos($student_program, $course_program) !== false
+        stripos($student_program, $course_program) !== false ||
+        in_array($course_id, $associated_course_ids) // Check course_programs association
     );
     
-    if ($is_my_program && $course_year === $student_year) {
+    // Check if course matches student's year AND semester (including applicable_years and 'Both' semester)
+    $year_matches = ($course_year === $student_year || in_array((string)$student_year, $course_applicable_years));
+    $semester_matches = ($course_semester === $student_semester_val || $course_semester === 'Both');
+    $is_my_year_semester = ($year_matches && $semester_matches);
+    // Check if course is same year (for other departments)
+    $is_same_year = $year_matches;
+    
+    if ($is_my_program && $is_my_year_semester) {
         $my_courses[] = $course;
     } elseif ($is_my_program) {
         $other_year_courses[] = $course;
-    } else {
+    } elseif ($is_same_year) {
+        // Other departments but same year as student
         $other_dept_courses[] = $course;
     }
-}
-
-// Also get courses from modules table that match student's year and program
-$module_courses_query = "SELECT m.module_id, m.module_code, m.module_name, m.program_of_study, 
-                         m.year_of_study, m.semester, m.credits, m.description
-                         FROM modules m 
-                         WHERE m.year_of_study = ?
-                         ORDER BY m.program_of_study, m.semester, m.module_code";
-$mod_stmt = $conn->prepare($module_courses_query);
-$mod_stmt->bind_param("i", $student_year);
-$mod_stmt->execute();
-$module_courses = $mod_stmt->get_result();
-$modules_list = [];
-$my_modules = [];
-$other_dept_modules = [];
-while ($mod = $module_courses->fetch_assoc()) {
-    $mod_program = $mod['program_of_study'] ?? '';
-    $is_my = (stripos($mod_program, $student_program) !== false || stripos($student_program, $mod_program) !== false || $mod_program === $student_program);
-    if ($is_my) {
-        $my_modules[] = $mod;
-    } else {
-        $other_dept_modules[] = $mod;
-    }
-    $modules_list[] = $mod;
+    // Courses from other departments AND different year are not shown
 }
 
 // Get all departments for the "Other Departments" filter dropdown
@@ -544,28 +573,28 @@ $requests = $requests_stmt->get_result();
             </div>
             <div class="card-body">
                 <div class="alert alert-info mb-3">
-                    <i class="bi bi-info-circle"></i> <strong>Note:</strong> All Year <?= $student_year ?> students in your program take the same courses below.
-                    Maximum of 7 courses per semester. Use the tabs to browse courses from other departments.
+                    <i class="bi bi-info-circle"></i> <strong>Note:</strong> Showing courses for Year <?= $student_year ?>, Semester <?= $student_semester_val ?> in your program.
+                    Maximum of 7 courses per semester. Use the tabs to browse courses from other years/semesters or other programs.
                 </div>
 
-                <!-- Tabs for My Courses / Modules / Other Departments -->
+                <!-- Tabs for My Courses / Other Departments -->
                 <ul class="nav nav-tabs mb-3" id="courseTabs" role="tablist">
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="my-courses-tab" data-bs-toggle="tab" data-bs-target="#myCourses" type="button">
-                            <i class="bi bi-star-fill text-warning"></i> My Courses
+                            <i class="bi bi-star-fill text-warning"></i> Year <?= $student_year ?> Sem <?= $student_semester_val ?> Courses
                             <span class="badge bg-success ms-1"><?= count($my_courses) ?></span>
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="my-modules-tab" data-bs-toggle="tab" data-bs-target="#myModules" type="button">
-                            <i class="bi bi-journal-code"></i> My Modules
-                            <span class="badge bg-primary ms-1"><?= count($my_modules) ?></span>
+                        <button class="nav-link" id="other-year-tab" data-bs-toggle="tab" data-bs-target="#otherYear" type="button">
+                            <i class="bi bi-calendar3"></i> Other Year/Semester
+                            <span class="badge bg-warning ms-1"><?= count($other_year_courses) ?></span>
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="other-dept-tab" data-bs-toggle="tab" data-bs-target="#otherDept" type="button">
-                            <i class="bi bi-building"></i> Other Departments
-                            <span class="badge bg-secondary ms-1"><?= count($other_dept_courses) + count($other_dept_modules) ?></span>
+                            <i class="bi bi-building"></i> Year <?= $student_year ?> Other Programs
+                            <span class="badge bg-secondary ms-1"><?= count($other_dept_courses) ?></span>
                         </button>
                     </li>
                 </ul>
@@ -627,8 +656,8 @@ $requests = $requests_stmt->get_result();
                                         <td><strong><?= htmlspecialchars($course['course_code']) ?></strong></td>
                                         <td><?= htmlspecialchars($course['course_name']) ?></td>
                                         <td><?= htmlspecialchars($course['lecturer_name'] ?? 'Not Assigned') ?></td>
-                                        <td><span class="badge bg-info"><?= htmlspecialchars($course['semester']) ?></span></td>
-                                        <td class="text-center">Year <?= $course['year_of_study'] ?></td>
+                                        <td><span class="badge bg-info"><?= $course['semester'] === 'Both' ? 'Sem 1 & 2' : htmlspecialchars($course['semester']) ?></span></td>
+                                        <td class="text-center"><?= displayCourseYears($course) ?></td>
                                         <td class="text-center">
                                             <?php if ($course['enrollment_status'] === 'enrolled'): ?>
                                                 <span class="badge bg-success"><i class="bi bi-check-circle"></i> Enrolled</span>
@@ -645,48 +674,68 @@ $requests = $requests_stmt->get_result();
                         </div>
                         <?php else: ?>
                             <div class="alert alert-warning">
-                                <i class="bi bi-exclamation-triangle"></i> No active courses found for your program and year. 
-                                Check the <strong>My Modules</strong> tab or ask your administrator to activate courses for the current semester.
+                                <i class="bi bi-exclamation-triangle"></i> No active courses found for your program, Year <?= $student_year ?>, Semester <?= $student_semester_val ?>. 
+                                Check the <strong>Other Year/Semester</strong> or <strong>Year <?= $student_year ?> Other Programs</strong> tabs, or ask your administrator to activate courses for the current semester.
                             </div>
                         <?php endif; ?>
                     </div>
 
-                    <!-- My Modules Tab (from modules table for reference) -->
-                    <div class="tab-pane fade" id="myModules" role="tabpanel">
+                    <!-- Other Year/Semester Tab (same program, different year or semester) -->
+                    <div class="tab-pane fade" id="otherYear" role="tabpanel">
                         <div class="alert alert-light border mb-3">
-                            <i class="bi bi-info-circle"></i> These are the modules assigned to Year <?= $student_year ?> of your program. 
-                            If a module doesn't appear in "My Courses", ask your admin to create and activate it for the semester.
+                            <i class="bi bi-calendar3"></i> Browse courses from other years or semesters within your program. 
+                            These courses may be for re-takes or advanced study.
                         </div>
-                        <?php if (!empty($my_modules)): ?>
+                        
+                        <?php if (!empty($other_year_courses)): ?>
                         <div class="table-responsive">
                             <table class="table table-hover table-bordered">
-                                <thead class="table-primary">
+                                <thead class="table-warning">
                                     <tr>
-                                        <th>Module Code</th>
-                                        <th>Module Name</th>
-                                        <th>Program</th>
-                                        <th>Semester</th>
-                                        <th>Credits</th>
-                                        <th>Description</th>
+                                        <th width="5%">Select</th>
+                                        <th width="10%">Code</th>
+                                        <th width="25%">Course Name</th>
+                                        <th width="15%">Lecturer</th>
+                                        <th width="10%">Semester</th>
+                                        <th width="10%">Year</th>
+                                        <th width="10%">Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($my_modules as $mod): ?>
-                                    <tr>
-                                        <td><strong><?= htmlspecialchars($mod['module_code']) ?></strong></td>
-                                        <td><?= htmlspecialchars($mod['module_name']) ?></td>
-                                        <td><small><?= htmlspecialchars($mod['program_of_study']) ?></small></td>
-                                        <td><span class="badge bg-info">Semester <?= htmlspecialchars($mod['semester']) ?></span></td>
-                                        <td class="text-center"><?= $mod['credits'] ?></td>
-                                        <td><small class="text-muted"><?= htmlspecialchars($mod['description'] ?? '-') ?></small></td>
+                                    <?php foreach ($other_year_courses as $course): ?>
+                                    <tr class="<?= $course['enrollment_status'] === 'available' ? '' : 'table-secondary' ?>">
+                                        <td class="text-center">
+                                            <?php if ($course['enrollment_status'] === 'available'): ?>
+                                                <input class="form-check-input course-checkbox" type="checkbox" 
+                                                       name="selected_courses[]" 
+                                                       value="<?= $course['course_id'] ?>|<?= htmlspecialchars($course['sc_semester'] ?? $course['course_semester']) ?>|<?= htmlspecialchars($course['academic_year']) ?>"
+                                                       id="course_other_year<?= $course['course_id'] ?>">
+                                            <?php else: ?>
+                                                <i class="bi bi-dash-circle text-muted"></i>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><strong><?= htmlspecialchars($course['course_code']) ?></strong></td>
+                                        <td><?= htmlspecialchars($course['course_name']) ?></td>
+                                        <td><?= htmlspecialchars($course['lecturer_name'] ?? 'N/A') ?></td>
+                                        <td><span class="badge bg-info"><?php $cs = $course['course_semester'] ?? 'N/A'; echo $cs === 'Both' ? 'Sem 1 & 2' : htmlspecialchars($cs); ?></span></td>
+                                        <td class="text-center"><?= displayCourseYears($course) ?></td>
+                                        <td class="text-center">
+                                            <?php if ($course['enrollment_status'] === 'enrolled'): ?>
+                                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> Enrolled</span>
+                                            <?php elseif ($course['enrollment_status'] === 'pending'): ?>
+                                                <span class="badge bg-warning"><i class="bi bi-clock"></i> Pending</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-primary"><i class="bi bi-plus-circle"></i> Available</span>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
                         </div>
                         <?php else: ?>
-                            <div class="alert alert-warning">
-                                <i class="bi bi-exclamation-triangle"></i> No modules found for your program and year.
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> No other year/semester courses found for your program.
                             </div>
                         <?php endif; ?>
                     </div>
@@ -694,8 +743,8 @@ $requests = $requests_stmt->get_result();
                     <!-- Other Departments Tab -->
                     <div class="tab-pane fade" id="otherDept" role="tabpanel">
                         <div class="alert alert-light border mb-3">
-                            <i class="bi bi-building"></i> Browse and register for courses from other departments. 
-                            These are elective or cross-departmental courses.
+                            <i class="bi bi-building"></i> Browse and register for Year <?= $student_year ?> courses from other programs/departments. 
+                            These are elective or cross-departmental courses for your current year of study.
                         </div>
                         
                         <!-- Department Filter -->
@@ -742,8 +791,8 @@ $requests = $requests_stmt->get_result();
                                         <td><?= htmlspecialchars($course['course_name']) ?></td>
                                         <td><small><?= htmlspecialchars($course['program_of_study'] ?? 'N/A') ?></small></td>
                                         <td><small><?= htmlspecialchars($course['lecturer_name'] ?? 'N/A') ?></small></td>
-                                        <td><span class="badge bg-info"><?= htmlspecialchars($course['semester']) ?></span></td>
-                                        <td class="text-center">Year <?= $course['year_of_study'] ?></td>
+                                        <td><span class="badge bg-info"><?= $course['semester'] === 'Both' ? 'Sem 1 & 2' : htmlspecialchars($course['semester']) ?></span></td>
+                                        <td class="text-center"><?= displayCourseYears($course) ?></td>
                                         <td class="text-center">
                                             <?php if ($course['enrollment_status'] === 'enrolled'): ?>
                                                 <span class="badge bg-success"><i class="bi bi-check-circle"></i> Enrolled</span>
@@ -760,7 +809,7 @@ $requests = $requests_stmt->get_result();
                         </div>
                         <?php else: ?>
                             <div class="alert alert-info">
-                                <i class="bi bi-info-circle"></i> No active courses from other departments at this time.
+                                <i class="bi bi-info-circle"></i> No active Year <?= $student_year ?> courses from other programs at this time.
                             </div>
                         <?php endif; ?>
                     </div>

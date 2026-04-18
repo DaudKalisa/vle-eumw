@@ -4,7 +4,7 @@
  */
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'examination_manager']);
+requireRole(['examination_manager', 'examination_officer']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();

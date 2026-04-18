@@ -69,26 +69,34 @@ $stmt->close();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Approve Download Requests - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="../assets/css/style.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body>
-        <?php include 'lecturer_navbar.php'; ?>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand" href="#">VLE System - Lecturer</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php">Dashboard</a>
-                <a class="nav-link" href="../logout.php">Logout</a>
-            </div>
-        </div>
-    </nav>
+    <?php 
+    $currentPage = 'approve_downloads';
+    $pageTitle = 'Download Requests';
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
-        <h2>Approve Download Requests</h2>
+    <div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+        <div class="mb-3">
+            <button class="btn btn-outline-secondary" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+        </div>
         
-        <?php if (empty($requests)): ?>
-            <div class="alert alert-info">No pending download requests.</div>
-        <?php else: ?>
+        <div class="card shadow-sm">
+            <div class="card-header py-3" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h4 class="mb-0 text-white"><i class="bi bi-download me-2"></i>Approve Download Requests</h4>
+            </div>
+            <div class="card-body">
+                <?php if (empty($requests)): ?>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>No pending download requests.
+                    </div>
+                <?php else: ?>
             <div class="table-responsive">
                 <table class="table table-striped">
                     <thead>
@@ -120,8 +128,11 @@ $stmt->close();
                 </table>
             </div>
         <?php endif; ?>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/js/global-theme.js"></script>
 </body>
 </html>

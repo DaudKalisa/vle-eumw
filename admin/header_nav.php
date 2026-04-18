@@ -22,24 +22,29 @@ if (!empty($user['related_lecturer_id'])) {
     }
 }
 
-// Navigation items
+// Navigation items - short labels for compact header (Dashboard keeps full name)
 $nav_items = [
-    ['url' => 'dashboard.php', 'icon' => 'bi-speedometer2', 'title' => 'Dashboard'],
-    ['url' => 'approve_registrations.php', 'icon' => 'bi-clipboard-check', 'title' => 'Registrations'],
-    ['url' => 'manage_courses.php', 'icon' => 'bi-book', 'title' => 'Courses'],
-    ['url' => 'manage_lecturers.php', 'icon' => 'bi-person-badge', 'title' => 'Lecturers'],
-    ['url' => 'manage_students.php', 'icon' => 'bi-people', 'title' => 'Students'],
-    ['url' => 'student_invite_links.php', 'icon' => 'bi-link-45deg', 'title' => 'Invite Links'],
-    ['url' => 'approve_student_accounts.php', 'icon' => 'bi-person-check', 'title' => 'Approve Students'],
-    ['url' => 'register_student_courses.php', 'icon' => 'bi-journal-plus', 'title' => 'Enroll Students'],
-    ['url' => 'semester_shift.php', 'icon' => 'bi-arrow-repeat', 'title' => 'Semester Shift'],
-    ['url' => 'manage_finance.php', 'icon' => 'bi-cash-coin', 'title' => 'Finance'],
-    ['url' => 'messages.php', 'icon' => 'bi-chat-dots', 'title' => 'Messages'],
+    ['url' => 'dashboard.php', 'icon' => 'bi-speedometer2', 'title' => 'Dashboard', 'short' => ''],
+    ['url' => 'approve_registrations.php', 'icon' => 'bi-clipboard-check', 'title' => 'Registrations', 'short' => 'Reg'],
+    ['url' => 'manage_courses.php', 'icon' => 'bi-book', 'title' => 'Courses', 'short' => 'CR'],
+    ['url' => 'manage_lecturers.php', 'icon' => 'bi-person-badge', 'title' => 'Lecturers', 'short' => 'LC'],
+    ['url' => 'manage_students.php', 'icon' => 'bi-people', 'title' => 'Students', 'short' => 'ST'],
+    ['url' => 'student_invite_links.php', 'icon' => 'bi-link-45deg', 'title' => 'Student Invites', 'short' => 'SI'],
+    ['url' => 'lecturer_invite_links.php', 'icon' => 'bi-person-plus', 'title' => 'Lecturer Invites', 'short' => 'LI'],
+    ['url' => 'approve_student_accounts.php', 'icon' => 'bi-person-check', 'title' => 'Approve Students', 'short' => 'SA'],
+    ['url' => 'register_student_courses.php', 'icon' => 'bi-journal-plus', 'title' => 'Enroll Students', 'short' => 'EN'],
+    ['url' => 'semester_shift.php', 'icon' => 'bi-arrow-repeat', 'title' => 'Semester Shift', 'short' => 'SS'],
+    ['url' => 'manage_finance.php', 'icon' => 'bi-cash-coin', 'title' => 'Finance', 'short' => 'FN'],
+    ['url' => 'student_reports.php', 'icon' => 'bi-file-earmark-bar-graph', 'title' => 'Reports', 'short' => 'RP'],
+    ['url' => 'messages.php', 'icon' => 'bi-chat-dots', 'title' => 'Messages', 'short' => 'MS'],
+    ['url' => 'manage_research_coordinators.php', 'icon' => 'bi-mortarboard', 'title' => 'Coordinators', 'short' => 'RC'],
 ];
 
 // Get page title from breadcrumbs or default
 $page_title = $page_title ?? 'Admin Portal';
 ?>
+<!-- Bootstrap Icons 1.10.0 -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
 <!-- Admin Header Navigation -->
 <nav class="navbar navbar-expand-lg navbar-dark vle-navbar">
     <div class="container-fluid">
@@ -59,9 +64,15 @@ $page_title = $page_title ?? 'Admin Portal';
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <?php foreach ($nav_items as $item): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?= ($current_page === $item['url']) ? 'active' : '' ?>" href="<?= $item['url'] ?>">
-                        <i class="<?= $item['icon'] ?> me-1"></i> <?= $item['title'] ?>
-                    </a>
+                    <?php if ($item['url'] === 'dashboard.php'): ?>
+                        <a class="nav-link <?= ($current_page === $item['url']) ? 'active' : '' ?>" href="<?= $item['url'] ?>" title="<?= $item['title'] ?>">
+                            <i class="<?= $item['icon'] ?> me-1"></i> <?= $item['title'] ?>
+                        </a>
+                    <?php else: ?>
+                        <a class="nav-link <?= ($current_page === $item['url']) ? 'active' : '' ?>" href="<?= $item['url'] ?>" title="<?= $item['title'] ?>">
+                            <i class="<?= $item['icon'] ?>"></i> <span class="d-lg-inline" style="font-size:0.75rem;"><?= $item['short'] ?></span>
+                        </a>
+                    <?php endif; ?>
                 </li>
                 <?php endforeach; ?>
                 
@@ -77,6 +88,13 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><a class="dropdown-item" href="manage_administrators.php"><i class="bi bi-person-gear me-2"></i>Administrators</a></li>
                         <li><a class="dropdown-item" href="manage_examination_officers.php"><i class="bi bi-shield-check me-2"></i>Exam Officers</a></li>
                         <li><a class="dropdown-item" href="manage_coordinators.php"><i class="bi bi-person-video3 me-2"></i>Coordinators</a></li>
+                        <li><a class="dropdown-item" href="manage_research_coordinators.php"><i class="bi bi-mortarboard me-2"></i>Research Coordinators</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="../finance/finance_clearance_invites.php"><i class="bi bi-link-45deg me-2"></i>Finance Clearance Invites</a></li>
+                        <li><a class="dropdown-item" href="../finance/Finance_clearence_students.php"><i class="bi bi-person-check me-2"></i>Finance Clearance Students</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="exam_clearance_invite_links.php"><i class="bi bi-link-45deg me-2"></i>Exam Clearance Invites</a></li>
+                        <li><a class="dropdown-item" href="../finance/exam_clearance_students.php"><i class="bi bi-person-badge me-2"></i>Exam Clearance Students</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="fee_settings.php"><i class="bi bi-currency-dollar me-2"></i>Fee Settings</a></li>
                         <li><a class="dropdown-item" href="smtp_settings.php"><i class="bi bi-envelope-gear me-2"></i>SMTP Settings</a></li>
@@ -84,9 +102,9 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><a class="dropdown-item" href="zoom_settings.php"><i class="bi bi-camera-video me-2"></i>Zoom Settings</a></li>
                         <li><a class="dropdown-item" href="university_settings.php"><i class="bi bi-gear me-2"></i>University Settings</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="database_manager.php"><i class="bi bi-database-gear me-2"></i>Database Backup</a></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#systemToolsLoginModal" data-tool="database_manager.php"><i class="bi bi-database-gear me-2"></i>Database Manager <i class="bi bi-lock-fill text-danger ms-1"></i></a></li>
                         <li><a class="dropdown-item" href="export_data.php"><i class="bi bi-box-arrow-up-right me-2"></i>Export Data</a></li>
-                        <li><a class="dropdown-item" href="file_manager.php"><i class="bi bi-folder2-open me-2"></i>File Manager</a></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#systemToolsLoginModal" data-tool="file_manager.php"><i class="bi bi-folder2-open me-2"></i>File Manager <i class="bi bi-lock-fill text-danger ms-1"></i></a></li>
                     </ul>
                 </li>
             </ul>
@@ -118,6 +136,7 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
                         <li><a class="dropdown-item" href="../change_password.php"><i class="bi bi-key me-2"></i>Change Password</a></li>
+                        <li><a class="dropdown-item" href="help.php"><i class="bi bi-question-circle me-2"></i>Help & Guide</a></li>
                         <li><a class="dropdown-item" href="university_settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
                         <li><a class="dropdown-item" href="../theme_settings.php"><i class="bi bi-palette me-2"></i>Theme</a></li>
                         <li><hr class="dropdown-divider"></li>

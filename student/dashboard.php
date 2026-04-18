@@ -4,6 +4,12 @@ require_once '../includes/auth.php';
 requireLogin();
 requireRole(['student']);
 
+// If this user is a dissertation-only student, send them to the dissertation portal instead of the main student dashboard.
+if (function_exists('hasRole') && hasRole('dissertation_student')) {
+    header('Location: dissertation.php');
+    exit();
+}
+
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];
 
@@ -400,6 +406,62 @@ if (!empty($marked_notification_ids)) {
 // Announcements are now handled in separate announcements.php page
 // No need to fetch them on dashboard anymore
 
+// Fetch academic calendar events for preview (both weekday and weekend)
+$calendar_weekday_events = [];
+$calendar_weekend_events = [];
+$calendar_table_check = $conn->query("SHOW TABLES LIKE 'academic_calendar'");
+if ($calendar_table_check && $calendar_table_check->num_rows > 0) {
+    // Check if program_type column exists
+    $cal_col_check = $conn->query("SHOW COLUMNS FROM academic_calendar LIKE 'program_type'");
+    $has_program_type = ($cal_col_check && $cal_col_check->num_rows > 0);
+    
+    if ($has_program_type) {
+        $cal_result = $conn->query("SELECT * FROM academic_calendar WHERE is_active = 1 AND (start_date >= CURDATE() OR (end_date IS NOT NULL AND end_date >= CURDATE())) ORDER BY semester ASC, start_date ASC LIMIT 20");
+    } else {
+        $cal_result = $conn->query("SELECT *, 'all' AS program_type FROM academic_calendar WHERE is_active = 1 AND (start_date >= CURDATE() OR (end_date IS NOT NULL AND end_date >= CURDATE())) ORDER BY semester ASC, start_date ASC LIMIT 20");
+    }
+    if ($cal_result) {
+        while ($cal_row = $cal_result->fetch_assoc()) {
+            $ptype = $cal_row['program_type'] ?? 'all';
+            if ($ptype === 'weekday' || $ptype === 'all') {
+                $calendar_weekday_events[] = $cal_row;
+            }
+            if ($ptype === 'weekend' || $ptype === 'all') {
+                $calendar_weekend_events[] = $cal_row;
+            }
+        }
+    }
+}
+
+// Fetch upcoming payment deadlines for student
+$upcoming_deadlines = [];
+$dl_table_check = $conn->query("SHOW TABLES LIKE 'payment_deadlines'");
+if ($dl_table_check && $dl_table_check->num_rows > 0) {
+    $dl_result = $conn->query("SELECT * FROM payment_deadlines 
+        WHERE is_active = 1 AND deadline_date >= DATE_SUB(CURDATE(), INTERVAL 2 DAY) 
+        ORDER BY deadline_date ASC LIMIT 10");
+    if ($dl_result) {
+        while ($dl_row = $dl_result->fetch_assoc()) {
+            $upcoming_deadlines[] = $dl_row;
+        }
+    }
+}
+
+// Fetch dissertation fee info for eligible students
+$diss_fee_dash = null;
+$yr_check = (int)($student_info['year_of_study'] ?? 0);
+if ($yr_check >= 3) {
+    $dft_check = $conn->query("SHOW TABLES LIKE 'dissertation_fees'");
+    if ($dft_check && $dft_check->num_rows > 0) {
+        $df_dash = $conn->prepare("SELECT df.* FROM dissertation_fees df JOIN dissertations d ON df.dissertation_id = d.dissertation_id WHERE df.student_id = ? ORDER BY df.id DESC LIMIT 1");
+        if ($df_dash) {
+            $df_dash->bind_param("s", $student_id);
+            $df_dash->execute();
+            $diss_fee_dash = $df_dash->get_result()->fetch_assoc();
+        }
+    }
+}
+
 $conn->close();
 ?>
 
@@ -408,15 +470,13 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#667eea">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>VLE - Student Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
     <link href="../assets/css/dashboard-responsive.css" rel="stylesheet">
+    <?php include_once __DIR__ . '/../includes/pwa-head.php'; ?>
     <style>
         /* Desktop navbar overrides */
         .navbar.sticky-top {
@@ -546,6 +606,10 @@ $conn->close();
     <!-- Main Content Wrapper with responsive padding for mobile bottom nav -->
     <div class="dashboard-wrapper">
         <div class="container-fluid container-lg mt-3 mt-md-4 px-3 px-md-4">
+        <?php if (!empty($_SESSION['dissertation_error'])): ?>
+            <div class="alert alert-warning alert-dismissible fade show"><i class="bi bi-exclamation-triangle me-2"></i><?= htmlspecialchars($_SESSION['dissertation_error']) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+            <?php unset($_SESSION['dissertation_error']); ?>
+        <?php endif; ?>
         <?php if (!$current_course): ?>
             
             <!-- Welcome Card - Mobile Optimized -->
@@ -588,9 +652,8 @@ $conn->close();
             </div>
             
             <!-- Stats Grid - Responsive 2x2 on mobile, 4 columns on desktop -->
-            <?php if ($finance_data): ?>
             <?php
-            // Ensure $content_access_weeks and $payment_percentage are always defined
+            // Always compute fee card values (default to 0 if no finance data)
             if (!isset($content_access_weeks)) $content_access_weeks = 0;
             if (!isset($payment_percentage)) $payment_percentage = 0;
             $expected_total = $finance_data['expected_total'] ?? 0;
@@ -601,6 +664,8 @@ $conn->close();
             $content_access_percent_display = round($content_access_percent * 100);
             $content_access_weeks = min($max_weeks, (int)round($content_access_percent * $max_weeks));
             ?>
+            <!-- Finance stats grid hidden per request -->
+            <!--
             <div class="stats-grid mb-4">
                 <div class="stat-card" style="--accent-color: var(--primary-color);">
                     <div class="stat-icon">
@@ -639,7 +704,7 @@ $conn->close();
                     </div>
                 </div>
             </div>
-            <?php endif; ?>
+            -->
 
             <!-- Quick Actions - Horizontal scroll on mobile, grid on desktop -->
             <div class="card shadow-sm border-0 mb-4">
@@ -650,17 +715,43 @@ $conn->close();
                 </div>
                 <div class="card-body p-3">
                     <div class="quick-actions">
+                        <!-- Row 1: My Profile, My Courses, Payments, Payment History, Announcements -->
+                        <a href="profile.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #11998e, #38ef7d);">
+                                <i class="bi bi-person-circle"></i>
+                            </div>
+                            <span>My Profile</span>
+                        </a>
                         <a href="courses.php" class="action-btn">
                             <div class="action-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
                                 <i class="bi bi-book"></i>
                             </div>
                             <span>My Courses</span>
                         </a>
-                        <a href="profile.php" class="action-btn">
-                            <div class="action-icon" style="background: linear-gradient(135deg, #11998e, #38ef7d);">
-                                <i class="bi bi-person-circle"></i>
+                        <a href="submit_payment.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #ffc107, #fd7e14);">
+                                <i class="bi bi-receipt"></i>
                             </div>
-                            <span>My Profile</span>
+                            <span>Payments</span>
+                        </a>
+                        <a href="payment_history.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #667eea, #764ba2); border: 2px solid #667eea;">
+                                <i class="bi bi-receipt-cutoff"></i>
+                            </div>
+                            <span>Pay History</span>
+                        </a>
+                        <a href="announcements.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #fd7e14, #dc3545);">
+                                <i class="bi bi-megaphone"></i>
+                            </div>
+                            <span>Announcements</span>
+                        </a>
+                        <!-- Row 2: Live Classroom and others -->
+                        <a href="live_invites.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #dc3545, #c82333); animation: pulse 2s infinite;">
+                                <i class="bi bi-camera-video"></i>
+                            </div>
+                            <span>Live Classes</span>
                         </a>
                         <a href="messages.php" class="action-btn">
                             <div class="action-icon" style="background: linear-gradient(135deg, #0dcaf0, #17a2b8);">
@@ -674,24 +765,6 @@ $conn->close();
                             </div>
                             <span>Examinations</span>
                         </a>
-                        <a href="submit_payment.php" class="action-btn">
-                            <div class="action-icon" style="background: linear-gradient(135deg, #ffc107, #fd7e14);">
-                                <i class="bi bi-receipt"></i>
-                            </div>
-                            <span>Payments</span>
-                        </a>
-                        <a href="announcements.php" class="action-btn">
-                            <div class="action-icon" style="background: linear-gradient(135deg, #fd7e14, #dc3545);">
-                                <i class="bi bi-megaphone"></i>
-                            </div>
-                            <span>Announcements</span>
-                        </a>
-                        <a href="live_invites.php" class="action-btn">
-                            <div class="action-icon" style="background: linear-gradient(135deg, #dc3545, #c82333); animation: pulse 2s infinite;">
-                                <i class="bi bi-camera-video"></i>
-                            </div>
-                            <span>Live Classes</span>
-                        </a>
                         <a href="exploits_resources.php" class="action-btn">
                             <div class="action-icon" style="background: linear-gradient(135deg, #dc3545, #e83e8c);">
                                 <i class="bi bi-globe2"></i>
@@ -704,15 +777,153 @@ $conn->close();
                             </div>
                             <span>Register</span>
                         </a>
-                        <a href="payment_history.php" class="action-btn">
-                            <div class="action-icon" style="background: linear-gradient(135deg, #667eea, #764ba2); border: 2px solid #667eea;">
-                                <i class="bi bi-receipt-cutoff"></i>
+                        <a href="mid_semester_report.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #0d6efd, #0b5ed7);">
+                                <i class="bi bi-file-earmark-text"></i>
                             </div>
-                            <span>Pay History</span>
+                            <span>Mid-Semester Report</span>
                         </a>
+                        <a href="semester_report.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #1e3c72, #2a5298);">
+                                <i class="bi bi-file-earmark-bar-graph"></i>
+                            </div>
+                            <span>Full Semester Report</span>
+                        </a>
+                        <a href="exam_clearance.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
+                                <i class="bi bi-shield-check"></i>
+                            </div>
+                            <span>Exam Clearance</span>
+                        </a>
+                        <?php
+                        $yr = (int)($student_info['year_of_study'] ?? 0);
+                        if ($yr >= 3):
+                        ?>
+                        <a href="dissertation.php" class="action-btn">
+                            <div class="action-icon" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);">
+                                <i class="bi bi-journal-richtext"></i>
+                            </div>
+                            <span>Dissertation</span>
+                        </a>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
+
+        <!-- Current Academic Calendar Preview -->
+        <?php if (!empty($calendar_weekday_events) || !empty($calendar_weekend_events)): ?>
+        <?php
+            $cal_event_types = [
+                'semester_start' => ['label' => 'Semester Start', 'color' => 'success', 'icon' => 'bi-play-circle'],
+                'semester_end' => ['label' => 'Semester End', 'color' => 'danger', 'icon' => 'bi-stop-circle'],
+                'exam_start' => ['label' => 'Exams Start', 'color' => 'warning', 'icon' => 'bi-journal-check'],
+                'exam_end' => ['label' => 'Exams End', 'color' => 'info', 'icon' => 'bi-journal-x'],
+                'registration_start' => ['label' => 'Registration Opens', 'color' => 'primary', 'icon' => 'bi-door-open'],
+                'registration_end' => ['label' => 'Registration Closes', 'color' => 'secondary', 'icon' => 'bi-door-closed'],
+                'holiday' => ['label' => 'Holiday', 'color' => 'success', 'icon' => 'bi-sun'],
+                'break' => ['label' => 'Break', 'color' => 'info', 'icon' => 'bi-cup-hot'],
+                'graduation' => ['label' => 'Graduation', 'color' => 'warning', 'icon' => 'bi-mortarboard'],
+                'other' => ['label' => 'Other', 'color' => 'secondary', 'icon' => 'bi-calendar-event'],
+            ];
+        ?>
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white border-bottom py-3">
+                <h5 class="mb-0 d-flex align-items-center">
+                    <i class="bi bi-calendar-event text-primary me-2"></i> Current Academic Calendar Preview
+                </h5>
+            </div>
+            <div class="card-body p-3">
+                <ul class="nav nav-tabs" id="calendarTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="weekday-tab" data-bs-toggle="tab" data-bs-target="#weekdayCalendar" type="button" role="tab">
+                            <i class="bi bi-briefcase me-1"></i> Weekday Program
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="weekend-tab" data-bs-toggle="tab" data-bs-target="#weekendCalendar" type="button" role="tab">
+                            <i class="bi bi-calendar-week me-1"></i> Weekend Program
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content pt-3" id="calendarTabContent">
+                    <!-- Weekday Tab -->
+                    <div class="tab-pane fade show active" id="weekdayCalendar" role="tabpanel">
+                        <?php if (empty($calendar_weekday_events)): ?>
+                            <p class="text-muted text-center py-3"><i class="bi bi-calendar-x" style="font-size:1.5rem;"></i><br>No upcoming weekday events</p>
+                        <?php else: ?>
+                            <div class="list-group list-group-flush">
+                                <?php foreach (array_slice($calendar_weekday_events, 0, 6) as $cal_evt): ?>
+                                    <?php $cet = $cal_event_types[$cal_evt['event_type']] ?? $cal_event_types['other']; ?>
+                                    <div class="list-group-item px-0 py-2 border-0" style="border-left: 3px solid var(--bs-<?= $cet['color'] ?>) !important; padding-left: 12px !important; margin-bottom: 6px; border-radius: 0 6px 6px 0; background: #f8f9fa;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <span class="fw-semibold small"><?= htmlspecialchars($cal_evt['event_name']) ?></span>
+                                                <br>
+                                                <small class="text-muted">
+                                                    <span class="badge bg-<?= $cet['color'] ?> bg-opacity-10 text-<?= $cet['color'] ?>" style="font-size: 0.7rem;">
+                                                        <i class="bi <?= $cet['icon'] ?> me-1"></i><?= $cet['label'] ?>
+                                                    </span>
+                                                    <?php if (!empty($cal_evt['description'])): ?>
+                                                        <span class="ms-1"><?= htmlspecialchars(mb_strimwidth($cal_evt['description'], 0, 40, '...')) ?></span>
+                                                    <?php endif; ?>
+                                                </small>
+                                            </div>
+                                            <div class="text-end">
+                                                <span class="badge bg-light text-dark"><?= date('M j, Y', strtotime($cal_evt['start_date'])) ?></span>
+                                                <?php if ($cal_evt['end_date']): ?>
+                                                    <br><small class="text-muted">to <?= date('M j', strtotime($cal_evt['end_date'])) ?></small>
+                                                <?php endif; ?>
+                                                <?php if ($cal_evt['start_date'] === date('Y-m-d')): ?>
+                                                    <br><span class="badge bg-info" style="font-size:0.65rem;">Today</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                    <!-- Weekend Tab -->
+                    <div class="tab-pane fade" id="weekendCalendar" role="tabpanel">
+                        <?php if (empty($calendar_weekend_events)): ?>
+                            <p class="text-muted text-center py-3"><i class="bi bi-calendar-x" style="font-size:1.5rem;"></i><br>No upcoming weekend events</p>
+                        <?php else: ?>
+                            <div class="list-group list-group-flush">
+                                <?php foreach (array_slice($calendar_weekend_events, 0, 6) as $cal_evt): ?>
+                                    <?php $cet = $cal_event_types[$cal_evt['event_type']] ?? $cal_event_types['other']; ?>
+                                    <div class="list-group-item px-0 py-2 border-0" style="border-left: 3px solid var(--bs-<?= $cet['color'] ?>) !important; padding-left: 12px !important; margin-bottom: 6px; border-radius: 0 6px 6px 0; background: #f8f9fa;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <span class="fw-semibold small"><?= htmlspecialchars($cal_evt['event_name']) ?></span>
+                                                <br>
+                                                <small class="text-muted">
+                                                    <span class="badge bg-<?= $cet['color'] ?> bg-opacity-10 text-<?= $cet['color'] ?>" style="font-size: 0.7rem;">
+                                                        <i class="bi <?= $cet['icon'] ?> me-1"></i><?= $cet['label'] ?>
+                                                    </span>
+                                                    <?php if (!empty($cal_evt['description'])): ?>
+                                                        <span class="ms-1"><?= htmlspecialchars(mb_strimwidth($cal_evt['description'], 0, 40, '...')) ?></span>
+                                                    <?php endif; ?>
+                                                </small>
+                                            </div>
+                                            <div class="text-end">
+                                                <span class="badge bg-light text-dark"><?= date('M j, Y', strtotime($cal_evt['start_date'])) ?></span>
+                                                <?php if ($cal_evt['end_date']): ?>
+                                                    <br><small class="text-muted">to <?= date('M j', strtotime($cal_evt['end_date'])) ?></small>
+                                                <?php endif; ?>
+                                                <?php if ($cal_evt['start_date'] === date('Y-m-d')): ?>
+                                                    <br><span class="badge bg-info" style="font-size:0.65rem;">Today</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Live Session Now Card -->
         <?php if (!empty($active_live_sessions)): ?>
@@ -1087,12 +1298,134 @@ $conn->close();
                                 <?php endfor; ?>
                             </div>
 
+                            <!-- Dissertation Fee Breakdown (inside Financial Summary) -->
+                            <?php if ($diss_fee_dash): 
+                                $dft_total = (float)$diss_fee_dash['fee_amount'];
+                                $dft_paid = (float)$diss_fee_dash['total_paid'];
+                                $dft_balance = (float)$diss_fee_dash['balance'];
+                                $dft_pct = $dft_total > 0 ? round(($dft_paid / $dft_total) * 100) : 0;
+                                $dft_inst = (float)$diss_fee_dash['installment_amount'];
+                                $dft_i1 = (float)$diss_fee_dash['installment_1_paid'];
+                                $dft_i2 = (float)$diss_fee_dash['installment_2_paid'];
+                                $dft_i3 = (float)$diss_fee_dash['installment_3_paid'];
+                            ?>
+                            <div class="mt-4 pt-3 border-top">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h5 class="mb-0"><i class="bi bi-mortarboard" style="color:#8b5cf6;"></i> Dissertation Fee <small class="text-muted">(Separate from Tuition)</small></h5>
+                                    <span class="badge bg-<?= $dft_balance <= 0 ? 'success' : 'warning' ?> fs-6"><?= $dft_balance <= 0 ? 'Fully Paid' : 'K' . number_format($dft_balance) . ' remaining' ?></span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-1" style="font-size:0.85rem;">
+                                    <span>K<?= number_format($dft_paid) ?> of K<?= number_format($dft_total) ?></span>
+                                    <span class="fw-bold"><?= $dft_pct ?>%</span>
+                                </div>
+                                <div class="progress mb-3" style="height: 10px;">
+                                    <div class="progress-bar" role="progressbar" style="width:<?= $dft_pct ?>%; background:linear-gradient(135deg,#8b5cf6,#6d28d9);"></div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="p-3 border rounded h-100 <?= $dft_i1 >= $dft_inst ? 'border-success bg-success bg-opacity-10' : '' ?>">
+                                            <h6 class="mb-2">1st Installment</h6>
+                                            <div class="progress mb-2" style="height: 10px;">
+                                                <div class="progress-bar <?= $dft_i1 >= $dft_inst ? 'bg-success' : '' ?>" role="progressbar" style="width:<?= $dft_inst > 0 ? min(100, ($dft_i1 / $dft_inst) * 100) : 0 ?>%;<?= $dft_i1 < $dft_inst ? 'background:#8b5cf6;' : '' ?>"></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">K<?= number_format($dft_i1) ?></small>
+                                                <small class="text-muted">K<?= number_format($dft_inst) ?></small>
+                                            </div>
+                                            <small class="text-muted d-block mt-1">Due after supervisor assignment</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="p-3 border rounded h-100 <?= $dft_i2 >= $dft_inst ? 'border-success bg-success bg-opacity-10' : '' ?>">
+                                            <h6 class="mb-2">2nd Installment</h6>
+                                            <div class="progress mb-2" style="height: 10px;">
+                                                <div class="progress-bar <?= $dft_i2 >= $dft_inst ? 'bg-success' : '' ?>" role="progressbar" style="width:<?= $dft_inst > 0 ? min(100, ($dft_i2 / $dft_inst) * 100) : 0 ?>%;<?= $dft_i2 < $dft_inst ? 'background:#8b5cf6;' : '' ?>"></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">K<?= number_format($dft_i2) ?></small>
+                                                <small class="text-muted">K<?= number_format($dft_inst) ?></small>
+                                            </div>
+                                            <small class="text-muted d-block mt-1">Due before ethics / proposal defense</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="p-3 border rounded h-100 <?= $dft_i3 >= $dft_inst ? 'border-success bg-success bg-opacity-10' : '' ?>">
+                                            <h6 class="mb-2">3rd Installment</h6>
+                                            <div class="progress mb-2" style="height: 10px;">
+                                                <div class="progress-bar <?= $dft_i3 >= $dft_inst ? 'bg-success' : '' ?>" role="progressbar" style="width:<?= $dft_inst > 0 ? min(100, ($dft_i3 / $dft_inst) * 100) : 0 ?>%;<?= $dft_i3 < $dft_inst ? 'background:#8b5cf6;' : '' ?>"></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">K<?= number_format($dft_i3) ?></small>
+                                                <small class="text-muted">K<?= number_format($dft_inst) ?></small>
+                                            </div>
+                                            <small class="text-muted d-block mt-1">Due before final dissertation defense</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
                             <!-- Payment History Link -->
                             <div class="text-center mt-4">
                                 <a href="payment_history.php" class="btn btn-primary">
                                     <i class="bi bi-receipt"></i> View Payment History
                                 </a>
                             </div>
+
+                            <!-- Upcoming Payment Deadlines -->
+                            <?php if (!empty($upcoming_deadlines)): ?>
+                            <div class="mt-4 pt-3 border-top">
+                                <h5 class="mb-3"><i class="bi bi-alarm text-danger me-1"></i> Upcoming Payment Deadlines</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Payment</th>
+                                                <th>Deadline</th>
+                                                <th>Amount</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($upcoming_deadlines as $udl):
+                                                $dl_today = date('Y-m-d');
+                                                $dl_is_past = $udl['deadline_date'] < $dl_today;
+                                                $dl_is_today = $udl['deadline_date'] === $dl_today;
+                                                $dl_days = (int)((strtotime($udl['deadline_date']) - strtotime($dl_today)) / 86400);
+                                            ?>
+                                            <tr class="<?php echo $dl_is_past ? 'table-danger' : ($dl_is_today ? 'table-warning' : ''); ?>">
+                                                <td>
+                                                    <strong><?php echo htmlspecialchars($udl['installment_label']); ?></strong>
+                                                </td>
+                                                <td>
+                                                    <?php echo date('d M Y', strtotime($udl['deadline_date'])); ?>
+                                                    <?php if ($dl_is_today): ?>
+                                                        <span class="badge bg-danger">TODAY</span>
+                                                    <?php elseif ($dl_is_past): ?>
+                                                        <span class="badge bg-dark">OVERDUE</span>
+                                                    <?php elseif ($dl_days <= 5): ?>
+                                                        <span class="badge bg-warning text-dark"><?php echo $dl_days; ?>d left</span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-info"><?php echo $dl_days; ?>d left</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?php echo $udl['amount_expected'] > 0 ? 'K' . number_format($udl['amount_expected'], 2) : '-'; ?></td>
+                                                <td>
+                                                    <?php if ($dl_is_past): ?>
+                                                        <i class="bi bi-exclamation-circle text-danger"></i>
+                                                    <?php elseif ($dl_days <= 2): ?>
+                                                        <i class="bi bi-exclamation-triangle text-warning"></i>
+                                                    <?php else: ?>
+                                                        <i class="bi bi-clock text-info"></i>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -1671,5 +2004,6 @@ $conn->close();
         });
     });
     </script>
+    <?php include_once __DIR__ . '/../includes/pwa-footer.php'; ?>
 </body>
 </html>

@@ -416,7 +416,7 @@ $page_title = 'ODL Dashboard';
                         <div>
                             <div class="stat-value"><?= number_format($claims_stats['pending_approval']) ?></div>
                             <div class="stat-label">Pending Claims</div>
-                            <div class="mt-2 small">K<?= number_format($claims_stats['pending_amount']) ?> total</div>
+                            <div class="mt-2 small">MKW<?= number_format($claims_stats['pending_amount']) ?> total</div>
                         </div>
                         <div class="stat-icon"><i class="bi bi-clipboard-check"></i></div>
                     </div>
@@ -545,7 +545,7 @@ $page_title = 'ODL Dashboard';
                                     <small class="text-muted">
                                         <?= date('M Y', mktime(0,0,0,$claim['month'],1,$claim['year'])) ?> &bull; <?= $claim['total_hours'] ?? 0 ?> hours
                                     </small>
-                                    <strong class="text-success">K<?= number_format($claim['total_amount']) ?></strong>
+                                    <strong class="text-success">MKW<?= number_format($claim['total_amount']) ?></strong>
                                 </div>
                             </div>
                             <?php endforeach; ?>
@@ -683,7 +683,7 @@ $page_title = 'ODL Dashboard';
                         </div>
                         <hr>
                         <div class="text-center">
-                            <div class="h4 text-success mb-0">K<?= number_format($claims_stats['pending_amount']) ?></div>
+                            <div class="h4 text-success mb-0">MKW<?= number_format($claims_stats['pending_amount']) ?></div>
                             <small class="text-muted">Pending Approval Amount</small>
                         </div>
                     </div>

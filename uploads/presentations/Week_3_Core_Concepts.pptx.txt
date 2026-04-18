@@ -1,0 +1,8 @@
+This is a placeholder for a PowerPoint presentation.
+
+In production, this would be an actual .pptx file with:
+- Lecture slides
+- Images and diagrams
+- Course content
+
+To add real presentations, upload them through the Lecturer Dashboard.

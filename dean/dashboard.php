@@ -245,6 +245,14 @@ $exam_stats = getExamStats($conn);
 $recent_claims = getRecentClaims($conn);
 $recent_activity = getRecentActivity($conn);
 
+// Graduation clearance pending for dean
+$pending_graduation_dean = 0;
+$grad_chk = $conn->query("SHOW TABLES LIKE 'graduation_applications'");
+if ($grad_chk && $grad_chk->num_rows > 0) {
+    $gr = $conn->query("SELECT COUNT(*) as c FROM graduation_applications WHERE current_step = 'dean' AND status NOT IN ('completed','rejected')");
+    if ($gr) $pending_graduation_dean = (int)$gr->fetch_assoc()['c'];
+}
+
 // Get faculty name
 $faculty_name = 'All Faculties';
 if ($dean_faculty_id) {
@@ -266,6 +274,7 @@ $breadcrumbs = [];
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <?php include_once __DIR__ . '/../includes/pwa-head.php'; ?>
     <style>
         .stat-card {
             border-radius: 12px;
@@ -386,6 +395,15 @@ $breadcrumbs = [];
                                     <span>Announcements</span>
                                 </a>
                             </div>
+                            <div class="col-md-3">
+                                <a href="graduation_clearance.php" class="quick-action text-center border rounded" style="position:relative;">
+                                    <i class="bi bi-mortarboard-fill fs-3 d-block mb-2" style="color:#059669;"></i>
+                                    <span>Grad Clearance</span>
+                                    <?php if ($pending_graduation_dean > 0): ?>
+                                    <span class="badge bg-danger ms-1"><?= $pending_graduation_dean ?></span>
+                                    <?php endif; ?>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -489,7 +507,7 @@ $breadcrumbs = [];
                             </div>
                             <div class="col-12">
                                 <div class="p-2 bg-info bg-opacity-10 rounded text-center">
-                                    <div class="fs-5 fw-bold text-info">UGX <?= number_format($claims_stats['total_amount']) ?></div>
+                                    <div class="fs-5 fw-bold text-info">MKW <?= number_format($claims_stats['total_amount']) ?></div>
                                     <small class="text-muted">Total Approved Amount</small>
                                 </div>
                             </div>
@@ -585,7 +603,7 @@ $breadcrumbs = [];
                                         </td>
                                         <td><?= htmlspecialchars($claim['department'] ?? 'N/A') ?></td>
                                         <td><?= date('M Y', mktime(0, 0, 0, $claim['month'], 1, $claim['year'])) ?></td>
-                                        <td><strong>UGX <?= number_format($claim['total_amount']) ?></strong></td>
+                                        <td><strong>MKW <?= number_format($claim['total_amount']) ?></strong></td>
                                         <td>
                                             <?php
                                             $status = $claim['odl_approval_status'] ?? $claim['status'];
@@ -659,5 +677,6 @@ $breadcrumbs = [];
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <?php include_once __DIR__ . '/../includes/pwa-footer.php'; ?>
 </body>
 </html>

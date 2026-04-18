@@ -1,6 +1,7 @@
 <?php
 // manage_users.php - Admin manage all system users
 require_once '../includes/auth.php';
+require_once '../includes/email.php';
 requireLogin();
 requireRole(['staff', 'admin']);
 
@@ -46,6 +47,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
+    // Unlock account (clear failed login attempts and account lock)
+    if (isset($_POST['unlock_account'])) {
+        $user_id = (int)$_POST['user_id'];
+        
+        $stmt = $conn->prepare("UPDATE users SET failed_login_attempts = 0, account_locked_until = NULL, last_failed_login = NULL WHERE user_id = ?");
+        $stmt->bind_param("i", $user_id);
+        
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            // Also update account_locks table if it exists
+            $al_exists = $conn->query("SHOW TABLES LIKE 'account_locks'")->num_rows > 0;
+            if ($al_exists) {
+                $unlock_stmt = $conn->prepare("UPDATE account_locks SET unlocked_at = NOW() WHERE user_id = ? AND unlocked_at IS NULL");
+                $unlock_stmt->bind_param("i", $user_id);
+                $unlock_stmt->execute();
+            }
+            $success = "Account unlocked successfully! Failed login attempts have been reset.";
+        } else {
+            $error = "No locked account found for this user, or account was already unlocked.";
+        }
+    }
+    
     // Reset password
     if (isset($_POST['reset_password'])) {
         $user_id = (int)$_POST['user_id'];
@@ -58,7 +80,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("si", $password_hash, $user_id);
             
             if ($stmt->execute()) {
-                $success = "Password reset successfully! User will be required to change password on next login.";
+                // Send password reset email notification
+                $user_stmt = $conn->prepare("SELECT u.email, u.username, COALESCE(s.full_name, l.full_name, a.full_name, f.full_name, u.username) as full_name FROM users u LEFT JOIN students s ON u.related_student_id = s.student_id LEFT JOIN lecturers l ON u.related_lecturer_id = l.lecturer_id LEFT JOIN administrative_staff a ON u.related_staff_id = a.staff_id LEFT JOIN finance_users f ON u.related_finance_id = f.finance_id WHERE u.user_id = ?");
+                $user_stmt->bind_param("i", $user_id);
+                $user_stmt->execute();
+                $reset_user = $user_stmt->get_result()->fetch_assoc();
+                
+                $email_status = '';
+                if ($reset_user && isEmailEnabled()) {
+                    $email_sent = sendPasswordResetEmail($reset_user['email'], $reset_user['full_name'], $new_password, true);
+                    $email_status = $email_sent ? ' Email notification sent.' : ' Email notification failed.';
+                }
+                
+                $success = "Password reset successfully! User will be required to change password on next login." . $email_status;
             } else {
                 $error = "Failed to reset password.";
             }
@@ -75,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $role = trim($_POST['role']);
         
         // Collect additional roles from checkboxes
-        $all_roles = ['student', 'lecturer', 'staff', 'finance', 'hod', 'dean', 'odl_coordinator', 'examination_manager'];
+        $all_roles = ['student', 'lecturer', 'staff', 'finance', 'hod', 'dean', 'odl_coordinator', 'examination_manager', 'examination_officer', 'research_coordinator'];
         $additional = [];
         if (isset($_POST['additional_roles']) && is_array($_POST['additional_roles'])) {
             foreach ($_POST['additional_roles'] as $r) {
@@ -101,11 +135,444 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($check_stmt->get_result()->num_rows > 0) {
                 $error = "Email '$email' already exists.";
             } else {
+                // First get the current user data to check if role changed
+                $cur_stmt = $conn->prepare("SELECT u.*, 
+                    COALESCE(s.full_name, l.full_name, a.full_name, f.full_name, em.full_name, oc.full_name, u.username) as resolved_name,
+                    COALESCE(s.phone, l.phone, a.phone, f.phone, em.phone, oc.phone, '') as resolved_phone,
+                    COALESCE(l.department, a.department, f.department, em.department, oc.department, '') as resolved_department
+                    FROM users u
+                    LEFT JOIN students s ON u.related_student_id = s.student_id
+                    LEFT JOIN lecturers l ON u.related_lecturer_id = l.lecturer_id
+                    LEFT JOIN administrative_staff a ON u.related_staff_id = a.staff_id
+                    LEFT JOIN finance_users f ON u.related_finance_id = f.finance_id
+                    LEFT JOIN examination_managers em ON u.related_staff_id = em.manager_id AND u.role IN ('examination_manager','examination_officer')
+                    LEFT JOIN odl_coordinators oc ON u.related_lecturer_id = oc.coordinator_id
+                    WHERE u.user_id = ?");
+                $cur_stmt->bind_param("i", $user_id);
+                $cur_stmt->execute();
+                $current_user = $cur_stmt->get_result()->fetch_assoc();
+                $old_role = $current_user['role'] ?? '';
+                $resolved_name = $current_user['resolved_name'] ?? $username;
+                $resolved_phone = $current_user['resolved_phone'] ?? '';
+                $resolved_department = $current_user['resolved_department'] ?? '';
+                
                 $stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, role = ?, additional_roles = ? WHERE user_id = ?");
                 $stmt->bind_param("ssssi", $username, $email, $role, $additional_roles, $user_id);
                 
                 if ($stmt->execute()) {
-                    $success = "User updated successfully!";
+                    // If role changed, look up and update the related_id for the new role
+                    if ($role !== $old_role) {
+                        $related_id_updated = false;
+                        $related_col = '';
+                        $related_val = null;
+                        
+                        switch ($role) {
+                            case 'student':
+                                // Look up student by email
+                                $lookup = $conn->prepare("SELECT student_id FROM students WHERE email = ?");
+                                $lookup->bind_param("s", $email);
+                                $lookup->execute();
+                                $lr = $lookup->get_result();
+                                if ($lr->num_rows > 0) {
+                                    $related_val = $lr->fetch_assoc()['student_id'];
+                                    $upd = $conn->prepare("UPDATE users SET related_student_id = ? WHERE user_id = ?");
+                                    $upd->bind_param("si", $related_val, $user_id);
+                                    $upd->execute();
+                                    $related_id_updated = true;
+                                }
+                                break;
+                                
+                            case 'lecturer':
+                                // Look up lecturer by email, create if not exists
+                                $lookup = $conn->prepare("SELECT lecturer_id FROM lecturers WHERE email = ?");
+                                $lookup->bind_param("s", $email);
+                                $lookup->execute();
+                                $lr = $lookup->get_result();
+                                if ($lr->num_rows > 0) {
+                                    $related_val = $lr->fetch_assoc()['lecturer_id'];
+                                } else {
+                                    // Auto-create lecturer record
+                                    $ins = $conn->prepare("INSERT INTO lecturers (full_name, email, phone, department, position, is_active) VALUES (?, ?, ?, ?, 'Lecturer', 1)");
+                                    $ins->bind_param("ssss", $resolved_name, $email, $resolved_phone, $resolved_department);
+                                    $ins->execute();
+                                    $related_val = $conn->insert_id;
+                                }
+                                $upd = $conn->prepare("UPDATE users SET related_lecturer_id = ? WHERE user_id = ?");
+                                $upd->bind_param("ii", $related_val, $user_id);
+                                $upd->execute();
+                                $related_id_updated = true;
+                                break;
+                                
+                            case 'staff':
+                            case 'admin':
+                                // Look up administrative staff by email, create if not exists
+                                $lookup = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ?");
+                                $lookup->bind_param("s", $email);
+                                $lookup->execute();
+                                $lr = $lookup->get_result();
+                                if ($lr->num_rows > 0) {
+                                    $related_val = $lr->fetch_assoc()['staff_id'];
+                                } else {
+                                    $pos = ($role === 'admin') ? 'Administrator' : 'Staff';
+                                    $ins = $conn->prepare("INSERT INTO administrative_staff (full_name, email, phone, department, position, hire_date, is_active) VALUES (?, ?, ?, ?, ?, CURDATE(), 1)");
+                                    $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $pos);
+                                    $ins->execute();
+                                    $related_val = $conn->insert_id;
+                                }
+                                $upd = $conn->prepare("UPDATE users SET related_staff_id = ? WHERE user_id = ?");
+                                $upd->bind_param("ii", $related_val, $user_id);
+                                $upd->execute();
+                                $related_id_updated = true;
+                                break;
+                                
+                            case 'hod':
+                                // Look up administrative staff by email, create if not exists with HOD position
+                                $lookup = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ?");
+                                $lookup->bind_param("s", $email);
+                                $lookup->execute();
+                                $lr = $lookup->get_result();
+                                if ($lr->num_rows > 0) {
+                                    $related_val = $lr->fetch_assoc()['staff_id'];
+                                    // Ensure position is set to Head of Department
+                                    $upd_pos = $conn->prepare("UPDATE administrative_staff SET position = 'Head of Department' WHERE staff_id = ? AND (position IS NULL OR position = '' OR position = 'Staff')");
+                                    $upd_pos->bind_param("i", $related_val);
+                                    $upd_pos->execute();
+                                } else {
+                                    $hod_pos = 'Head of Department';
+                                    $ins = $conn->prepare("INSERT INTO administrative_staff (full_name, email, phone, department, position, hire_date, is_active) VALUES (?, ?, ?, ?, ?, CURDATE(), 1)");
+                                    $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $hod_pos);
+                                    $ins->execute();
+                                    $related_val = $conn->insert_id;
+                                }
+                                $upd = $conn->prepare("UPDATE users SET related_hod_id = ?, related_staff_id = ? WHERE user_id = ?");
+                                $upd->bind_param("iii", $related_val, $related_val, $user_id);
+                                $upd->execute();
+                                $related_id_updated = true;
+                                break;
+                                
+                            case 'dean':
+                                // Look up administrative staff by email, create if not exists with Dean position
+                                $lookup = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ?");
+                                $lookup->bind_param("s", $email);
+                                $lookup->execute();
+                                $lr = $lookup->get_result();
+                                if ($lr->num_rows > 0) {
+                                    $related_val = $lr->fetch_assoc()['staff_id'];
+                                    // Ensure position is set to Dean
+                                    $upd_pos = $conn->prepare("UPDATE administrative_staff SET position = 'Dean' WHERE staff_id = ? AND (position IS NULL OR position = '' OR position = 'Staff')");
+                                    $upd_pos->bind_param("i", $related_val);
+                                    $upd_pos->execute();
+                                } else {
+                                    $dean_pos = 'Dean';
+                                    $ins = $conn->prepare("INSERT INTO administrative_staff (full_name, email, phone, department, position, hire_date, is_active) VALUES (?, ?, ?, ?, ?, CURDATE(), 1)");
+                                    $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $dean_pos);
+                                    $ins->execute();
+                                    $related_val = $conn->insert_id;
+                                }
+                                $upd = $conn->prepare("UPDATE users SET related_dean_id = ?, related_staff_id = ? WHERE user_id = ?");
+                                $upd->bind_param("iii", $related_val, $related_val, $user_id);
+                                $upd->execute();
+                                $related_id_updated = true;
+                                break;
+                                
+                            case 'finance':
+                                // Look up finance user by email, create if not exists
+                                $lookup = $conn->prepare("SELECT finance_id FROM finance_users WHERE email = ?");
+                                $lookup->bind_param("s", $email);
+                                $lookup->execute();
+                                $lr = $lookup->get_result();
+                                if ($lr->num_rows > 0) {
+                                    $related_val = $lr->fetch_assoc()['finance_id'];
+                                } else {
+                                    $fin_code = 'FIN-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+                                    $fin_pos = 'Finance Officer';
+                                    $ins = $conn->prepare("INSERT INTO finance_users (finance_code, full_name, email, phone, department, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())");
+                                    $ins->bind_param("ssssss", $fin_code, $resolved_name, $email, $resolved_phone, $resolved_department, $fin_pos);
+                                    $ins->execute();
+                                    $related_val = $conn->insert_id;
+                                }
+                                $upd = $conn->prepare("UPDATE users SET related_finance_id = ? WHERE user_id = ?");
+                                $upd->bind_param("ii", $related_val, $user_id);
+                                $upd->execute();
+                                $related_id_updated = true;
+                                break;
+                                
+                            case 'examination_manager':
+                            case 'examination_officer':
+                                // Look up examination manager by email, create if not exists
+                                $em_exists = $conn->query("SHOW TABLES LIKE 'examination_managers'")->num_rows > 0;
+                                if ($em_exists) {
+                                    $lookup = $conn->prepare("SELECT manager_id FROM examination_managers WHERE email = ?");
+                                    $lookup->bind_param("s", $email);
+                                    $lookup->execute();
+                                    $lr = $lookup->get_result();
+                                    if ($lr->num_rows > 0) {
+                                        $related_val = $lr->fetch_assoc()['manager_id'];
+                                    } else {
+                                        $em_pos = ($role === 'examination_manager') ? 'Examination Manager' : 'Examination Officer';
+                                        $ins = $conn->prepare("INSERT INTO examination_managers (full_name, email, phone, department, position, hire_date, is_active, created_at) VALUES (?, ?, ?, ?, ?, CURDATE(), 1, NOW())");
+                                        $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $em_pos);
+                                        $ins->execute();
+                                        $related_val = $conn->insert_id;
+                                    }
+                                    $upd = $conn->prepare("UPDATE users SET related_staff_id = ? WHERE user_id = ?");
+                                    $upd->bind_param("ii", $related_val, $user_id);
+                                    $upd->execute();
+                                    $related_id_updated = true;
+                                }
+                                break;
+                                
+                            case 'odl_coordinator':
+                                // Look up ODL coordinator or lecturer by email, create if not exists
+                                $oc_exists = $conn->query("SHOW TABLES LIKE 'odl_coordinators'")->num_rows > 0;
+                                if ($oc_exists) {
+                                    $lookup = $conn->prepare("SELECT coordinator_id FROM odl_coordinators WHERE email = ?");
+                                    $lookup->bind_param("s", $email);
+                                    $lookup->execute();
+                                    $lr = $lookup->get_result();
+                                    if ($lr->num_rows > 0) {
+                                        $related_val = $lr->fetch_assoc()['coordinator_id'];
+                                    } else {
+                                        $coord_pos = 'ODL Coordinator';
+                                        $ins = $conn->prepare("INSERT INTO odl_coordinators (user_id, full_name, email, phone, department, position, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)");
+                                        $ins->bind_param("isssss", $user_id, $resolved_name, $email, $resolved_phone, $resolved_department, $coord_pos);
+                                        $ins->execute();
+                                        $related_val = $conn->insert_id;
+                                    }
+                                }
+                                // Also link lecturer record if exists
+                                $lk = $conn->prepare("SELECT lecturer_id FROM lecturers WHERE email = ?");
+                                $lk->bind_param("s", $email);
+                                $lk->execute();
+                                $lk_r = $lk->get_result();
+                                if ($lk_r->num_rows > 0) {
+                                    $lec_id = $lk_r->fetch_assoc()['lecturer_id'];
+                                    $upd = $conn->prepare("UPDATE users SET related_lecturer_id = ? WHERE user_id = ?");
+                                    $upd->bind_param("ii", $lec_id, $user_id);
+                                    $upd->execute();
+                                }
+                                $related_id_updated = true;
+                                break;
+                                
+                            case 'research_coordinator':
+                                // Look up research coordinator by email, create if not exists
+                                $rc_exists = $conn->query("SHOW TABLES LIKE 'research_coordinators'")->num_rows > 0;
+                                if ($rc_exists) {
+                                    $lookup = $conn->prepare("SELECT coordinator_id FROM research_coordinators WHERE email = ?");
+                                    $lookup->bind_param("s", $email);
+                                    $lookup->execute();
+                                    $lr = $lookup->get_result();
+                                    if ($lr->num_rows > 0) {
+                                        $related_val = $lr->fetch_assoc()['coordinator_id'];
+                                    } else {
+                                        $ins = $conn->prepare("INSERT INTO research_coordinators (user_id, full_name, email, phone, department, is_active) VALUES (?, ?, ?, ?, ?, 1)");
+                                        $ins->bind_param("issss", $user_id, $resolved_name, $email, $resolved_phone, $resolved_department);
+                                        $ins->execute();
+                                        $related_val = $conn->insert_id;
+                                    }
+                                    $upd = $conn->prepare("UPDATE users SET related_staff_id = ? WHERE user_id = ?");
+                                    $upd->bind_param("ii", $related_val, $user_id);
+                                    $upd->execute();
+                                    $related_id_updated = true;
+                                }
+                                break;
+                        }
+                        
+                        if ($related_id_updated) {
+                            $success = "User updated successfully! Role changed to " . ucfirst(str_replace('_', ' ', $role)) . " and related ID linked.";
+                        } else {
+                            $success = "User updated successfully! Role changed to " . ucfirst(str_replace('_', ' ', $role)) . ". Note: No matching record found in the " . str_replace('_', ' ', $role) . " table for this email - related ID was not updated.";
+                        }
+                        
+                        // Also ensure records exist for additional roles
+                        if (!empty($additional)) {
+                            foreach ($additional as $add_role) {
+                                switch ($add_role) {
+                                    case 'lecturer':
+                                        $chk = $conn->prepare("SELECT lecturer_id FROM lecturers WHERE email = ?");
+                                        $chk->bind_param("s", $email); $chk->execute();
+                                        if ($chk->get_result()->num_rows === 0) {
+                                            $ins = $conn->prepare("INSERT INTO lecturers (full_name, email, phone, department, position, is_active) VALUES (?, ?, ?, ?, 'Lecturer', 1)");
+                                            $ins->bind_param("ssss", $resolved_name, $email, $resolved_phone, $resolved_department);
+                                            $ins->execute();
+                                        }
+                                        break;
+                                    case 'hod':
+                                        $chk = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ? AND position = 'Head of Department'");
+                                        $chk->bind_param("s", $email); $chk->execute();
+                                        if ($chk->get_result()->num_rows === 0) {
+                                            // Check if any admin_staff record exists
+                                            $chk2 = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ?");
+                                            $chk2->bind_param("s", $email); $chk2->execute();
+                                            if ($chk2->get_result()->num_rows === 0) {
+                                                $hod_p = 'Head of Department';
+                                                $ins = $conn->prepare("INSERT INTO administrative_staff (full_name, email, phone, department, position, hire_date, is_active) VALUES (?, ?, ?, ?, ?, CURDATE(), 1)");
+                                                $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $hod_p);
+                                                $ins->execute();
+                                            }
+                                        }
+                                        break;
+                                    case 'dean':
+                                        $chk = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ? AND position = 'Dean'");
+                                        $chk->bind_param("s", $email); $chk->execute();
+                                        if ($chk->get_result()->num_rows === 0) {
+                                            $chk2 = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ?");
+                                            $chk2->bind_param("s", $email); $chk2->execute();
+                                            if ($chk2->get_result()->num_rows === 0) {
+                                                $dean_p = 'Dean';
+                                                $ins = $conn->prepare("INSERT INTO administrative_staff (full_name, email, phone, department, position, hire_date, is_active) VALUES (?, ?, ?, ?, ?, CURDATE(), 1)");
+                                                $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $dean_p);
+                                                $ins->execute();
+                                            }
+                                        }
+                                        break;
+                                    case 'finance':
+                                        $chk = $conn->prepare("SELECT finance_id FROM finance_users WHERE email = ?");
+                                        $chk->bind_param("s", $email); $chk->execute();
+                                        if ($chk->get_result()->num_rows === 0) {
+                                            $fc = 'FIN-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+                                            $fp = 'Finance Officer';
+                                            $ins = $conn->prepare("INSERT INTO finance_users (finance_code, full_name, email, phone, department, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())");
+                                            $ins->bind_param("ssssss", $fc, $resolved_name, $email, $resolved_phone, $resolved_department, $fp);
+                                            $ins->execute();
+                                        }
+                                        break;
+                                    case 'examination_manager':
+                                    case 'examination_officer':
+                                        $chk = $conn->prepare("SELECT manager_id FROM examination_managers WHERE email = ?");
+                                        $chk->bind_param("s", $email); $chk->execute();
+                                        if ($chk->get_result()->num_rows === 0) {
+                                            $emp = ($add_role === 'examination_manager') ? 'Examination Manager' : 'Examination Officer';
+                                            $ins = $conn->prepare("INSERT INTO examination_managers (full_name, email, phone, department, position, hire_date, is_active, created_at) VALUES (?, ?, ?, ?, ?, CURDATE(), 1, NOW())");
+                                            $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $emp);
+                                            $ins->execute();
+                                        }
+                                        break;
+                                    case 'odl_coordinator':
+                                        $oc_t = $conn->query("SHOW TABLES LIKE 'odl_coordinators'")->num_rows > 0;
+                                        if ($oc_t) {
+                                            $chk = $conn->prepare("SELECT coordinator_id FROM odl_coordinators WHERE email = ?");
+                                            $chk->bind_param("s", $email); $chk->execute();
+                                            if ($chk->get_result()->num_rows === 0) {
+                                                $cp = 'ODL Coordinator';
+                                                $ins = $conn->prepare("INSERT INTO odl_coordinators (user_id, full_name, email, phone, department, position, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)");
+                                                $ins->bind_param("isssss", $user_id, $resolved_name, $email, $resolved_phone, $resolved_department, $cp);
+                                                $ins->execute();
+                                            }
+                                        }
+                                        break;
+                                    case 'research_coordinator':
+                                        $rc_t = $conn->query("SHOW TABLES LIKE 'research_coordinators'")->num_rows > 0;
+                                        if ($rc_t) {
+                                            $chk = $conn->prepare("SELECT coordinator_id FROM research_coordinators WHERE email = ?");
+                                            $chk->bind_param("s", $email); $chk->execute();
+                                            if ($chk->get_result()->num_rows === 0) {
+                                                $ins = $conn->prepare("INSERT INTO research_coordinators (user_id, full_name, email, phone, department, is_active) VALUES (?, ?, ?, ?, ?, 1)");
+                                                $ins->bind_param("issss", $user_id, $resolved_name, $email, $resolved_phone, $resolved_department);
+                                                $ins->execute();
+                                            }
+                                        }
+                                        break;
+                                    case 'staff':
+                                    case 'admin':
+                                        $chk = $conn->prepare("SELECT staff_id FROM administrative_staff WHERE email = ?");
+                                        $chk->bind_param("s", $email); $chk->execute();
+                                        if ($chk->get_result()->num_rows === 0) {
+                                            $sp = ($add_role === 'admin') ? 'Administrator' : 'Staff';
+                                            $ins = $conn->prepare("INSERT INTO administrative_staff (full_name, email, phone, department, position, hire_date, is_active) VALUES (?, ?, ?, ?, ?, CURDATE(), 1)");
+                                            $ins->bind_param("sssss", $resolved_name, $email, $resolved_phone, $resolved_department, $sp);
+                                            $ins->execute();
+                                        }
+                                        break;
+                                }
+                            }
+                        }
+                        
+                        // Send role change notification email
+                        if (isEmailEnabled()) {
+                            try {
+                                $role_display = ucfirst(str_replace('_', ' ', $role));
+                                $old_role_display = ucfirst(str_replace('_', ' ', $old_role));
+                                
+                                $role_descriptions = [
+                                    'student' => 'Access your courses, assignments, and learning materials through the Student Portal.',
+                                    'lecturer' => 'Manage your courses, upload content, create assignments, and grade student submissions.',
+                                    'staff' => 'Access administrative functions and staff management tools.',
+                                    'admin' => 'Full system administration including user management, settings, and system configuration.',
+                                    'hod' => 'Oversee your department\'s courses, lecturers, students, and academic allocations.',
+                                    'dean' => 'Manage faculty-level academic operations, programs, and departmental oversight.',
+                                    'finance' => 'Manage student fees, payments, financial reports, and billing operations.',
+                                    'odl_coordinator' => 'Coordinate Open and Distance Learning programs and student support.',
+                                    'examination_manager' => 'Oversee examination processes, security, scheduling, and result management.',
+                                    'examination_officer' => 'Handle day-to-day exam operations, invigilation, and exam logistics.',
+                                    'research_coordinator' => 'Oversee dissertation management, supervisor assignments, and research quality assurance.'
+                                ];
+                                
+                                $role_dashboards = [
+                                    'student' => 'student/dashboard.php',
+                                    'lecturer' => 'lecturer/dashboard.php',
+                                    'staff' => 'admin/dashboard.php',
+                                    'admin' => 'admin/dashboard.php',
+                                    'hod' => 'hod/dashboard.php',
+                                    'dean' => 'dean/dashboard.php',
+                                    'finance' => 'finance/dashboard.php',
+                                    'odl_coordinator' => 'odl_coordinator/dashboard.php',
+                                    'examination_manager' => 'examination_manager/dashboard.php',
+                                    'examination_officer' => 'examination_officer/dashboard.php',
+                                    'research_coordinator' => 'research_coordinator/dashboard.php'
+                                ];
+                                
+                                $description = $role_descriptions[$role] ?? 'Access your designated portal and features.';
+                                $dashboard_url = $role_dashboards[$role] ?? 'dashboard.php';
+                                $uni = getUniversitySettings();
+                                $uni_name = $uni['university_name'] ?? 'VLE System';
+                                $login_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname(dirname($_SERVER['REQUEST_URI'])) . '/login.php';
+                                
+                                $subject = "Role Assignment: You have been assigned as " . $role_display . " - " . $uni_name;
+                                
+                                $content = "
+                                    <p class='greeting'>Dear <strong>" . htmlspecialchars($username) . "</strong>,</p>
+                                    <p class='content-text'>We are writing to inform you that your account role has been updated in the <strong>" . htmlspecialchars($uni_name) . "</strong> Virtual Learning Environment.</p>
+                                    
+                                    <div class='info-box'>
+                                        <h3>Role Assignment Details</h3>
+                                        <table width='100%' cellpadding='0' cellspacing='0'>
+                                            <tr><td style='padding:8px 0;font-weight:600;color:#64748b;width:140px;font-size:14px;border-bottom:1px solid #e2e8f0;'>Previous Role:</td><td style='padding:8px 0;color:#1e293b;font-weight:500;font-size:14px;border-bottom:1px solid #e2e8f0;'>" . htmlspecialchars($old_role_display) . "</td></tr>
+                                            <tr><td style='padding:8px 0;font-weight:600;color:#64748b;width:140px;font-size:14px;border-bottom:1px solid #e2e8f0;'>New Role:</td><td style='padding:8px 0;color:#1e293b;font-weight:700;font-size:14px;border-bottom:1px solid #e2e8f0;'><span style='color:#16a34a;'>" . htmlspecialchars($role_display) . "</span></td></tr>
+                                            <tr><td style='padding:8px 0;font-weight:600;color:#64748b;width:140px;font-size:14px;border-bottom:1px solid #e2e8f0;'>Username:</td><td style='padding:8px 0;color:#1e293b;font-weight:500;font-size:14px;border-bottom:1px solid #e2e8f0;'>" . htmlspecialchars($username) . "</td></tr>
+                                            <tr><td style='padding:8px 0;font-weight:600;color:#64748b;width:140px;font-size:14px;'>Email:</td><td style='padding:8px 0;color:#1e293b;font-weight:500;font-size:14px;'>" . htmlspecialchars($email) . "</td></tr>
+                                        </table>
+                                    </div>
+                                    
+                                    <div class='alert-box info'>
+                                        <strong>What does this mean?</strong><br>
+                                        " . htmlspecialchars($description) . "
+                                    </div>
+                                    
+                                    <div class='btn-container'>
+                                        <a href='" . htmlspecialchars($login_url) . "' class='btn-primary'>Login to Your Portal</a>
+                                    </div>
+                                    
+                                    <p class='content-text'>If you have any questions about your new role or need assistance, please contact the system administrator.</p>
+                                    
+                                    <div class='divider'></div>
+                                    <p style='font-size:13px;color:#6b7280;'>This change was made by an administrator on " . date('F j, Y \a\t g:i A') . ".</p>
+                                ";
+                                
+                                $body = getEmailTemplate('Role Assignment Notification', $content, '', '#7c3aed');
+                                $email_sent = sendEmail($email, $username, $subject, $body);
+                                
+                                if ($email_sent) {
+                                    $success .= " A notification email has been sent to " . htmlspecialchars($email) . ".";
+                                }
+                            } catch (Throwable $e) {
+                                error_log("Role change email failed: " . $e->getMessage());
+                                // Don't block the success message if email fails
+                            }
+                        }
+                    } else {
+                        $success = "User updated successfully!";
+                    }
                 } else {
                     $error = "Failed to update user: " . $conn->error;
                 }
@@ -342,7 +809,9 @@ $total_users = array_sum($role_counts);
                             <option value="hod" <?php echo $filter_role === 'hod' ? 'selected' : ''; ?>>HOD</option>
                             <option value="dean" <?php echo $filter_role === 'dean' ? 'selected' : ''; ?>>Dean</option>
                             <option value="odl_coordinator" <?php echo $filter_role === 'odl_coordinator' ? 'selected' : ''; ?>>ODL Coordinator</option>
-                            <option value="examination_manager" <?php echo $filter_role === 'examination_manager' ? 'selected' : ''; ?>>Exam Officer</option>
+                            <option value="examination_manager" <?php echo $filter_role === 'examination_manager' ? 'selected' : ''; ?>>Examination Manager</option>
+                            <option value="examination_officer" <?php echo $filter_role === 'examination_officer' ? 'selected' : ''; ?>>Examination Officer</option>
+                            <option value="research_coordinator" <?php echo $filter_role === 'research_coordinator' ? 'selected' : ''; ?>>Research Coordinator</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -403,7 +872,9 @@ $total_users = array_sum($role_counts);
                                                     'hod' => 'bg-purple',
                                                     'dean' => 'bg-dark',
                                                     'odl_coordinator' => 'bg-primary',
-                                                    'examination_manager' => 'bg-secondary'
+                                                    'examination_manager' => 'bg-secondary',
+                                                    'examination_officer' => 'bg-secondary',
+                                                    'research_coordinator' => 'bg-info'
                                                 ];
                                                 $role_labels = [
                                                     'student' => 'Student',
@@ -413,7 +884,9 @@ $total_users = array_sum($role_counts);
                                                     'hod' => 'HOD',
                                                     'dean' => 'Dean',
                                                     'odl_coordinator' => 'Coordinator',
-                                                    'examination_manager' => 'Exam Officer'
+                                                    'examination_manager' => 'Examination Manager',
+                                                    'examination_officer' => 'Examination Officer',
+                                                    'research_coordinator' => 'Research Coordinator'
                                                 ];
                                                 $role_color = $role_colors[$u['role']] ?? 'bg-secondary';
                                                 ?>
@@ -434,6 +907,14 @@ $total_users = array_sum($role_counts);
                                                     <span class="status-active"><i class="bi bi-check-circle-fill me-1"></i>Active</span>
                                                 <?php else: ?>
                                                     <span class="status-inactive"><i class="bi bi-x-circle-fill me-1"></i>Inactive</span>
+                                                <?php endif; ?>
+                                                <?php 
+                                                $is_locked = !empty($u['account_locked_until']) && strtotime($u['account_locked_until']) > time();
+                                                $has_failed_attempts = !empty($u['failed_login_attempts']) && $u['failed_login_attempts'] >= 5;
+                                                if ($is_locked): ?>
+                                                    <br><span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+                                                <?php elseif ($has_failed_attempts): ?>
+                                                    <br><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i><?php echo (int)$u['failed_login_attempts']; ?> Failed</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td><?php echo $u['created_at'] ? date('M j, Y', strtotime($u['created_at'])) : 'N/A'; ?></td>
@@ -464,6 +945,19 @@ $total_users = array_sum($role_counts);
                                                             <i class="bi bi-<?php echo $u['is_active'] ? 'pause' : 'play'; ?>-fill"></i>
                                                         </button>
                                                     </form>
+                                                    
+                                                    <!-- Unlock Account Button (visible when locked or has 5+ failed attempts) -->
+                                                    <?php if ($is_locked || $has_failed_attempts): ?>
+                                                    <form method="POST" class="d-inline">
+                                                        <input type="hidden" name="user_id" value="<?php echo $u['user_id']; ?>">
+                                                        <button type="submit" name="unlock_account" 
+                                                                class="btn btn-sm btn-outline-warning action-btn"
+                                                                onclick="return confirm('Unlock this account and reset failed login attempts?')"
+                                                                title="<?php echo $is_locked ? 'Unlock Account' : 'Reset Failed Attempts'; ?>">
+                                                            <i class="bi bi-unlock-fill"></i>
+                                                        </button>
+                                                    </form>
+                                                    <?php endif; ?>
                                                     
                                                     <!-- Delete Button -->
                                                     <?php if ($u['user_id'] != $_SESSION['vle_user_id']): ?>
@@ -509,7 +1003,9 @@ $total_users = array_sum($role_counts);
                                                                         <option value="hod" <?php echo $u['role'] === 'hod' ? 'selected' : ''; ?>>HOD</option>
                                                                         <option value="dean" <?php echo $u['role'] === 'dean' ? 'selected' : ''; ?>>Dean</option>
                                                                         <option value="odl_coordinator" <?php echo $u['role'] === 'odl_coordinator' ? 'selected' : ''; ?>>ODL Coordinator</option>
-                                                                        <option value="examination_manager" <?php echo $u['role'] === 'examination_manager' ? 'selected' : ''; ?>>Examination Officer</option>
+                                                                        <option value="examination_manager" <?php echo $u['role'] === 'examination_manager' ? 'selected' : ''; ?>>Examination Manager</option>
+                                                                        <option value="examination_officer" <?php echo $u['role'] === 'examination_officer' ? 'selected' : ''; ?>>Examination Officer</option>
+                                                                        <option value="research_coordinator" <?php echo $u['role'] === 'research_coordinator' ? 'selected' : ''; ?>>Research Coordinator</option>
                                                                     </select>
                                                                     <small class="text-muted">Determines default dashboard on login</small>
                                                                 </div>
@@ -523,7 +1019,9 @@ $total_users = array_sum($role_counts);
                                                                             'hod' => 'HOD',
                                                                             'dean' => 'Dean',
                                                                             'odl_coordinator' => 'ODL Coordinator',
-                                                                            'examination_manager' => 'Exam Officer',
+                                                                            'examination_manager' => 'Examination Manager',
+                                                                            'examination_officer' => 'Examination Officer',
+                                                                            'research_coordinator' => 'Research Coordinator',
                                                                             'finance' => 'Finance',
                                                                             'student' => 'Student'
                                                                         ];

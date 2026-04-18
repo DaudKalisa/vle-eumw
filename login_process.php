@@ -161,10 +161,63 @@ try {
         // Clear any previous error messages
         unset($_SESSION['login_error']);
 
+        // Capture redirect_to for deep-linking (e.g., from email notification links)
+        $redirect_to = trim($_POST['redirect_to'] ?? '');
+        if (!empty($redirect_to)) {
+            // Sanitize: only allow relative paths, no external URLs
+            $redirect_to = ltrim($redirect_to, '/');
+            // Block absolute URLs and javascript: schemes
+            if (preg_match('/^https?:\/\//i', $redirect_to) || preg_match('/^javascript:/i', $redirect_to)) {
+                $redirect_to = '';
+            }
+        }
+        if (!empty($redirect_to)) {
+            $_SESSION['vle_redirect_to'] = $redirect_to;
+        }
+
+        // Auto-record login attendance for students
+        if (($_SESSION['vle_role'] ?? '') === 'student' && !empty($_SESSION['vle_related_id'])) {
+            try {
+                // Ensure table exists
+                $conn->query("CREATE TABLE IF NOT EXISTS student_login_attendance (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    student_id VARCHAR(50) NOT NULL,
+                    login_time DATETIME NOT NULL,
+                    logout_time DATETIME NULL,
+                    duration_minutes INT NULL,
+                    ip_address VARCHAR(45),
+                    attendance_date DATE NOT NULL,
+                    INDEX idx_student_date (student_id, attendance_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+                $att_student = $_SESSION['vle_related_id'];
+                $att_date = date('Y-m-d');
+                $att_ip = $ip_address;
+                $att_stmt = $conn->prepare("INSERT INTO student_login_attendance (student_id, login_time, ip_address, attendance_date) VALUES (?, NOW(), ?, ?)");
+                if ($att_stmt) {
+                    $att_stmt->bind_param("sss", $att_student, $att_ip, $att_date);
+                    $att_stmt->execute();
+                    $_SESSION['vle_login_attendance_id'] = $conn->insert_id;
+                    $att_stmt->close();
+                }
+            } catch (Throwable $e) {
+                error_log("Login attendance error: " . $e->getMessage());
+            }
+        }
+
         // Enforce password change at first login or if required
         if (!empty($result['user']['must_change_password'])) {
             $_SESSION['force_password_change'] = true;
+            $_SESSION['temp_password_verified'] = true;
             header('Location: change_password.php?first=1');
+            exit();
+        }
+
+        // Check for deep-link redirect after login
+        if (!empty($_SESSION['vle_redirect_to'])) {
+            $deep_link = $_SESSION['vle_redirect_to'];
+            unset($_SESSION['vle_redirect_to']);
+            header('Location: ' . $deep_link);
             exit();
         }
 
@@ -186,14 +239,40 @@ try {
                 $redirect_url = 'odl_coordinator/dashboard.php';
                 break;
             case 'examination_manager':
-                // User with explicit examination_manager role → examination officer portal
+                // User with explicit examination_manager role → check position for routing
+                $redirect_url = 'examination_officer/dashboard.php';
+                if (!empty($result['user']['related_staff_id'])) {
+                    try {
+                        $em_check = $conn->prepare("SELECT position FROM examination_managers WHERE manager_id = ? AND is_active = 1");
+                        if ($em_check) {
+                            $em_check->bind_param("i", $result['user']['related_staff_id']);
+                            $em_check->execute();
+                            $em_result = $em_check->get_result();
+                            if ($em_result->num_rows > 0) {
+                                $em_data = $em_result->fetch_assoc();
+                                $pos = strtolower($em_data['position'] ?? '');
+                                if (strpos($pos, 'manager') !== false) {
+                                    $redirect_url = 'examination_manager/dashboard.php';
+                                }
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        // Keep default examination_officer dashboard
+                    }
+                }
+                break;
+            case 'examination_officer':
+                // User with explicit examination_officer role → go to officer dashboard
                 $redirect_url = 'examination_officer/dashboard.php';
                 break;
             case 'dean':
                 $redirect_url = 'dean/dashboard.php';
                 break;
-            case 'staff':
             case 'hod':
+                // HOD users go to HOD portal
+                $redirect_url = 'hod/dashboard.php';
+                break;
+            case 'staff':
                 // Check if this staff user is an examination officer/manager
                 $redirect_url = 'admin/dashboard.php';
                 if (!empty($result['user']['related_staff_id'])) {
@@ -218,6 +297,9 @@ try {
                         // examination_managers table may not exist — default to admin dashboard
                     }
                 }
+                break;
+            case 'research_coordinator':
+                $redirect_url = 'research_coordinator/dashboard.php';
                 break;
             default:
                 $redirect_url = 'dashboard.php';
@@ -305,13 +387,52 @@ function getDeviceInfo($user_agent) {
     return $device;
 }
 
+/**
+ * Resolve a login identifier (username, email, or student ID) to the user's username and email.
+ * This ensures all security functions work regardless of how the student logs in.
+ */
+function resolveLoginIdentifier($conn, $username_email) {
+    // First try direct username/email match
+    $stmt = $conn->prepare("SELECT username, email FROM users WHERE username = ? OR email = ?");
+    if ($stmt) {
+        $stmt->bind_param("ss", $username_email, $username_email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $stmt->close();
+            return $row;
+        }
+        $stmt->close();
+    }
+    // Try student ID lookup
+    $stmt = $conn->prepare("SELECT u.username, u.email FROM users u INNER JOIN students s ON u.related_student_id = s.student_id WHERE s.student_id = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("s", $username_email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $stmt->close();
+            return $row;
+        }
+        $stmt->close();
+    }
+    return null;
+}
+
 function isAccountLocked($conn, $username_email) {
+    // Resolve student ID to username/email if needed
+    $resolved = resolveLoginIdentifier($conn, $username_email);
+    $uname = $resolved['username'] ?? $username_email;
+    $uemail = $resolved['email'] ?? $username_email;
+
     // Check if account_locked_until column exists in users table
     $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'account_locked_until'");
     if ($column_check && $column_check->num_rows > 0) {
         $stmt = $conn->prepare("SELECT account_locked_until FROM users WHERE (username = ? OR email = ?) AND account_locked_until > NOW()");
         if ($stmt) {
-            $stmt->bind_param("ss", $username_email, $username_email);
+            $stmt->bind_param("ss", $uname, $uemail);
             $stmt->execute();
             $result = $stmt->get_result();
             if ($result->num_rows > 0) {
@@ -337,12 +458,16 @@ function isAccountLocked($conn, $username_email) {
 }
 
 function getRemainingLockTime($conn, $username_email) {
+    $resolved = resolveLoginIdentifier($conn, $username_email);
+    $uname = $resolved['username'] ?? $username_email;
+    $uemail = $resolved['email'] ?? $username_email;
+
     // Check if account_locked_until column exists
     $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'account_locked_until'");
     if ($column_check && $column_check->num_rows > 0) {
         $stmt = $conn->prepare("SELECT TIMESTAMPDIFF(MINUTE, NOW(), account_locked_until) as remaining FROM users WHERE (username = ? OR email = ?) AND account_locked_until > NOW()");
         if ($stmt) {
-            $stmt->bind_param("ss", $username_email, $username_email);
+            $stmt->bind_param("ss", $uname, $uemail);
             $stmt->execute();
             $result = $stmt->get_result();
             if ($row = $result->fetch_assoc()) {
@@ -418,20 +543,28 @@ function isSuspiciousLogin($conn, $user_id, $ip_address, $device_info) {
 }
 
 function clearLoginAttempts($conn, $username_email) {
+    $resolved = resolveLoginIdentifier($conn, $username_email);
+    $uname = $resolved['username'] ?? $username_email;
+    $uemail = $resolved['email'] ?? $username_email;
+
     // Reset failed attempts in users table
     $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'failed_login_attempts'");
     if ($column_check->num_rows > 0) {
         $stmt = $conn->prepare("UPDATE users SET failed_login_attempts = 0, last_failed_login = NULL, account_locked_until = NULL WHERE username = ? OR email = ?");
-        $stmt->bind_param("ss", $username_email, $username_email);
+        $stmt->bind_param("ss", $uname, $uemail);
         $stmt->execute();
     }
 }
 
 function incrementFailedAttempts($conn, $username_email) {
+    $resolved = resolveLoginIdentifier($conn, $username_email);
+    $uname = $resolved['username'] ?? $username_email;
+    $uemail = $resolved['email'] ?? $username_email;
+
     $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'failed_login_attempts'");
     if ($column_check->num_rows > 0) {
         $stmt = $conn->prepare("UPDATE users SET failed_login_attempts = failed_login_attempts + 1, last_failed_login = NOW() WHERE username = ? OR email = ?");
-        $stmt->bind_param("ss", $username_email, $username_email);
+        $stmt->bind_param("ss", $uname, $uemail);
         $stmt->execute();
     }
 }
@@ -442,8 +575,12 @@ function getFailedAttemptCount($conn, $username_email) {
         return 0;
     }
     
+    $resolved = resolveLoginIdentifier($conn, $username_email);
+    $uname = $resolved['username'] ?? $username_email;
+    $uemail = $resolved['email'] ?? $username_email;
+
     $stmt = $conn->prepare("SELECT failed_login_attempts FROM users WHERE username = ? OR email = ?");
-    $stmt->bind_param("ss", $username_email, $username_email);
+    $stmt->bind_param("ss", $uname, $uemail);
     $stmt->execute();
     $result = $stmt->get_result();
     
@@ -455,12 +592,16 @@ function getFailedAttemptCount($conn, $username_email) {
 }
 
 function lockAccount($conn, $username_email) {
+    $resolved = resolveLoginIdentifier($conn, $username_email);
+    $uname = $resolved['username'] ?? $username_email;
+    $uemail = $resolved['email'] ?? $username_email;
+
     $unlock_time = date('Y-m-d H:i:s', strtotime('+' . LOCKOUT_DURATION . ' minutes'));
     
     $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'account_locked_until'");
     if ($column_check->num_rows > 0) {
         $stmt = $conn->prepare("UPDATE users SET account_locked_until = ? WHERE username = ? OR email = ?");
-        $stmt->bind_param("sss", $unlock_time, $username_email, $username_email);
+        $stmt->bind_param("sss", $unlock_time, $uname, $uemail);
         $stmt->execute();
     }
     

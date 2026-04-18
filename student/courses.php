@@ -1,11 +1,15 @@
 <?php
 // courses.php - Student's My Courses Page
 require_once '../includes/auth.php';
+require_once '../includes/student_attendance_helper.php';
 requireLogin();
 requireRole(['student']);
 
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];
+
+// Auto-record attendance for accessing My Courses (only for paid students)
+recordAutoAttendance($conn, $student_id, 'course_access');
 
 // Get student's enrolled VLE courses
 $enrolled_courses = [];
@@ -96,13 +100,20 @@ $user = getCurrentUser();
                                 </h5>
                                 <div class="mt-2 mb-3">
                                     <span class="d-block text-muted"><strong>Course Code:</strong> <?php echo htmlspecialchars($course['course_code'] ?? ''); ?></span>
-                                    <span class="d-block text-muted"><strong>Year:</strong> <?php echo htmlspecialchars($course['year_of_study'] ?? ''); ?></span>
+                                    <span class="d-block text-muted"><strong>Year:</strong> <?php 
+                                        $allYrs = [$course['year_of_study'] ?? ''];
+                                        if (!empty($course['applicable_years'])) $allYrs = array_merge($allYrs, array_map('trim', explode(',', $course['applicable_years'])));
+                                        $allYrs = array_unique(array_filter($allYrs)); sort($allYrs);
+                                        echo 'Year ' . implode(',', $allYrs);
+                                        if (($course['semester'] ?? '') === 'Both') echo ' | Sem 1 & 2';
+                                        elseif (!empty($course['semester'])) echo ' | Sem ' . htmlspecialchars($course['semester']);
+                                    ?></span>
                                     <span class="d-block text-muted"><strong>Lecturer:</strong> <?php echo htmlspecialchars($course['lecturer_name'] ?? ''); ?></span>
                                     <?php 
-                                        $total_modules = count($enrolled_courses);
-                                        $module_position = array_search($course['course_id'], array_column($enrolled_courses, 'course_id')) + 1;
+                                        $total_courses = count($enrolled_courses);
+                                        $course_position = array_search($course['course_id'], array_column($enrolled_courses, 'course_id')) + 1;
                                     ?>
-                                    <span class="d-block text-muted"><strong>Module:</strong> <?php echo $module_position . '/' . $total_modules; ?></span>
+                                    <span class="d-block text-muted"><strong>Course:</strong> <?php echo $course_position . '/' . $total_courses; ?></span>
                                 </div>
                                 <div class="mb-3">
                                     <div class="progress">

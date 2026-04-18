@@ -5,7 +5,7 @@
  */
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'examination_manager']);
+requireRole(['examination_manager', 'examination_officer']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();
@@ -187,8 +187,9 @@ $page_title = "Examination Dashboard";
                     <?php endif; ?>
                 </div>
                 <div class="col-md-4 text-end d-none d-md-block">
-                    <div class="d-flex gap-2 justify-content-end">
+                    <div class="d-flex gap-2 justify-content-end flex-wrap">
                         <a href="manage_exams.php" class="btn btn-light"><i class="bi bi-plus-circle me-1"></i>New Exam</a>
+                        <a href="manage_exams.php?status=inactive" class="btn btn-success"><i class="bi bi-play-circle me-1"></i>Activate Exams</a>
                         <a href="monitoring.php" class="btn btn-outline-light"><i class="bi bi-camera-video me-1"></i>Live Monitor</a>
                     </div>
                 </div>
@@ -444,7 +445,7 @@ $page_title = "Examination Dashboard";
         </div>
 
         <?php
-        $current_role_context = 'examination_manager';
+        $current_role_context = 'examination_officer';
         include '../includes/role_cards.php';
         ?>
     </div>

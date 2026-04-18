@@ -6,7 +6,7 @@
  */
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'examination_manager', 'admin']);
+requireRole(['examination_manager', 'examination_officer']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();
@@ -112,7 +112,7 @@ $dept_analysis_query = "
                THEN (SUM(CASE WHEN er.is_passed = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(er.result_id))
                ELSE 0 END, 1) as pass_rate
     FROM departments d
-    LEFT JOIN vle_courses c ON (d.department_id = c.department_id OR d.department_name = c.department)
+    LEFT JOIN vle_courses c ON (d.department_name = c.program_of_study OR d.department_code = c.program_of_study)
     LEFT JOIN exams e ON c.course_id = e.course_id AND e.results_published = 1
     LEFT JOIN exam_results er ON e.exam_id = er.exam_id
     GROUP BY d.department_id

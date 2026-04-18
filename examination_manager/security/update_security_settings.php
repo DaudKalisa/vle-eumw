@@ -2,7 +2,7 @@
 // examination_manager/security/update_security_settings.php - Update security settings
 require_once '../../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'admin', 'examination_manager']);
+requireRole(['examination_manager', 'examination_officer']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();

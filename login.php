@@ -27,7 +27,6 @@ if (isset($_SESSION['login_error'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0d1b4a">
     <title>Login — Exploits University Malawi VLE</title>
 
     <!-- Bootstrap CSS -->
@@ -36,6 +35,9 @@ if (isset($_SESSION['login_error'])) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="assets/img/Logo.png">
+    
+    <!-- PWA Support -->
+    <?php include_once __DIR__ . '/includes/pwa-head.php'; ?>
 
     <style>
         :root {
@@ -153,7 +155,7 @@ if (isset($_SESSION['login_error'])) {
             height: 80px;
             object-fit: contain;
             margin-bottom: 12px;
-            filter: brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0,0,0,.3));
+            filter: brightness(3) invert(0) drop-shadow(0 2px 8px rgba(238, 234, 234, 0.3));
         }
         .login-header h4 {
             color: #fff;
@@ -371,12 +373,18 @@ if (isset($_SESSION['login_error'])) {
                     <?php endif; ?>
 
                     <form method="POST" action="login_process.php">
+                        <?php 
+                        // Preserve redirect_to for deep-linking (e.g., from email notification links)
+                        $redirect_to = $_GET['redirect_to'] ?? $_POST['redirect_to'] ?? '';
+                        if (!empty($redirect_to)): ?>
+                            <input type="hidden" name="redirect_to" value="<?= htmlspecialchars($redirect_to) ?>">
+                        <?php endif; ?>
                         <div class="mb-3">
                             <label for="username_email" class="form-label">
-                                <i class="bi bi-person me-1"></i> Username or Email
+                                <i class="bi bi-person me-1"></i> Student ID, Username or Email
                             </label>
                             <input type="text" class="form-control" id="username_email" name="username_email" 
-                                   placeholder="Enter your username or email" required>
+                                   placeholder="Enter your Student ID, username or email" required>
                         </div>
 
                         <div class="mb-4">
@@ -404,6 +412,11 @@ if (isset($_SESSION['login_error'])) {
                                 <i class="bi bi-globe"></i> Visit Website
                             </a>
                         </div>
+                        <div class="mt-3">
+                            <a href="install-app.php" style="color:var(--eu-accent); font-size:.85rem; text-decoration:none;">
+                                <i class="bi bi-download me-1"></i> Install as App on your Phone
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -429,5 +442,8 @@ if (isset($_SESSION['login_error'])) {
             }, 5000);
         })();
     </script>
+    
+    <!-- PWA Service Worker + Install Prompt -->
+    <?php include_once __DIR__ . '/includes/pwa-footer.php'; ?>
 </body>
 </html>

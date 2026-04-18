@@ -29,7 +29,7 @@ if ($type === 'transaction') {
               pt.payment_method as transaction_type, pt.reference_number as payment_reference,
               pt.payment_date as transaction_date, pt.payment_date as submission_date,
               pt.payment_date as reviewed_date, pt.notes, pt.recorded_by, 
-              pt.recorded_by as reviewed_by_username, 'approved' as status,
+              u_rec.username as reviewed_by_username, 'approved' as status,
               s.full_name as student_name, s.email as student_email, 
               s.phone as student_phone, s.program, s.campus, s.year_of_study, s.semester,
               s.program_type, s.gender,
@@ -42,6 +42,7 @@ if ($type === 'transaction') {
               LEFT JOIN departments d ON s.department = d.department_id
               LEFT JOIN faculties f ON d.faculty_id = f.faculty_id
               LEFT JOIN student_finances sf ON pt.student_id = sf.student_id
+              LEFT JOIN users u_rec ON pt.recorded_by = u_rec.user_id
               WHERE pt.transaction_id = ?";
     $stmt = $conn->prepare($query);
     $stmt->bind_param("i", $id);
@@ -412,19 +413,19 @@ $conn->close();
                     <table class="info-table">
                         <tr>
                             <td>Student ID:</td>
-                            <td><strong><?php echo htmlspecialchars($receipt['student_id']); ?></strong></td>
+                            <td><strong><?php echo htmlspecialchars($receipt['student_id'] ?? ''); ?></strong></td>
                         </tr>
                         <tr>
                             <td>Full Name:</td>
-                            <td><?php echo htmlspecialchars($receipt['student_name']); ?></td>
+                            <td><?php echo htmlspecialchars($receipt['student_name'] ?? ''); ?></td>
                         </tr>
                         <tr>
                             <td>Program:</td>
-                            <td><?php echo htmlspecialchars($receipt['department_name'] ?? $receipt['program']); ?></td>
+                            <td><?php echo htmlspecialchars($receipt['department_name'] ?? $receipt['program'] ?? ''); ?></td>
                         </tr>
                         <tr>
                             <td>Campus:</td>
-                            <td><?php echo htmlspecialchars($receipt['campus']); ?></td>
+                            <td><?php echo htmlspecialchars($receipt['campus'] ?? ''); ?></td>
                         </tr>
                         <tr>
                             <td>Year/Semester:</td>
@@ -439,7 +440,7 @@ $conn->close();
                     <table class="info-table">
                         <tr>
                             <td>Reference:</td>
-                            <td><strong><?php echo htmlspecialchars($receipt['payment_reference']); ?></strong></td>
+                            <td><strong><?php echo htmlspecialchars($receipt['payment_reference'] ?? ''); ?></strong></td>
                         </tr>
                         <tr>
                             <td>Trans. Date:</td>
@@ -447,7 +448,7 @@ $conn->close();
                         </tr>
                         <tr>
                             <td>Method:</td>
-                            <td><?php echo htmlspecialchars($receipt['transaction_type']); ?></td>
+                            <td><?php echo htmlspecialchars($receipt['transaction_type'] ?? ''); ?></td>
                         </tr>
                         <tr>
                             <td>Bank:</td>
@@ -484,7 +485,7 @@ $conn->close();
                         </tr>
                         <tr>
                             <td>Balance:</td>
-                            <td class="text-danger">K<?php echo number_format($receipt['balance'] ?? 0, 2); ?></td>
+                            <td class="text-danger">K<?php echo number_format(($receipt['expected_total'] ?? 0) - ($receipt['total_paid'] ?? 0), 2); ?></td>
                         </tr>
                     </table>
                 </div>

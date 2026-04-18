@@ -2,7 +2,7 @@
 // examination_manager/security/generate_report.php - Generate security reports
 require_once '../../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'admin', 'examination_manager']);
+requireRole(['examination_manager', 'examination_officer']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();

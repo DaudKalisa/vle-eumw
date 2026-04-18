@@ -5,7 +5,7 @@ requireLogin();
 requireRole(['lecturer']);
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 // Get lecturer details
 $stmt = $conn->prepare("SELECT * FROM lecturers WHERE lecturer_id = ?");

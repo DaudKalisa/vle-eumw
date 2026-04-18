@@ -1,0 +1,9 @@
+This is a placeholder for a PDF document.
+
+In production, this would be an actual .pdf file with:
+- Reading materials
+- Study guides
+- Course notes
+- Reference documents
+
+To add real documents, upload them through the Lecturer Dashboard.

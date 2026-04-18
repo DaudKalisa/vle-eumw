@@ -5,10 +5,14 @@ requireLogin();
 requireRole(['lecturer']);
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+// Use getRelatedIdForRole() to support multi-role users (e.g., admin with lecturer role)
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 if (!$lecturer_id) {
-    die("Error: Lecturer ID not found. Please contact administrator.");
+    // Redirect to main dashboard with error instead of dying
+    $_SESSION['vle_error'] = 'Lecturer profile not linked to your account. Please contact administrator to update your related ID.';
+    header('Location: ../dashboard.php');
+    exit();
 }
 
 // Get lecturer's VLE courses
@@ -26,6 +30,36 @@ $result = $conn->query("
 while ($row = $result->fetch_assoc()) {
     $courses[] = $row;
 }
+
+// Exam marking button colour — count pending papers for this lecturer
+$_em_pending = 0;
+$_em_submitted = 0;
+if (!empty($courses)) {
+    $_em_ids = implode(',', array_map('intval', array_column($courses, 'course_id')));
+    $_em_res = $conn->query("
+        SELECT
+            SUM((SELECT COUNT(DISTINCT es.student_id) FROM exam_sessions es
+                 WHERE es.exam_id = e.exam_id AND es.status = 'completed'
+                   AND es.student_id NOT IN (
+                       SELECT er.student_id FROM exam_results er
+                       WHERE er.exam_id = e.exam_id AND er.reviewed_by IS NOT NULL
+                   ))) AS pending,
+            SUM((SELECT COUNT(DISTINCT es2.student_id) FROM exam_sessions es2
+                 WHERE es2.exam_id = e.exam_id AND es2.status = 'completed')) AS submitted
+        FROM exams e
+        WHERE e.course_id IN ($_em_ids)
+    ");
+    if ($_em_res) {
+        $_em_row = $_em_res->fetch_assoc();
+        $_em_pending   = (int)($_em_row['pending']   ?? 0);
+        $_em_submitted = (int)($_em_row['submitted'] ?? 0);
+    }
+}
+$_em_btn_style = $_em_pending > 0
+    ? 'background: linear-gradient(135deg, #f97316, #ea580c);'  // orange — papers waiting
+    : ($_em_submitted > 0
+        ? 'background: linear-gradient(135deg, #22c55e, #16a34a);'  // green — all marked
+        : 'background: linear-gradient(135deg, #0ea5e9, #0369a1);'); // blue — no submissions yet
 
 // Get current course if specified
 $current_course_id = isset($_GET['course_id']) ? (int)$_GET['course_id'] : null;
@@ -124,6 +158,7 @@ $user = getCurrentUser();
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="../assets/css/global-theme.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
+    <?php include_once __DIR__ . '/../includes/pwa-head.php'; ?>
     <style>
         .course-card {
             border: none;
@@ -153,8 +188,13 @@ $user = getCurrentUser();
             <h2 class="vle-page-title"><i class="bi bi-collection me-2"></i>My Assigned Courses</h2>
             <div>
                 <a href="live_classroom.php" class="btn btn-danger me-2"><i class="bi bi-camera-video me-1"></i> Live Classroom</a>
+                <a href="exam_marking.php" class="btn me-2" style="<?= $_em_btn_style ?> border: none; color: #fff;">
+                    <i class="bi bi-pencil-square me-1"></i> Exam Marking
+                    <?php if ($_em_pending > 0): ?><span class="badge bg-white text-dark ms-1" style="font-size:.7rem;"><?= $_em_pending ?></span><?php endif; ?>
+                </a>
+                <a href="dissertation_supervision.php" class="btn btn-purple me-2" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9); border: none; color: #fff;"><i class="bi bi-journal-richtext me-1"></i> Dissertation</a>
                 <a href="request_finance.php" class="btn btn-vle-accent me-2"><i class="bi bi-cash-coin me-1"></i> Finance</a>
-                <a href="class_session.php" class="btn btn-vle-primary"><i class="bi bi-clipboard-check me-1"></i> Attendance Sessions</a>
+                <a href="attendance_register.php" class="btn btn-vle-primary"><i class="bi bi-clipboard-data me-1"></i> Attendance Register</a>
             </div>
         </div>
 
@@ -398,5 +438,6 @@ $user = getCurrentUser();
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Session Timeout Manager -->
     <script src="../assets/js/session-timeout.js"></script>
+    <?php include_once __DIR__ . '/../includes/pwa-footer.php'; ?>
 </body>
 </html>

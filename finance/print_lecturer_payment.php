@@ -12,23 +12,28 @@ $user = getCurrentUser();
 $request_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 if (!$request_id) {
-    header('Location: dashboard.php?error=invalid_request');
+    echo '<!DOCTYPE html><html><head><title>Error</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="p-4"><div class="alert alert-danger"><h5>Invalid Request</h5><p>No valid request ID provided.</p><a href="javascript:history.back()" class="btn btn-secondary mt-2">Go Back</a></div></body></html>';
     exit;
 }
 
 // Get lecturer payment request details
 $stmt = $conn->prepare("SELECT lfr.*, l.full_name, l.email, l.phone, l.department, l.position, l.nrc, l.lecturer_id,
-                        d.department_name
+                        COALESCE(lfr.bank_name, l.bank_name) as bank_name, COALESCE(lfr.account_number, l.account_number) as account_number,
+                        d.department_name,
+                        odl_u.username as odl_approver_name,
+                        dean_u.username as dean_approver_name
                         FROM lecturer_finance_requests lfr 
                         LEFT JOIN lecturers l ON lfr.lecturer_id = l.lecturer_id 
                         LEFT JOIN departments d ON l.department = d.department_id
+                        LEFT JOIN users odl_u ON lfr.odl_approved_by = odl_u.user_id
+                        LEFT JOIN users dean_u ON lfr.dean_approved_by = dean_u.user_id
                         WHERE lfr.request_id = ?");
 $stmt->bind_param('i', $request_id);
 $stmt->execute();
 $result = $stmt->get_result();
 
 if ($result->num_rows == 0) {
-    header('Location: dashboard.php?error=not_found');
+    echo '<!DOCTYPE html><html><head><title>Not Found</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="p-4"><div class="alert alert-warning"><h5>Request Not Found</h5><p>The requested payment record was not found.</p><a href="javascript:history.back()" class="btn btn-secondary mt-2">Go Back</a></div></body></html>';
     exit;
 }
 
@@ -43,13 +48,16 @@ if ($user['role'] === 'lecturer') {
     }
 }
 
-if ($req['status'] !== 'paid') {
-    header('Location: dashboard.php?error=not_paid');
-    exit;
-}
+// Dynamic status display
+$is_paid = ($req['status'] === 'paid');
+$status_label = strtoupper($req['status']);
+$watermark_text = $is_paid ? 'PAID' : ($req['status'] === 'approved' ? 'APPROVED' : strtoupper($req['status']));
+$title_text = $is_paid ? 'LECTURER PAYMENT RECEIPT' : 'LECTURER CLAIM FORM';
+$amount_label = $is_paid ? 'Amount Paid' : 'Amount Claimed';
+$status_badge_color = $is_paid ? 'info' : ($req['status'] === 'approved' ? 'success' : 'warning');
 
-// Generate receipt number
-$receipt_number = 'LPR-' . date('Y') . '-' . str_pad($request_id, 6, '0', STR_PAD_LEFT);
+// Generate receipt/reference number
+$receipt_number = ($is_paid ? 'LPR-' : 'LCF-') . date('Y') . '-' . str_pad($request_id, 6, '0', STR_PAD_LEFT);
 
 // Get university settings
 $university_name = "Eastern University of Malawi and the World";
@@ -66,6 +74,12 @@ if ($settings_query && $settings_query->num_rows > 0) {
     $university_phone = $settings['phone'] ?? $university_phone;
     $university_email = $settings['email'] ?? $university_email;
     $university_website = $settings['website'] ?? $university_website;
+}
+
+$logo_path = '../assets/img/Logo.png';
+if (!empty($settings['logo_path'])) {
+    $test_path = '../' . $settings['logo_path'];
+    if (file_exists($test_path)) $logo_path = $test_path;
 }
 
 $conn->close();
@@ -332,11 +346,11 @@ $conn->close();
     </div>
 
     <div class="receipt-container position-relative">
-        <div class="watermark">PAID</div>
+        <div class="watermark"><?php echo $watermark_text; ?></div>
         
         <!-- Header with University Logo -->
         <div class="receipt-header">
-            <img src="../assets/img/Logo.png" alt="University Logo" onerror="this.style.display='none'">
+            <img src="<?php echo htmlspecialchars($logo_path); ?>" alt="University Logo" onerror="this.style.display='none'">
             <h1><?php echo htmlspecialchars($university_name); ?></h1>
             <p><i class="bi bi-geo-alt"></i> <?php echo htmlspecialchars($university_address); ?></p>
             <p><i class="bi bi-telephone"></i> <?php echo htmlspecialchars($university_phone); ?> | <i class="bi bi-envelope"></i> <?php echo htmlspecialchars($university_email); ?></p>
@@ -344,7 +358,7 @@ $conn->close();
         
         <!-- Receipt Title -->
         <div class="receipt-title">
-            <i class="bi bi-receipt"></i> LECTURER PAYMENT RECEIPT
+            <i class="bi bi-receipt"></i> <?php echo $title_text; ?>
         </div>
         
         <div class="receipt-body">
@@ -391,37 +405,71 @@ $conn->close();
                             <td><strong><?php echo date('F Y', mktime(0,0,0,$req['month'],1,$req['year'])); ?></strong></td>
                         </tr>
                         <tr>
-                            <td>Modules Taught:</td>
-                            <td><?php echo htmlspecialchars($req['total_modules']); ?> module(s)</td>
+                            <td>Courses Taught:</td>
+                            <td><?php echo htmlspecialchars($req['total_modules']); ?> course(s)</td>
                         </tr>
                         <tr>
                             <td>Total Hours:</td>
                             <td><?php echo htmlspecialchars($req['total_hours']); ?> hours</td>
                         </tr>
                         <tr>
-                            <td>Payment Date:</td>
-                            <td><?php echo date('M d, Y', strtotime($req['response_date'])); ?></td>
+                            <td><?php echo $is_paid ? 'Payment Date:' : 'Response Date:'; ?></td>
+                            <td><?php echo !empty($req['response_date']) ? date('M d, Y', strtotime($req['response_date'])) : 'Pending'; ?></td>
                         </tr>
                         <tr>
                             <td>Request Date:</td>
-                            <td><?php echo date('M d, Y', strtotime($req['request_date'])); ?></td>
+                            <td><?php echo !empty($req['submission_date']) ? date('M d, Y', strtotime($req['submission_date'])) : (!empty($req['request_date']) ? date('M d, Y', strtotime($req['request_date'])) : 'N/A'); ?></td>
                         </tr>
                     </table>
                 </div>
             </div>
             
+            <!-- Course Breakdown -->
+            <?php 
+            $courses_data = json_decode($req['courses_data'] ?? '[]', true);
+            if (!empty($courses_data)): 
+            ?>
+            <div class="info-section">
+                <h5><i class="bi bi-book"></i> Course Breakdown</h5>
+                <table class="table table-sm table-bordered" style="font-size: 11px;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Course</th>
+                            <th>Hours</th>
+                            <th>Students</th>
+                            <th>Assignments Marked</th>
+                            <th>Content Uploaded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($courses_data as $i => $course): ?>
+                        <tr>
+                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo htmlspecialchars($course['course_name'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($course['hours'] ?? '-'); ?></td>
+                            <td><?php echo htmlspecialchars($course['students'] ?? 0); ?></td>
+                            <td><?php echo htmlspecialchars($course['assignments'] ?? 0); ?></td>
+                            <td><?php echo htmlspecialchars($course['content'] ?? 0); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            
             <!-- Payment Amount -->
             <div class="payment-amount">
-                <p style="margin:0;">Amount Paid</p>
-                <h2>K<?php echo number_format($req['total_amount'], 2); ?></h2>
+                <p style="margin:0;"><?php echo $amount_label; ?></p>
+                <h2>MKW<?php echo number_format($req['total_amount'], 2); ?></h2>
                 <p>(<?php echo ucwords(numberToWords($req['total_amount'])); ?> Kwacha Only)</p>
             </div>
             
             <!-- Contact & Status Info -->
             <div class="info-row">
-                <!-- Contact Information -->
+                <!-- Contact & Banking -->
                 <div class="info-section">
-                    <h5><i class="bi bi-telephone"></i> Contact Information</h5>
+                    <h5><i class="bi bi-telephone"></i> Contact & Banking</h5>
                     <table class="info-table">
                         <tr>
                             <td>Email:</td>
@@ -430,6 +478,14 @@ $conn->close();
                         <tr>
                             <td>Phone:</td>
                             <td><?php echo htmlspecialchars($req['phone']); ?></td>
+                        </tr>
+                        <tr>
+                            <td>Bank:</td>
+                            <td><?php echo htmlspecialchars($req['bank_name'] ?? 'N/A'); ?></td>
+                        </tr>
+                        <tr>
+                            <td>Account No:</td>
+                            <td><?php echo htmlspecialchars($req['account_number'] ?? 'N/A'); ?></td>
                         </tr>
                     </table>
                 </div>
@@ -440,7 +496,7 @@ $conn->close();
                     <table class="info-table">
                         <tr>
                             <td>Status:</td>
-                            <td><span class="badge bg-info">PAID</span></td>
+                            <td><span class="badge bg-<?php echo $status_badge_color; ?>"><?php echo $status_label; ?></span></td>
                         </tr>
                         <tr>
                             <td>Processed By:</td>
@@ -448,7 +504,7 @@ $conn->close();
                         </tr>
                         <tr>
                             <td>Processed Date:</td>
-                            <td><?php echo date('M d, Y h:i A', strtotime($req['response_date'])); ?></td>
+                            <td><?php echo !empty($req['response_date']) ? date('M d, Y h:i A', strtotime($req['response_date'])) : 'Pending'; ?></td>
                         </tr>
                     </table>
                 </div>
@@ -462,14 +518,61 @@ $conn->close();
             </div>
             <?php endif; ?>
             
+            <!-- Approval Chain -->
+            <div class="info-section">
+                <h5><i class="bi bi-diagram-3"></i> Approval Chain</h5>
+                <table class="info-table">
+                    <tr>
+                        <td>ODL Coordinator:</td>
+                        <td>
+                            <?php if ($req['odl_approval_status'] === 'approved' || $req['odl_approval_status'] === 'forwarded_to_dean'): ?>
+                                <span class="badge bg-success"><?php echo ucfirst(str_replace('_', ' ', $req['odl_approval_status'])); ?></span>
+                                <?php if (!empty($req['odl_approver_name'])): ?>
+                                    by <?php echo htmlspecialchars($req['odl_approver_name']); ?>
+                                <?php endif; ?>
+                                <?php if (!empty($req['odl_approved_at'])): ?>
+                                    on <?php echo date('M d, Y', strtotime($req['odl_approved_at'])); ?>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="badge bg-secondary"><?php echo ucfirst($req['odl_approval_status'] ?? 'N/A'); ?></span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php if (!empty($req['dean_approval_status'])): ?>
+                    <tr>
+                        <td>Dean:</td>
+                        <td>
+                            <?php if ($req['dean_approval_status'] === 'approved'): ?>
+                                <span class="badge bg-success">Approved</span>
+                                <?php if (!empty($req['dean_approver_name'])): ?>
+                                    by <?php echo htmlspecialchars($req['dean_approver_name']); ?>
+                                <?php endif; ?>
+                                <?php if (!empty($req['dean_approved_at'])): ?>
+                                    on <?php echo date('M d, Y', strtotime($req['dean_approved_at'])); ?>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="badge bg-secondary"><?php echo ucfirst($req['dean_approval_status']); ?></span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                    <tr>
+                        <td>Finance:</td>
+                        <td>
+                            <span class="badge bg-success">Paid</span>
+                            <?php if (!empty($req['finance_paid_at'])): ?>
+                                on <?php echo date('M d, Y', strtotime($req['finance_paid_at'])); ?>
+                            <?php elseif (!empty($req['response_date'])): ?>
+                                on <?php echo date('M d, Y', strtotime($req['response_date'])); ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
             <!-- Signatures -->
-            <div class="signature-section">
-                <div class="signature-box">
-                    <div class="signature-line"></div>
-                    <p><strong>Finance Officer</strong></p>
-                    <small>Authorized Signatory</small>
-                </div>
-                <div class="signature-box">
+            <div class="signature-section" style="flex-wrap: wrap; gap: 10px;">
+                <div class="signature-box" style="width: 23%;">
                     <?php if (!empty($req['signature_path'])): ?>
                         <div class="signature-image">
                             <img src="../uploads/signatures/<?php echo htmlspecialchars($req['signature_path']); ?>" alt="Lecturer Signature">
@@ -477,8 +580,37 @@ $conn->close();
                     <?php else: ?>
                         <div class="signature-line"></div>
                     <?php endif; ?>
-                    <p><strong>Lecturer Signature</strong></p>
+                    <p><strong>Lecturer</strong></p>
                     <small><?php echo htmlspecialchars($req['full_name']); ?></small>
+                </div>
+                <div class="signature-box" style="width: 23%;">
+                    <?php if (!empty($req['odl_signature_path'])): ?>
+                        <div class="signature-image">
+                            <img src="../uploads/signatures/<?php echo htmlspecialchars($req['odl_signature_path']); ?>" alt="ODL Coordinator Signature">
+                        </div>
+                    <?php else: ?>
+                        <div class="signature-line"></div>
+                    <?php endif; ?>
+                    <p><strong>ODL Coordinator</strong></p>
+                    <small><?php echo htmlspecialchars($req['odl_approver_name'] ?? ''); ?></small>
+                </div>
+                <?php if (!empty($req['dean_approval_status'])): ?>
+                <div class="signature-box" style="width: 23%;">
+                    <?php if (!empty($req['dean_signature_path'])): ?>
+                        <div class="signature-image">
+                            <img src="../uploads/signatures/<?php echo htmlspecialchars($req['dean_signature_path']); ?>" alt="Dean Signature">
+                        </div>
+                    <?php else: ?>
+                        <div class="signature-line"></div>
+                    <?php endif; ?>
+                    <p><strong>Dean</strong></p>
+                    <small><?php echo htmlspecialchars($req['dean_approver_name'] ?? ''); ?></small>
+                </div>
+                <?php endif; ?>
+                <div class="signature-box" style="width: 23%;">
+                    <div class="signature-line"></div>
+                    <p><strong>Finance Officer</strong></p>
+                    <small>Authorized Signatory</small>
                 </div>
             </div>
         </div>

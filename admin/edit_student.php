@@ -464,6 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                                         <option value="Mzuzu Campus" <?php echo ($student['campus'] ?? '') == 'Mzuzu Campus' ? 'selected' : ''; ?>>Mzuzu Campus</option>
                                         <option value="Lilongwe Campus" <?php echo ($student['campus'] ?? '') == 'Lilongwe Campus' ? 'selected' : ''; ?>>Lilongwe Campus</option>
                                         <option value="Blantyre Campus" <?php echo ($student['campus'] ?? '') == 'Blantyre Campus' ? 'selected' : ''; ?>>Blantyre Campus</option>
+                                        <option value="ODel" <?php echo ($student['campus'] ?? '') == 'ODel' ? 'selected' : ''; ?>>ODel</option>
                                     </select>
                                 </div>
                             </div>

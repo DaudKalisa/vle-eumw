@@ -5,7 +5,7 @@ requireLogin();
 requireRole(['lecturer']);
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 $content_id = isset($_GET['content_id']) ? (int)$_GET['content_id'] : 0;
 $course_id = isset($_GET['course_id']) ? (int)$_GET['course_id'] : 0;
 

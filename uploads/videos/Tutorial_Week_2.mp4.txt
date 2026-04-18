@@ -1,0 +1,12 @@
+This is a placeholder for a video file.
+
+In production, this would be:
+- An actual .mp4 video file, OR
+- A YouTube/Vimeo embed URL
+
+For the VLE system, videos can be:
+1. Uploaded as files (.mp4, .webm)
+2. Embedded via URL (YouTube, Vimeo)
+3. Recorded live sessions
+
+To add real videos, upload them through the Lecturer Dashboard or provide external URLs.

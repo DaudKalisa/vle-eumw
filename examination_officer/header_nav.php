@@ -31,12 +31,16 @@ $nav_items = [
     ['url' => 'exam_tokens.php', 'icon' => 'bi-key', 'title' => 'Tokens'],
     ['url' => 'exam_results.php', 'icon' => 'bi-graph-up', 'title' => 'Results'],
     ['url' => 'exam_reports.php', 'icon' => 'bi-file-earmark-bar-graph', 'title' => 'Reports'],
+    ['url' => 'semester_reports.php', 'icon' => 'bi-mortarboard', 'title' => 'Semester Reports'],
     ['url' => 'monitoring.php', 'icon' => 'bi-camera-video', 'title' => 'Monitoring'],
+    ['url' => 'manage_exam_timetable.php', 'icon' => 'bi-calendar-week', 'title' => 'Exam Timetable'],
 ];
 
 $page_title = $page_title ?? 'Examination Officer Portal';
 ?>
 <!-- Examination Officer Header Navigation -->
+<!-- Bootstrap Icons 1.10.0 -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
 <nav class="navbar navbar-expand-lg navbar-dark vle-navbar">
     <div class="container-fluid">
         <!-- Logo and Brand -->
@@ -88,6 +92,7 @@ $page_title = $page_title ?? 'Examination Officer Portal';
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
                         <li><a class="dropdown-item" href="../change_password.php"><i class="bi bi-key me-2"></i>Change Password</a></li>
+                        <li><a class="dropdown-item" href="help.php"><i class="bi bi-question-circle me-2"></i>Help & Guide</a></li>
                         <li><a class="dropdown-item" href="../theme_settings.php"><i class="bi bi-palette me-2"></i>Theme</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="../logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>

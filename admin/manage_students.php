@@ -201,6 +201,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $campus_code = 'LL';
             } elseif (strpos($campus, 'Blantyre') !== false) {
                 $campus_code = 'BT';
+            } elseif (strpos($campus, 'ODel') !== false) {
+                $campus_code = 'ODL';
             }
             
             // Get last 2 digits of year
@@ -344,6 +346,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->rollback();
             $error = "Failed to delete student: " . $e->getMessage();
         }
+    } elseif (isset($_POST['unlock_account'])) {
+        $student_id = trim($_POST['student_id']);
+        if (empty($student_id)) {
+            $error = "Student ID is required!";
+        } else {
+            $stmt = $conn->prepare("UPDATE users SET failed_login_attempts = 0, account_locked_until = NULL WHERE related_student_id = ? AND role = 'student'");
+            $stmt->bind_param("s", $student_id);
+            if ($stmt->execute() && $stmt->affected_rows > 0) {
+                $success = "Account unlocked successfully for student: " . htmlspecialchars($student_id);
+            } else {
+                $error = "No locked account found for student ID: " . htmlspecialchars($student_id);
+            }
+            $stmt->close();
+        }
     } elseif (isset($_POST['reset_password'])) {
         $student_id = trim($_POST['student_id']);
         if (empty($student_id)) {
@@ -443,6 +459,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $campus_code = 'LL';
                     } elseif (strpos($campus, 'Blantyre') !== false) {
                         $campus_code = 'BT';
+                    } elseif (strpos($campus, 'ODel') !== false) {
+                        $campus_code = 'ODL';
                     }
                     
                     // Get last 2 digits of year
@@ -727,9 +745,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all students with usernames
+// Get all students with usernames and lock status
 $students = [];
-$result = $conn->query("SELECT s.*, u.username, d.department_name, d.department_code 
+$result = $conn->query("SELECT s.*, u.username, u.failed_login_attempts, u.account_locked_until, d.department_name, d.department_code 
                         FROM students s 
                         LEFT JOIN users u ON s.student_id = u.related_student_id 
                         LEFT JOIN departments d ON s.department = d.department_id 
@@ -871,6 +889,8 @@ if ($dept_result) {
                                     <th>Student ID</th>
                                     <th>Name</th>
                                     <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Address</th>
                                     <th>Username</th>
                                     <th>Department Code</th>
                                     <th>Year/Semester</th>
@@ -881,19 +901,45 @@ if ($dept_result) {
                                 <?php foreach ($students as $student): ?>
                                     <tr>
                                         <td><?php echo htmlspecialchars($student['student_id']); ?></td>
-                                        <td><?php echo htmlspecialchars($student['full_name']); ?></td>
+                                        <td>
+                                            <?php echo htmlspecialchars($student['full_name']); ?>
+                                            <?php 
+                                            $is_locked = !empty($student['account_locked_until']) && strtotime($student['account_locked_until']) > time();
+                                            $has_failed_attempts = !empty($student['failed_login_attempts']) && $student['failed_login_attempts'] >= 5;
+                                            if ($is_locked): ?>
+                                                <span class="badge bg-danger ms-1" title="Account locked until <?= date('M j, Y g:i A', strtotime($student['account_locked_until'])) ?>"><i class="bi bi-lock-fill"></i> Locked</span>
+                                            <?php elseif ($has_failed_attempts): ?>
+                                                <span class="badge bg-warning text-dark ms-1" title="<?= $student['failed_login_attempts'] ?> failed login attempts"><i class="bi bi-exclamation-triangle"></i> <?= $student['failed_login_attempts'] ?> Failed Attempts</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td><?php echo htmlspecialchars($student['email']); ?></td>
+                                        <td><?php echo htmlspecialchars($student['phone'] ?? '—'); ?></td>
+                                        <td><?php echo htmlspecialchars($student['address'] ?? '—'); ?></td>
                                         <td><strong><?php echo htmlspecialchars($student['username'] ?? 'N/A'); ?></strong></td>
                                         <td><?php echo htmlspecialchars($student['department_code'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($student['year_of_study']) . ' / ' . htmlspecialchars($student['semester']); ?></td>
                                         <td>
-                                            <a href="edit_student.php?id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-sm btn-primary">
-                                                <i class="bi bi-pencil-square"></i> Edit
+                                            <a href="edit_student.php?id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-sm btn-primary" title="Edit Student">
+                                                <i class="bi bi-pencil-square"></i>
                                             </a>
+                                            <a href="register_student_courses.php?student_id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-sm btn-success" title="Register Courses">
+                                                <i class="bi bi-journal-plus"></i>
+                                            </a>
+                                            <?php 
+                                            $is_locked = !empty($student['account_locked_until']) && strtotime($student['account_locked_until']) > time();
+                                            $has_failed_attempts = !empty($student['failed_login_attempts']) && $student['failed_login_attempts'] >= 5;
+                                            if ($is_locked || $has_failed_attempts): ?>
                                             <form method="POST" class="d-inline">
                                                 <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
-                                                <button type="submit" name="delete_student" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')">
-                                                    <i class="bi bi-trash"></i> Delete
+                                                <button type="submit" name="unlock_account" class="btn btn-sm btn-warning" onclick="return confirm('Unlock this student account and reset failed login attempts?')" title="<?php echo $is_locked ? 'Unlock Account' : 'Reset Failed Attempts'; ?>">
+                                                    <i class="bi bi-unlock"></i>
+                                                </button>
+                                            </form>
+                                            <?php endif; ?>
+                                            <form method="POST" class="d-inline">
+                                                <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
+                                                <button type="submit" name="delete_student" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')" title="Delete Student">
+                                                    <i class="bi bi-trash"></i>
                                                 </button>
                                             </form>
                                         </td>
@@ -906,13 +952,8 @@ if ($dept_result) {
                             var search = this.value.toLowerCase();
                             var rows = document.querySelectorAll('#studentsTable tbody tr');
                             rows.forEach(function(row) {
-                                var id = row.cells[0].textContent.toLowerCase();
-                                var name = row.cells[1].textContent.toLowerCase();
-                                if (id.includes(search) || name.includes(search)) {
-                                    row.style.display = '';
-                                } else {
-                                    row.style.display = 'none';
-                                }
+                                var text = row.textContent.toLowerCase();
+                                row.style.display = text.includes(search) ? '' : 'none';
                             });
                         });
                         </script>
@@ -1024,9 +1065,7 @@ if ($dept_result) {
             background-color: #fafdff !important;
             color: #222 !important;
         }
-        body.theme-system {
-            /* Use prefers-color-scheme */
-        }
+        /* System theme - follows OS preference */
         body.theme-system {
             background-color: #fff;
             color: #222;
@@ -1190,6 +1229,8 @@ if ($dept_result) {
                 campusCode = 'LL';
             } else if (campus.includes('Blantyre')) {
                 campusCode = 'BT';
+            } else if (campus.includes('ODel')) {
+                campusCode = 'ODL';
             }
             
             // Generate preview ID (backend will add sequential number)
@@ -1276,6 +1317,8 @@ if ($dept_result) {
                 campusCode = 'LL';
             } else if (campus.includes('Blantyre')) {
                 campusCode = 'BT';
+            } else if (campus.includes('ODel')) {
+                campusCode = 'ODL';
             }
             
             const studentIDField = document.getElementById('modal_student_id');
@@ -1445,6 +1488,7 @@ if ($dept_result) {
                                     <option value="Mzuzu Campus" selected>Mzuzu Campus</option>
                                     <option value="Lilongwe Campus">Lilongwe Campus</option>
                                     <option value="Blantyre Campus">Blantyre Campus</option>
+                                    <option value="ODel">ODel</option>
                                 </select>
                             </div>
                             <div class="col-md-3">

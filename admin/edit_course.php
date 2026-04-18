@@ -36,9 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_course'])) {
     $course_name = trim($_POST['course_name']);
     $description = trim($_POST['description']);
     $program = trim($_POST['program']);
-    $year_of_study = (int)$_POST['year_of_study'];
+    // Handle multi-year selection
+    $selected_years = $_POST['years'] ?? [];
+    $selected_years = array_filter(array_map('intval', $selected_years), function($y) { return $y >= 1 && $y <= 4; });
+    sort($selected_years);
+    $year_of_study = !empty($selected_years) ? $selected_years[0] : (int)($_POST['year_of_study'] ?? 1);
+    // Store additional years beyond the primary
+    $additional_years = array_filter($selected_years, function($y) use ($year_of_study) { return $y != $year_of_study; });
+    $applicable_years = !empty($additional_years) ? implode(',', $additional_years) : null;
+    
     $semester = trim($_POST['semester'] ?? 'One');
-    $semester = in_array($semester, ['One', 'Two']) ? $semester : 'One';
+    $semester = in_array($semester, ['One', 'Two', 'Both']) ? $semester : 'One';
     $lecturer_id = !empty($_POST['lecturer_id']) ? (int)$_POST['lecturer_id'] : NULL;
     $total_weeks = (int)$_POST['total_weeks'];
     $is_active = isset($_POST['is_active']) ? 1 : 0;
@@ -57,18 +65,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_course'])) {
             $error_message = "Course code '$course_code' already exists!";
         } else {
             // Update course
-            $stmt = $conn->prepare("UPDATE vle_courses SET course_code = ?, course_name = ?, description = ?, lecturer_id = ?, total_weeks = ?, program_of_study = ?, year_of_study = ?, semester = ?, is_active = ? WHERE course_id = ?");
-            $stmt->bind_param("sssiiissii", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester, $is_active, $course_id);
+            $stmt = $conn->prepare("UPDATE vle_courses SET course_code = ?, course_name = ?, description = ?, lecturer_id = ?, total_weeks = ?, program_of_study = ?, year_of_study = ?, applicable_years = ?, semester = ?, is_active = ? WHERE course_id = ?");
+            $stmt->bind_param("sssiisissii", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $applicable_years, $semester, $is_active, $course_id);
             
             if ($stmt->execute()) {
-                $success_message = "Course updated successfully!";
+                // Handle additional program associations
+                $additional_programs = $_POST['additional_programs'] ?? [];
                 
-                // Refresh course data
-                $stmt = $conn->prepare("SELECT * FROM vle_courses WHERE course_id = ?");
-                $stmt->bind_param("i", $course_id);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                $course = $result->fetch_assoc();
+                // Delete existing associations
+                $conn->query("DELETE FROM course_programs WHERE course_id = $course_id");
+                
+                // Insert new associations
+                if (!empty($additional_programs)) {
+                    $insert_stmt = $conn->prepare("INSERT INTO course_programs (course_id, program_id) VALUES (?, ?)");
+                    foreach ($additional_programs as $prog_id) {
+                        $prog_id = (int)$prog_id;
+                        if ($prog_id > 0) {
+                            $insert_stmt->bind_param("ii", $course_id, $prog_id);
+                            $insert_stmt->execute();
+                        }
+                    }
+                    $insert_stmt->close();
+                }
+                
+                // Redirect to manage_courses.php after successful update
+                $_SESSION['success_message'] = "Course updated successfully!";
+                header('Location: manage_courses.php');
+                exit;
             } else {
                 $error_message = "Error updating course: " . $conn->error;
             }
@@ -85,21 +108,78 @@ while ($row = $result->fetch_assoc()) {
     $lecturers[] = $row;
 }
 
-// Get distinct programs
+// Get distinct programs from multiple sources
 $programs = [];
+
+// Helper function for case-insensitive check
+function programExists($programs, $newProgram) {
+    $newProgram = trim($newProgram);
+    foreach ($programs as $existing) {
+        if (strtolower(trim($existing)) === strtolower($newProgram)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Get programs from programs table (primary source)
+$result = $conn->query("SELECT program_name FROM programs WHERE is_active = 1 ORDER BY program_name");
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $prog = trim($row['program_name']);
+        if (!empty($prog) && !programExists($programs, $prog)) {
+            $programs[] = $prog;
+        }
+    }
+}
+
+// Get programs from students table
 $result = $conn->query("SELECT DISTINCT program FROM students WHERE program IS NOT NULL AND program != '' ORDER BY program");
-while ($row = $result->fetch_assoc()) {
-    $programs[] = $row['program'];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $prog = trim($row['program']);
+        if (!empty($prog) && !programExists($programs, $prog)) {
+            $programs[] = $prog;
+        }
+    }
 }
 
 // Get programs from vle_courses as well
 $result = $conn->query("SELECT DISTINCT program_of_study FROM vle_courses WHERE program_of_study IS NOT NULL AND program_of_study != '' ORDER BY program_of_study");
-while ($row = $result->fetch_assoc()) {
-    if (!in_array($row['program_of_study'], $programs)) {
-        $programs[] = $row['program_of_study'];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $prog = trim($row['program_of_study']);
+        if (!empty($prog) && !programExists($programs, $prog)) {
+            $programs[] = $prog;
+        }
     }
 }
 sort($programs);
+
+// Get all programs from programs table for multi-select
+$all_programs = [];
+$result = $conn->query("SELECT program_id, program_code, program_name FROM programs WHERE is_active = 1 ORDER BY program_name");
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $all_programs[] = $row;
+    }
+}
+
+// Get currently associated programs for this course (only active programs)
+$associated_program_ids = [];
+$result = $conn->query("SELECT cp.program_id FROM course_programs cp 
+    INNER JOIN programs p ON cp.program_id = p.program_id AND p.is_active = 1 
+    WHERE cp.course_id = $course_id");
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $associated_program_ids[] = (int)$row['program_id'];
+    }
+}
+
+// Clean up orphaned associations (programs that no longer exist or are inactive)
+$conn->query("DELETE cp FROM course_programs cp 
+    LEFT JOIN programs p ON cp.program_id = p.program_id 
+    WHERE cp.course_id = $course_id AND (p.program_id IS NULL OR p.is_active = 0)");
 
 // Get enrollment count
 $stmt = $conn->prepare("SELECT COUNT(*) as count FROM vle_enrollments WHERE course_id = ?");
@@ -206,23 +286,82 @@ $stmt->close();
                                     </select>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label fw-bold"><i class="bi bi-123"></i> Year of Study *</label>
-                                    <select class="form-select" name="year_of_study" required>
-                                        <option value="">Select year...</option>
-                                        <option value="1" <?php echo ($course['year_of_study'] == 1) ? 'selected' : ''; ?>>Year 1</option>
-                                        <option value="2" <?php echo ($course['year_of_study'] == 2) ? 'selected' : ''; ?>>Year 2</option>
-                                        <option value="3" <?php echo ($course['year_of_study'] == 3) ? 'selected' : ''; ?>>Year 3</option>
-                                        <option value="4" <?php echo ($course['year_of_study'] == 4) ? 'selected' : ''; ?>>Year 4</option>
-                                    </select>
+                                    <label class="form-label fw-bold"><i class="bi bi-123"></i> Year(s) of Study *</label>
+                                    <div class="alert alert-info py-1 px-2 mb-2">
+                                        <small><i class="bi bi-info-circle"></i> Select all years that can take this course</small>
+                                    </div>
+                                    <?php
+                                    // Build list of all applicable years for this course
+                                    $course_years = [$course['year_of_study']];
+                                    if (!empty($course['applicable_years'])) {
+                                        $extra = array_map('intval', explode(',', $course['applicable_years']));
+                                        $course_years = array_unique(array_merge($course_years, $extra));
+                                    }
+                                    ?>
+                                    <div class="border rounded p-2">
+                                        <?php for ($y = 1; $y <= 4; $y++): ?>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input year-check" type="checkbox" name="years[]" 
+                                                   value="<?php echo $y; ?>" id="year_<?php echo $y; ?>"
+                                                   <?php echo in_array($y, $course_years) ? 'checked' : ''; ?>>
+                                            <label class="form-check-label fw-semibold" for="year_<?php echo $y; ?>">Year <?php echo $y; ?></label>
+                                        </div>
+                                        <?php endfor; ?>
+                                    </div>
+                                    <small class="text-muted">e.g. Corporate Governance: Year 3 &amp; Year 4</small>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label fw-bold"><i class="bi bi-calendar"></i> Semester *</label>
                                     <select class="form-select" name="semester" required>
                                         <option value="">Select semester...</option>
-                                        <option value="One" <?php echo ($course['semester'] == 'One') ? 'selected' : ''; ?>>Semester One</option>
-                                        <option value="Two" <?php echo ($course['semester'] == 'Two') ? 'selected' : ''; ?>>Semester Two</option>
+                                        <option value="One" <?php echo ($course['semester'] == 'One') ? 'selected' : ''; ?>>Semester 1</option>
+                                        <option value="Two" <?php echo ($course['semester'] == 'Two') ? 'selected' : ''; ?>>Semester 2</option>
+                                        <option value="Both" <?php echo ($course['semester'] == 'Both') ? 'selected' : ''; ?>>Both Semesters</option>
                                     </select>
+                                    <small class="text-muted">Select "Both" if offered in Semester 1 &amp; 2</small>
                                 </div>
+                            </div>
+                            
+                            <!-- Additional Programs Association -->
+                            <div class="mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-link-45deg"></i> Associate with Additional Programs</label>
+                                <div class="alert alert-info py-2 mb-2">
+                                    <small><i class="bi bi-info-circle"></i> Select additional programs whose students should also see this course during registration (e.g. BBA1101 is a BBA course but taken by all programs).</small>
+                                </div>
+                                
+                                <!-- Select All / Deselect All + Search -->
+                                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleAllPrograms(true)">
+                                        <i class="bi bi-check-all"></i> Select All
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPrograms(false)">
+                                        <i class="bi bi-x-lg"></i> Deselect All
+                                    </button>
+                                    <span class="badge bg-primary" id="assocCount"><?php echo count($associated_program_ids); ?> selected</span>
+                                    <input type="text" id="progSearch" class="form-control form-control-sm ms-auto" 
+                                           style="max-width:200px;" placeholder="Search programs..." oninput="filterPrograms()">
+                                </div>
+                                
+                                <div class="border rounded p-3" style="max-height: 250px; overflow-y: auto;" id="programsList">
+                                    <?php if (!empty($all_programs)): ?>
+                                        <?php foreach ($all_programs as $prog): ?>
+                                            <div class="form-check prog-item">
+                                                <input class="form-check-input prog-check" type="checkbox" 
+                                                       name="additional_programs[]" 
+                                                       value="<?php echo $prog['program_id']; ?>"
+                                                       id="prog_<?php echo $prog['program_id']; ?>"
+                                                       onchange="updateAssocCount()"
+                                                       <?php echo in_array($prog['program_id'], $associated_program_ids) ? 'checked' : ''; ?>>
+                                                <label class="form-check-label" for="prog_<?php echo $prog['program_id']; ?>">
+                                                    <strong><?php echo htmlspecialchars($prog['program_code']); ?></strong> — <?php echo htmlspecialchars($prog['program_name']); ?>
+                                                </label>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <p class="text-muted mb-0">No programs available. Add programs in the Programs management section.</p>
+                                    <?php endif; ?>
+                                </div>
+                                <small class="text-muted">Students from selected programs will see this course during registration for the configured year &amp; semester.</small>
                             </div>
                             
                             <div class="mb-3">
@@ -361,5 +500,38 @@ $stmt->close();
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/theme-switcher.js"></script>
+    <script>
+    function toggleAllPrograms(selectAll) {
+        document.querySelectorAll('.prog-check').forEach(cb => {
+            if (cb.closest('.prog-item').style.display !== 'none') {
+                cb.checked = selectAll;
+            }
+        });
+        updateAssocCount();
+    }
+    
+    function updateAssocCount() {
+        const count = document.querySelectorAll('.prog-check:checked').length;
+        document.getElementById('assocCount').textContent = count + ' selected';
+    }
+    
+    function filterPrograms() {
+        const search = document.getElementById('progSearch').value.toLowerCase();
+        document.querySelectorAll('.prog-item').forEach(item => {
+            const text = item.querySelector('label').textContent.toLowerCase();
+            item.style.display = text.includes(search) ? '' : 'none';
+        });
+    }
+    
+    // Validate at least one year is selected
+    document.querySelector('form').addEventListener('submit', function(e) {
+        const checkedYears = document.querySelectorAll('.year-check:checked');
+        if (checkedYears.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one Year of Study.');
+            document.querySelector('.year-check').focus();
+        }
+    });
+    </script>
 </body>
 </html>

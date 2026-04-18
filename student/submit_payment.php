@@ -178,7 +178,7 @@ include 'header_nav.php';
                             </div>
                             <div>
                                 <label class="text-muted small">Outstanding Balance</label>
-                                <h3 class="text-danger">K<?php echo number_format($finance_data['balance'] ?? 0); ?></h3>
+                                <h3 class="text-danger">K<?php echo number_format(($finance_data['expected_total'] ?? 0) - ($finance_data['total_paid'] ?? 0)); ?></h3>
                             </div>
                         <?php else: ?>
                             <p class="text-muted">No financial data available</p>
@@ -224,8 +224,8 @@ include 'header_nav.php';
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label vle-form-label">Type of Transaction *</label>
-                                    <select class="form-select vle-form-control" name="transaction_type" required>
-                                        <option value="Bank Deposit">Bank Deposit</option>
+                                    <select class="form-select vle-form-control" name="transaction_type" id="transaction_type" required>
+                                        <option value="Bank Deposit" selected>Bank Deposit</option>
                                         <option value="Electronic Transfer">Electronic Transfer</option>
                                         <option value="Mobile Money">Mobile Money</option>
                                         <option value="Cash Payment">Cash Payment</option>
@@ -237,7 +237,7 @@ include 'header_nav.php';
                                         <option value="">Select Bank</option>
                                         <option value="National Bank of Malawi">National Bank of Malawi</option>
                                         <option value="FDH Bank">FDH Bank</option>
-                                        <option value="Standard Bank">Standard Bank</option>
+                                        <option value="Standard Bank" selected>Standard Bank</option>
                                         <option value="NBS Bank">NBS Bank</option>
                                         <option value="Ecobank">Ecobank</option>
                                         <option value="Airtel Money">Airtel Money</option>
@@ -250,6 +250,16 @@ include 'header_nav.php';
                             <div class="mb-3" id="custom_bank_field" style="display: none;">
                                 <label class="form-label">Specify Bank Name *</label>
                                 <input type="text" class="form-control" id="bank_name_custom" name="bank_name_custom" placeholder="Enter bank name">
+                            </div>
+
+                            <div class="mb-3" id="standard_bank_details" style="display: none;">
+                                <label class="form-label">Standard Bank Account Details</label>
+                                <div class="alert alert-info">
+                                    <strong>Account Name:</strong> University of Malawi<br>
+                                    <strong>Account Number:</strong> 123456789<br>
+                                    <strong>Branch:</strong> Blantyre Branch<br>
+                                    <strong>Bank:</strong> Standard Bank
+                                </div>
                             </div>
                             
                             <div class="mb-3">
@@ -398,6 +408,22 @@ include 'header_nav.php';
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Show Standard Bank details if Bank Deposit and Standard Bank are selected
+    function showStandardBankDetails() {
+        const transactionType = document.getElementById('transaction_type').value;
+        const bankName = document.getElementById('bank_name').value;
+        const detailsDiv = document.getElementById('standard_bank_details');
+        if (transactionType === 'Bank Deposit' && bankName === 'Standard Bank') {
+            detailsDiv.style.display = 'block';
+        } else {
+            detailsDiv.style.display = 'none';
+        }
+    }
+    document.getElementById('transaction_type').addEventListener('change', showStandardBankDetails);
+    document.getElementById('bank_name').addEventListener('change', showStandardBankDetails);
+    window.addEventListener('DOMContentLoaded', showStandardBankDetails);
+    </script>
     <script>
         function viewProof(filename, amount, reference, date) {
             // Set modal details

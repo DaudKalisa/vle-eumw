@@ -6,7 +6,7 @@ requireRole(['lecturer']);
 
 $user = getCurrentUser();
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 $message = '';
 $content_created = false;
@@ -81,51 +81,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-        <style>
-            .navbar.sticky-top, .navbar.fixed-top {
-                position: sticky;
-                top: 0;
-                z-index: 9999;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                background: #198754 !important;
-            }
-            .navbar-brand img {
-                height: 48px;
-                width: auto;
-                margin-right: 10px;
-            }
-        </style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Course - VLE System</title>
+    <title>Create Content - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="../assets/css/style.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body>
-            <?php include 'lecturer_navbar.php'; ?>
-            <div class="container mt-2 mb-2">
-                <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
-            </div>
-        <div class="container mt-2 mb-2">
-            <button class="btn btn-outline-secondary mb-2" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
-        </div>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-        <div class="container">
-            <a class="navbar-brand" href="#">VLE System - Lecturer</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="dashboard.php">Dashboard</a>
-                <span class="navbar-text me-3">Welcome, <?php echo htmlspecialchars($user['display_name']); ?></span>
-                <a class="nav-link" href="../logout.php">Logout</a>
-            </div>
-        </div>
-    </nav>
+    <?php 
+    $currentPage = 'create_content';
+    $pageTitle = 'Create Content';
+    include 'header_nav.php'; 
+    ?>
 
-    <div class="container mt-4">
+    <div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+        <div class="mb-3">
+            <button class="btn btn-outline-secondary" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
+        </div>
         <div class="row justify-content-center">
             <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header">
-                        <h4>Create Content for Assigned Course</h4>
+                <div class="card shadow-sm">
+                    <div class="card-header py-3" style="background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);">
+                        <h4 class="mb-0 text-white"><i class="bi bi-plus-circle me-2"></i>Create Content for Assigned Course</h4>
                     </div>
                     <div class="card-body">
                         <?php if (empty($assigned_courses)): ?>
@@ -223,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/js/global-theme.js"></script>
     <script>
         function updateWeekOptions() {
             const courseSelect = document.getElementById('course_id');

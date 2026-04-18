@@ -2,7 +2,7 @@
 // examination_manager/get_session_details.php - Get detailed session information
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['staff', 'admin', 'examination_manager']);
+requireRole(['examination_manager', 'examination_officer']);
 
 $conn = getDbConnection();
 

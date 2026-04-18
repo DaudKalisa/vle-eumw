@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_id'])) {
     $stmt->close();
     
     if ($row && $row['status'] === 'approved') {
-        $stmt2 = $conn->prepare("UPDATE lecturer_finance_requests SET status = 'paid', response_date = NOW() WHERE request_id = ?");
+        $stmt2 = $conn->prepare("UPDATE lecturer_finance_requests SET status = 'paid', response_date = NOW(), finance_paid_at = NOW() WHERE request_id = ?");
         $stmt2->bind_param('i', $request_id);
         if ($stmt2->execute()) {
             $stmt2->close();

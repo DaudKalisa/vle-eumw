@@ -1,3 +1,40 @@
+<?php
+session_start();
+
+// Determine the correct dashboard based on role
+$dashboard = 'login.php';
+if (isset($_SESSION['vle_role'])) {
+    switch ($_SESSION['vle_role']) {
+        case 'student':
+            $dashboard = 'student/dashboard.php';
+            break;
+        case 'lecturer':
+            $dashboard = 'lecturer/dashboard.php';
+            break;
+        case 'admin':
+        case 'staff':
+            $dashboard = 'admin/dashboard.php';
+            break;
+        case 'dean':
+            $dashboard = 'dean/dashboard.php';
+            break;
+        case 'odl_coordinator':
+            $dashboard = 'odl_coordinator/dashboard.php';
+            break;
+        case 'finance':
+            $dashboard = 'finance/dashboard.php';
+            break;
+        case 'examination_manager':
+            $dashboard = 'examination_manager/dashboard.php';
+            break;
+        case 'research_coordinator':
+            $dashboard = 'research_coordinator/dashboard.php';
+            break;
+        default:
+            $dashboard = 'dashboard.php';
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -22,7 +59,7 @@
                         <h5>You don't have permission to access this resource.</h5>
                         <p class="text-muted">This area is restricted to authorized users only.</p>
                         <div class="mt-4">
-                            <a href="login.php" class="btn btn-primary">Go to Login</a>
+                            <a href="<?= $dashboard ?>" class="btn btn-primary">Go to Dashboard</a>
                             <a href="logout.php" class="btn btn-secondary ms-2">Logout</a>
                         </div>
                     </div>

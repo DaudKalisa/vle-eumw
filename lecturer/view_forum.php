@@ -1,4 +1,3 @@
-    <?php include 'lecturer_navbar.php'; ?>
 <?php
 // view_forum.php - View forum posts
 require_once '../includes/auth.php';
@@ -133,16 +132,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_post'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($forum['title']); ?> - VLE Forum</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-    <div class="container mt-5">
-        <div class="card shadow">
-            <div class="card-header">
-                <h4><?php echo htmlspecialchars($forum['title']); ?></h4>
-                <p class="mb-0"><?php echo htmlspecialchars($forum['description']); ?></p>
-                <small>Course: <?php echo htmlspecialchars($forum['course_name']); ?></small>
+    <?php 
+    $currentPage = 'forum';
+    $pageTitle = 'Forum Discussion';
+    include 'header_nav.php'; 
+    ?>
+
+    <div class="container-fluid px-3 px-lg-4 mt-3 mt-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-header py-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h4 class="mb-1 text-white"><i class="bi bi-chat-dots me-2"></i><?php echo htmlspecialchars($forum['title']); ?></h4>
+                <p class="mb-0 text-white-50"><?php echo htmlspecialchars($forum['description']); ?></p>
+                <small class="text-white-50">Course: <?php echo htmlspecialchars($forum['course_name']); ?></small>
                 <div class="mt-2">
-                    <a href="<?php echo $user['role'] === 'lecturer' ? 'forum.php' : 'dashboard.php'; ?>?course_id=<?php echo $forum['course_id']; ?>" class="btn btn-secondary btn-sm">Back</a>
+                    <a href="<?php echo $user['role'] === 'lecturer' ? 'forum.php' : 'dashboard.php'; ?>?course_id=<?php echo $forum['course_id']; ?>" class="btn btn-light btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
                 </div>
             </div>
             <div class="card-body">

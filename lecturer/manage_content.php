@@ -6,7 +6,7 @@ requireRole(['lecturer']);
 require_once '../includes/notifications.php';
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 // Get course_id from URL
 $course_id = isset($_GET['course_id']) ? (int)$_GET['course_id'] : 0;
@@ -101,7 +101,7 @@ $user = getCurrentUser();
                 </form>
                 <?php
                     $mc_user_id = $_SESSION['vle_user_id'] ?? 0;
-                    $mc_lecturer_id = $_SESSION['vle_related_id'] ?? '';
+                    $mc_lecturer_id = getRelatedIdForRole('lecturer') ?? '';
                     if ($mc_user_id && $mc_lecturer_id) {
                         generateLecturerNotifications($mc_user_id, $mc_lecturer_id);
                     }
@@ -196,8 +196,18 @@ $user = getCurrentUser();
         </div>
     </nav>
 <div class="container mt-4">
-    <h2>Manage Content for: <?php echo htmlspecialchars($course['course_name']); ?></h2>
-    <hr>
+    <!-- Page Header -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header py-3" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h4 class="mb-0 text-white"><i class="bi bi-folder2-open me-2"></i> Manage Content</h4>
+                    <p class="mb-0 mt-1 text-white-50"><i class="bi bi-book"></i> <?php echo htmlspecialchars($course['course_name']); ?></p>
+                </div>
+                <a href="dashboard.php" class="btn btn-light btn-sm"><i class="bi bi-arrow-left"></i> Dashboard</a>
+            </div>
+        </div>
+    </div>
     <div class="row mb-4">
         <div class="col-md-12">
             <div class="card">

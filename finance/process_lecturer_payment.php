@@ -41,7 +41,7 @@ $requests = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                 <th>Position</th>
                                 <th>Department</th>
                                 <th>Period</th>
-                                <th>Modules</th>
+                                <th>Courses</th>
                                 <th>Hours</th>
                                 <th>Amount</th>
                                 <th>Action</th>

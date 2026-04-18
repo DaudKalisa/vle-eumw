@@ -92,15 +92,69 @@ try {
                 $stmt->bind_param("ssi", $text_content, $file_path, $existing['submission_id']);
                 $stmt->execute();
                 $stmt->close();
+                $sub_id = (int)$existing['submission_id'];
             } else {
                 // New submission
                 $stmt = $conn->prepare("INSERT INTO vle_submissions (assignment_id, student_id, text_content, file_path) VALUES (?, ?, ?, ?)");
                 $stmt->bind_param("isss", $assignment_id, $related_id, $text_content, $file_path);
                 $stmt->execute();
+                $sub_id = (int)$conn->insert_id;
                 $stmt->close();
             }
 
+            // ─── AUTO INTEGRITY CHECK (Plagiarism + AI) ───
+            $ic_scores = null;
+            try {
+                require_once __DIR__ . '/../includes/integrity_check.php';
+                $engine = new IntegrityCheckEngine($conn);
+
+                $check_text = '';
+                if (!empty($file_path)) {
+                    $abs_path = __DIR__ . '/../uploads/submissions/' . $file_path;
+                    if (file_exists($abs_path)) {
+                        $ext = strtolower(pathinfo($abs_path, PATHINFO_EXTENSION));
+                        if ($ext === 'txt') $check_text = file_get_contents($abs_path);
+                        elseif ($ext === 'docx') $check_text = $engine->extractDocxText($abs_path);
+                        elseif ($ext === 'pdf') $check_text = $engine->extractPdfText($abs_path);
+                        elseif ($ext === 'doc') $check_text = $engine->extractDocText($abs_path);
+                        elseif ($ext === 'odt') $check_text = $engine->extractOdtText($abs_path);
+                    }
+                }
+                if (!empty($text_content)) {
+                    $check_text .= "\n" . strip_tags($text_content);
+                }
+                $check_text = trim($check_text);
+
+                if (strlen($check_text) >= 30) {
+                    $conn->query("ALTER TABLE vle_submissions ADD COLUMN IF NOT EXISTS plagiarism_score DECIMAL(5,2) DEFAULT NULL");
+                    $conn->query("ALTER TABLE vle_submissions ADD COLUMN IF NOT EXISTS ai_score DECIMAL(5,2) DEFAULT NULL");
+                    $conn->query("ALTER TABLE vle_submissions ADD COLUMN IF NOT EXISTS check_date DATETIME DEFAULT NULL");
+
+                    $ic_result = $engine->checkSubmission($check_text, $sub_id, [
+                        'type' => 'assignment',
+                        'assignment_id' => $assignment_id,
+                        'student_id' => $related_id,
+                    ]);
+
+                    $ic_plag = $ic_result['plagiarism']['score'];
+                    $ic_ai   = $ic_result['ai']['score'];
+
+                    $ic_save = $conn->prepare("UPDATE vle_submissions SET plagiarism_score = ?, ai_score = ?, check_date = NOW() WHERE submission_id = ?");
+                    $ic_save->bind_param("ddi", $ic_plag, $ic_ai, $sub_id);
+                    $ic_save->execute();
+                    $ic_save->close();
+
+                    $ic_scores = ['plagiarism_score' => $ic_plag, 'ai_score' => $ic_ai];
+                }
+            } catch (\Throwable $ic_err) {
+                error_log("Auto integrity check failed for submission $sub_id: " . $ic_err->getMessage());
+            }
+
             $response = ['success' => true, 'message' => 'Assignment submitted successfully'];
+            if ($ic_scores) {
+                $response['plagiarism_score'] = $ic_scores['plagiarism_score'];
+                $response['ai_score'] = $ic_scores['ai_score'];
+            }
             break;
 
         case 'get_course_content':

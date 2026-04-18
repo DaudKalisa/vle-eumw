@@ -3,11 +3,11 @@
  * Student Exam Report - PDF Download
  * Generates an official school report card for completed exams
  * Students can only download after results are published
+ * Uses browser-based PDF printing (no external libraries required)
  */
 require_once '../includes/auth.php';
 requireLogin();
 requireRole(['student']);
-require_once '../vendor/autoload.php';
 
 $conn = getDbConnection();
 $user = getCurrentUser();
@@ -314,25 +314,81 @@ $html .= '
     Report Reference: EU-' . strtoupper(substr(md5($student_id . date('Ymd')), 0, 8)) . ' | Generated: ' . date('Y-m-d H:i:s') . '
 </div>';
 
-// --- Generate PDF ---
-try {
-    $mpdf = new \Mpdf\Mpdf([
-        'margin_top' => 15,
-        'margin_bottom' => 15,
-        'margin_left' => 15,
-        'margin_right' => 15,
-        'format' => 'A4',
-    ]);
-    
-    $mpdf->SetTitle('Exam Report - ' . $student['full_name']);
-    $mpdf->SetAuthor('Exploits University VLE');
-    $mpdf->SetCreator('VLE Examination System');
-    $mpdf->SetProtection(['print', 'copy'], '', 'admin_password_eu2026');
-    
-    $mpdf->WriteHTML($html);
-    
-    $filename = 'Exam_Report_' . preg_replace('/[^A-Za-z0-9_]/', '_', $student['student_id']) . '_' . date('Ymd') . '.pdf';
-    $mpdf->Output($filename, 'I');
-} catch (Exception $e) {
-    die('PDF generation error: ' . $e->getMessage());
-}
+// --- Output HTML with Print Functionality ---
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Report - <?= htmlspecialchars($student['full_name']) ?></title>
+    <style>
+        /* Screen styles */
+        body { font-family: "Times New Roman", Georgia, serif; color: #222; font-size: 11pt; margin: 0; padding: 20px; background: #f5f5f5; }
+        .print-controls { background: linear-gradient(135deg, #1a3a6e, #2563eb); color: white; padding: 15px 20px; margin: -20px -20px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-radius: 0 0 10px 10px; }
+        .print-controls h4 { margin: 0; font-weight: 500; }
+        .print-controls .btn-group { display: flex; gap: 10px; }
+        .print-controls button, .print-controls a { background: white; color: #1a3a6e; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+        .print-controls button:hover, .print-controls a:hover { background: #e0e7ff; }
+        .report-container { background: white; max-width: 800px; margin: 0 auto; padding: 30px 40px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); border-radius: 8px; }
+        
+        /* Report styles from $html */
+        .report-card { font-family: "Times New Roman", Georgia, serif; }
+        .header { text-align: center; border-bottom: 3px double #1a3a6e; padding-bottom: 12px; margin-bottom: 15px; }
+        .header img { height: 60px; }
+        .uni-name { font-size: 18pt; font-weight: bold; color: #1a3a6e; margin: 5px 0 2px; }
+        .uni-motto { font-size: 8pt; color: #666; font-style: italic; }
+        .report-title { font-size: 12pt; font-weight: bold; color: #1a3a6e; margin-top: 8px; text-transform: uppercase; letter-spacing: 2px; }
+        .student-info { margin: 15px 0; }
+        .student-info td { padding: 3px 10px; font-size: 10pt; }
+        .student-info .label { color: #555; font-weight: bold; }
+        .results-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .results-table th { background: #1a3a6e; color: white; padding: 8px 6px; font-size: 9pt; text-align: left; border: 1px solid #1a3a6e; }
+        .results-table td { padding: 6px; font-size: 9pt; border: 1px solid #ccc; }
+        .results-table tr:nth-child(even) { background: #f5f7fa; }
+        .summary-row td { font-weight: bold; background: #e8f4ff !important; }
+        .passed { color: #198754; font-weight: bold; }
+        .failed { color: #dc3545; font-weight: bold; }
+        .grade-a { color: #198754; font-weight: bold; }
+        .grade-b { color: #0d6efd; font-weight: bold; }
+        .grade-c { color: #6f42c1; font-weight: bold; }
+        .grade-d { color: #fd7e14; font-weight: bold; }
+        .grade-f { color: #dc3545; font-weight: bold; }
+        .stamp-area td { padding: 10px; vertical-align: bottom; }
+        .passed-stamp { color: #198754; font-weight: bold; font-size: 14pt; border: 3px solid #198754; padding: 5px 15px; border-radius: 5px; }
+        .failed-stamp { color: #dc3545; font-weight: bold; font-size: 14pt; border: 3px solid #dc3545; padding: 5px 15px; border-radius: 5px; }
+        .footer { text-align: center; font-size: 7pt; color: #888; border-top: 1px solid #ccc; padding-top: 10px; margin-top: 20px; }
+        
+        /* Print styles */
+        @media print {
+            body { background: white; padding: 0; margin: 0; }
+            .print-controls { display: none !important; }
+            .report-container { box-shadow: none; padding: 0; max-width: none; border-radius: 0; }
+            @page { size: A4 portrait; margin: 15mm; }
+            .results-table th { background: #1a3a6e !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .results-table tr:nth-child(even) { background: #f5f7fa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .passed, .grade-a { color: #198754 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .failed, .grade-f { color: #dc3545 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .passed-stamp { border-color: #198754 !important; color: #198754 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .failed-stamp { border-color: #dc3545 !important; color: #dc3545 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-controls">
+        <h4>📜 Examination Report</h4>
+        <div class="btn-group">
+            <button onclick="window.print()">🖨️ Print / Save PDF</button>
+            <a href="../student/my_results.php">← Back to Results</a>
+        </div>
+    </div>
+    <div class="report-container">
+        <?= $html ?>
+    </div>
+    <script>
+        <?php if (isset($_GET['auto_print']) && $_GET['auto_print'] == '1'): ?>
+        window.onload = function() { setTimeout(function() { window.print(); }, 500); };
+        <?php endif; ?>
+    </script>
+</body>
+</html>

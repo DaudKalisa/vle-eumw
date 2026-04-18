@@ -98,7 +98,8 @@ if ($conn->query($sql2)) {
 $alter_cols = [
     "student_id_number VARCHAR(50) DEFAULT NULL COMMENT 'Existing student ID if transfer/returning' AFTER student_id",
     "preferred_username VARCHAR(100) DEFAULT NULL COMMENT 'Student preferred username' AFTER last_name",
-    "year_of_registration INT DEFAULT NULL AFTER campus"
+    "year_of_registration INT DEFAULT NULL AFTER campus",
+    "selected_modules TEXT DEFAULT NULL COMMENT 'JSON array of selected course IDs' AFTER student_type"
 ];
 foreach ($alter_cols as $col_def) {
     $col_name = explode(' ', trim($col_def))[0];

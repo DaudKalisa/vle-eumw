@@ -13,6 +13,18 @@ $conn = getDbConnection();
 $user = getCurrentUser();
 $success = '';
 $error = '';
+$bulk_dissertation_url = '';
+$bulk_dissertation_label = '';
+
+// Ensure dissertation_only and is_supervisor columns exist
+$diss_col = $conn->query("SHOW COLUMNS FROM student_registration_invites LIKE 'dissertation_only'");
+if ($diss_col && $diss_col->num_rows === 0) {
+    $conn->query("ALTER TABLE student_registration_invites ADD COLUMN dissertation_only TINYINT(1) NOT NULL DEFAULT 0 AFTER notes");
+}
+$sup_col = $conn->query("SHOW COLUMNS FROM student_registration_invites LIKE 'is_supervisor'");
+if ($sup_col && $sup_col->num_rows === 0) {
+    $conn->query("ALTER TABLE student_registration_invites ADD COLUMN is_supervisor TINYINT(1) NOT NULL DEFAULT 0 AFTER dissertation_only");
+}
 
 // Get departments for dropdown
 $departments = [];
@@ -115,6 +127,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Create Bulk Dissertation Invite Link
+    if (isset($_POST['create_bulk_dissertation'])) {
+        $bulk_label = trim($_POST['diss_label'] ?? '');
+        $bulk_max_uses = (int)($_POST['diss_max_uses'] ?? 300);
+        $bulk_type = ($_POST['diss_type'] ?? 'student') === 'supervisor' ? 'supervisor' : 'student';
+        $diss_campus = trim($_POST['diss_campus'] ?? 'Mzuzu Campus');
+        $valid_campuses = ['Mzuzu Campus', 'Lilongwe Campus', 'Blantyre Campus', 'ODel Campus'];
+        if (!in_array($diss_campus, $valid_campuses)) $diss_campus = 'Mzuzu Campus';
+        if ($bulk_max_uses < 2) $bulk_max_uses = 2;
+        if ($bulk_max_uses > 300) $bulk_max_uses = 300;
+        if (empty($bulk_label)) {
+            $error = 'Please provide a label/description for the bulk dissertation invite.';
+        } else {
+            $token = bin2hex(random_bytes(32));
+            $expires_at = date('Y-m-d H:i:s', strtotime('+60 days'));
+            $created_by = $user['user_id'];
+            $notes = 'Bulk dissertation invite: ' . $bulk_label . ' | type: ' . $bulk_type . ' | campus: ' . $diss_campus;
+            $is_supervisor = ($bulk_type === 'supervisor') ? 1 : 0;
+            $stmt = $conn->prepare("INSERT INTO student_registration_invites
+                (token, email, full_name, program, campus, program_type, year_of_study, semester, entry_type, max_uses, expires_at, created_by, notes, dissertation_only, is_supervisor)
+                VALUES (?, '', ?, '', ?, 'degree', 3, 'One', 'NE', ?, ?, ?, ?, 1, ?)");
+            $stmt->bind_param("sssisisi", $token, $bulk_label, $diss_campus, $bulk_max_uses, $expires_at, $created_by, $notes, $is_supervisor);
+            if ($stmt->execute()) {
+                $invite_url = getInviteUrl($token);
+                $type_label = ucfirst($bulk_type);
+                $success = "{$type_label} bulk dissertation invite link created successfully (Max uses: {$bulk_max_uses}).";
+                $bulk_dissertation_url = $invite_url;
+                $bulk_dissertation_label = $bulk_label;
+            } else {
+                $error = 'Failed to create bulk dissertation invite: ' . $conn->error;
+            }
+        }
+    }
+
     // Create bulk invites
     if (isset($_POST['create_bulk'])) {
         $bulk_count = min((int)($_POST['bulk_count'] ?? 5), 100);
@@ -150,9 +196,11 @@ $stat_q = $conn->query("SELECT
     SUM(is_active = 1 AND (expires_at IS NULL OR expires_at > NOW()) AND (max_uses = 0 OR times_used < max_uses)) as active,
     SUM(is_active = 0) as inactive,
     SUM(times_used > 0) as used,
-    SUM(times_used) as total_uses
+    SUM(times_used) as total_uses,
+    SUM(dissertation_only = 1) as dissertation,
+    SUM(is_supervisor = 1) as supervisor
     FROM student_registration_invites");
-$stats = $stat_q ? $stat_q->fetch_assoc() : ['total' => 0, 'active' => 0, 'inactive' => 0, 'used' => 0, 'total_uses' => 0];
+$stats = $stat_q ? $stat_q->fetch_assoc() : ['total' => 0, 'active' => 0, 'inactive' => 0, 'used' => 0, 'total_uses' => 0, 'dissertation' => 0, 'supervisor' => 0];
 
 // Pending registrations count
 $pending_q = $conn->query("SELECT COUNT(*) as cnt FROM student_invite_registrations WHERE status = 'pending'");
@@ -169,6 +217,8 @@ if ($filter === 'active') $where = "i.is_active = 1 AND (i.expires_at IS NULL OR
 elseif ($filter === 'inactive') $where = "i.is_active = 0";
 elseif ($filter === 'expired') $where = "i.expires_at IS NOT NULL AND i.expires_at <= NOW()";
 elseif ($filter === 'used') $where = "i.times_used > 0";
+elseif ($filter === 'dissertation') $where = "i.dissertation_only = 1";
+elseif ($filter === 'supervisor') $where = "i.is_supervisor = 1";
 
 $total_q = $conn->query("SELECT COUNT(*) as cnt FROM student_registration_invites i WHERE $where");
 $total_invites = $total_q ? $total_q->fetch_assoc()['cnt'] : 0;
@@ -177,7 +227,8 @@ $total_pages = max(1, ceil($total_invites / $per_page));
 $invites = [];
 $q = $conn->query("SELECT i.*, u.username as creator_name,
     (SELECT COUNT(*) FROM student_invite_registrations r WHERE r.invite_id = i.invite_id) as reg_count,
-    (SELECT COUNT(*) FROM student_invite_registrations r WHERE r.invite_id = i.invite_id AND r.status = 'pending') as pending_count
+    (SELECT COUNT(*) FROM student_invite_registrations r WHERE r.invite_id = i.invite_id AND r.status = 'pending') as pending_count,
+    i.dissertation_only, i.is_supervisor
     FROM student_registration_invites i
     LEFT JOIN users u ON i.created_by = u.user_id
     WHERE $where
@@ -288,6 +339,17 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
         <?php if ($success): ?>
         <div class="alert alert-success alert-dismissible fade show" style="border-radius:10px;">
             <i class="bi bi-check-circle me-2"></i><?= $success ?>
+            <?php if (!empty($bulk_dissertation_url)): ?>
+            <div class="mt-3 p-3 bg-white rounded" style="border: 1px solid #d4edda;">
+                <small class="d-block mb-2 text-muted"><strong>Dissertation Invite Link:</strong></small>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <code style="background:#f8f9fa; padding:8px 12px; border-radius:4px; flex:1; min-width:300px; word-break:break-all;"><?= htmlspecialchars($bulk_dissertation_url) ?></code>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="copyLink('<?= htmlspecialchars($bulk_dissertation_url, ENT_QUOTES) ?>')" title="Copy">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
+            </div>
+            <?php endif; ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
         <?php endif; ?>
@@ -328,6 +390,20 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
                     <div class="stat-label">Pending Approval</div>
                 </a>
             </div>
+            <div class="col-6 col-md-3 col-lg">
+                <a href="?filter=dissertation" class="stat-card d-block text-decoration-none">
+                    <div class="stat-icon" style="color:#8b5cf6;"><i class="bi bi-journal-bookmark"></i></div>
+                    <div class="stat-value" style="color:#8b5cf6;"><?= $stats['dissertation'] ?? 0 ?></div>
+                    <div class="stat-label">Dissertation Invites</div>
+                </a>
+            </div>
+            <div class="col-6 col-md-3 col-lg">
+                <a href="?filter=supervisor" class="stat-card d-block text-decoration-none">
+                    <div class="stat-icon" style="color:#d97706;"><i class="bi bi-person-badge"></i></div>
+                    <div class="stat-value" style="color:#d97706;"><?= $stats['supervisor'] ?? 0 ?></div>
+                    <div class="stat-label">Supervisor Invites</div>
+                </a>
+            </div>
         </div>
 
         <!-- Action Buttons -->
@@ -337,6 +413,9 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
             </button>
             <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#bulkModal">
                 <i class="bi bi-files me-1"></i> Bulk Create
+            </button>
+            <button class="btn" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;" data-bs-toggle="modal" data-bs-target="#dissertationInviteModal">
+                <i class="bi bi-journal-bookmark me-1"></i> Bulk Dissertation Invite
             </button>
             <a href="approve_student_accounts.php" class="btn btn-outline-warning">
                 <i class="bi bi-clipboard-check me-1"></i> Review Registrations
@@ -348,9 +427,15 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
 
         <!-- Filter tabs -->
         <ul class="nav nav-pills mb-3">
-            <?php foreach (['all' => 'All', 'active' => 'Active', 'used' => 'Used', 'inactive' => 'Inactive', 'expired' => 'Expired'] as $key => $label): ?>
+            <?php foreach (['all' => 'All', 'active' => 'Active', 'used' => 'Used', 'dissertation' => 'Dissertation', 'supervisor' => 'Supervisor', 'inactive' => 'Inactive', 'expired' => 'Expired'] as $key => $label): ?>
             <li class="nav-item">
-                <a class="nav-link <?= $filter === $key ? 'active' : '' ?>" href="?filter=<?= $key ?>"><?= $label ?></a>
+                <a class="nav-link <?= $filter === $key ? 'active' : '' ?>" href="?filter=<?= $key ?>"><?= $label ?>
+                    <?php if ($key === 'dissertation' && ($stats['dissertation'] ?? 0) > 0): ?>
+                    <span class="badge bg-light text-dark ms-1"><?= $stats['dissertation'] ?></span>
+                    <?php elseif ($key === 'supervisor' && ($stats['supervisor'] ?? 0) > 0): ?>
+                    <span class="badge bg-light text-dark ms-1"><?= $stats['supervisor'] ?></span>
+                    <?php endif; ?>
+                </a>
             </li>
             <?php endforeach; ?>
         </ul>
@@ -382,6 +467,12 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
                         <?php if ($inv['pending_count'] > 0): ?>
                             <span class="badge bg-warning text-dark" style="font-size:0.7rem;"><?= $inv['pending_count'] ?> pending</span>
                         <?php endif; ?>
+                        <?php if (!empty($inv['dissertation_only'])): ?>
+                            <span class="badge" style="background:#ede9fe;color:#7c3aed;font-size:0.7rem;"><i class="bi bi-journal-bookmark me-1"></i>Dissertation</span>
+                        <?php endif; ?>
+                        <?php if (!empty($inv['is_supervisor'])): ?>
+                            <span class="badge" style="background:#fef3c7;color:#d97706;font-size:0.7rem;"><i class="bi bi-person-badge me-1"></i>Supervisor</span>
+                        <?php endif; ?>
                     </div>
                     <?php if ($inv['full_name'] || $inv['email']): ?>
                     <div style="font-size:0.85rem;font-weight:500;">
@@ -397,6 +488,7 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
                     <div style="font-size:0.8rem;color:#64748b;">
                         <?php if ($inv['campus']): ?><div><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($inv['campus']) ?></div><?php endif; ?>
                         <?php if ($inv['program']): ?><div><i class="bi bi-book me-1"></i><?= htmlspecialchars($inv['program']) ?></div><?php endif; ?>
+                        <?php if (!empty($inv['notes'])): ?><div><i class="bi bi-sticky me-1"></i><?= htmlspecialchars(mb_strimwidth($inv['notes'], 0, 60, '...')) ?></div><?php endif; ?>
                         <div><i class="bi bi-people me-1"></i>Used: <?= $inv['times_used'] ?>/<?= $inv['max_uses'] ?: '&infin;' ?></div>
                         <?php if ($inv['expires_at']): ?>
                         <div><i class="bi bi-clock me-1"></i>Expires: <?= date('M j, Y', strtotime($inv['expires_at'])) ?></div>
@@ -657,6 +749,68 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
         </div>
     </div>
 
+    <!-- Bulk Dissertation Invite Modal -->
+    <div class="modal fade" id="dissertationInviteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="border-radius:16px;border:none;">
+                <div class="modal-header" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;border-radius:16px 16px 0 0;">
+                    <h5 class="modal-title"><i class="bi bi-journal-bookmark me-2"></i>Create Bulk Dissertation Invite Link</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <div class="alert alert-info small mb-3">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Create a shared invite link for dissertation students or supervisors. The link can be used by multiple people (up to the max uses limit). 
+                            These invites are tracked separately and visible in the Research Coordinator's portal.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Invite Type <span class="text-danger">*</span></label>
+                            <select name="diss_type" class="form-select" id="dissTypeSelect">
+                                <option value="student">Dissertation Student</option>
+                                <option value="supervisor">Dissertation Supervisor</option>
+                            </select>
+                            <small class="text-muted" id="dissTypeHint">Students will register and be linked to the dissertation module.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Label / Description <span class="text-danger">*</span></label>
+                            <input type="text" name="diss_label" class="form-control" required placeholder="e.g. 2026 Semester 1 Dissertation Students">
+                            <small class="text-muted">Helps identify this invite link in reports.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Campus <span class="text-danger">*</span></label>
+                            <select name="diss_campus" class="form-select" required>
+                                <option value="Mzuzu Campus">Mzuzu Campus</option>
+                                <option value="Lilongwe Campus">Lilongwe Campus</option>
+                                <option value="Blantyre Campus">Blantyre Campus</option>
+                                <option value="ODel Campus">ODel Campus</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Maximum Uses</label>
+                            <input type="number" name="diss_max_uses" class="form-control" value="300" min="2" max="300">
+                            <small class="text-muted">How many people can register using this link (max 300).</small>
+                        </div>
+                        <div class="mb-3">
+                            <div class="card bg-light border-0">
+                                <div class="card-body py-2 small text-muted">
+                                    <i class="bi bi-clock me-1"></i>Link expires in <strong>60 days</strong> from creation.<br>
+                                    <i class="bi bi-tag me-1"></i>Tracked as: <strong>dissertation_only</strong> invite
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="create_bulk_dissertation" class="btn" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;">
+                            <i class="bi bi-journal-bookmark me-1"></i> Create Dissertation Invite
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Copy Toast -->
     <div class="copy-toast" id="copyToast"><i class="bi bi-check-circle me-2"></i>Link copied to clipboard!</div>
 
@@ -678,6 +832,19 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
             const toast = document.getElementById('copyToast');
             toast.style.display = 'block';
             setTimeout(function() { toast.style.display = 'none'; }, 2500);
+        });
+    }
+
+    // Dissertation type hint toggle
+    const dissTypeSelect = document.getElementById('dissTypeSelect');
+    const dissTypeHint = document.getElementById('dissTypeHint');
+    if (dissTypeSelect) {
+        dissTypeSelect.addEventListener('change', function() {
+            if (this.value === 'supervisor') {
+                dissTypeHint.textContent = 'Supervisors will register as lecturers linked to the dissertation module.';
+            } else {
+                dissTypeHint.textContent = 'Students will register and be linked to the dissertation module.';
+            }
         });
     }
     </script>

@@ -60,12 +60,15 @@ if ($columns->num_rows > 0) {
 // Count pending student invite registrations
 $table_check_invites = $conn->query("SHOW TABLES LIKE 'student_invite_registrations'");
 if ($table_check_invites && $table_check_invites->num_rows > 0) {
-    $result = $conn->query("SELECT COUNT(*) as count FROM student_invite_registrations WHERE status = 'pending'");
+    $result = $conn->query("SELECT COUNT(*) as count FROM student_invite_registrations WHERE status = 'pending' AND (student_type IS NULL OR student_type != 'graduation_student')");
     $stats['pending_student_invites'] = $result ? $result->fetch_assoc()['count'] : 0;
+    $result = $conn->query("SELECT COUNT(*) as count FROM student_invite_registrations WHERE status = 'pending' AND student_type = 'graduation_student'");
+    $stats['pending_graduation_students'] = $result ? $result->fetch_assoc()['count'] : 0;
     $result = $conn->query("SELECT COUNT(*) as count FROM student_registration_invites WHERE is_active = 1");
     $stats['active_invite_links'] = $result ? $result->fetch_assoc()['count'] : 0;
 } else {
     $stats['pending_student_invites'] = 0;
+    $stats['pending_graduation_students'] = 0;
     $stats['active_invite_links'] = 0;
 }
 
@@ -76,6 +79,55 @@ if ($table_check->num_rows > 0) {
     $stats['finance_users'] = $result ? $result->fetch_assoc()['count'] : 0;
 } else {
     $stats['finance_users'] = 0;
+}
+
+// Count research coordinators
+$rc_check = $conn->query("SHOW TABLES LIKE 'research_coordinators'");
+if ($rc_check && $rc_check->num_rows > 0) {
+    $result = $conn->query("SELECT COUNT(*) as count FROM research_coordinators WHERE is_active = 1");
+    $stats['research_coordinators'] = $result ? $result->fetch_assoc()['count'] : 0;
+} else {
+    $stats['research_coordinators'] = 0;
+}
+
+// Count deans
+$result = $conn->query("SELECT COUNT(*) as count FROM administrative_staff WHERE position = 'Dean' AND is_active = 1");
+$stats['deans'] = $result ? $result->fetch_assoc()['count'] : 0;
+
+// Count dissertation-only student accounts
+$result = $conn->query("SELECT COUNT(*) as count FROM users WHERE additional_roles LIKE '%dissertation_student%'");
+$stats['dissertation_students'] = $result ? $result->fetch_assoc()['count'] : 0;
+
+// Count graduation clearance applications
+$grad_check = $conn->query("SHOW TABLES LIKE 'graduation_applications'");
+if ($grad_check && $grad_check->num_rows > 0) {
+    $result = $conn->query("SELECT COUNT(*) as count FROM graduation_applications");
+    $stats['graduation_total'] = $result ? $result->fetch_assoc()['count'] : 0;
+    $result = $conn->query("SELECT COUNT(*) as count FROM graduation_applications WHERE status NOT IN ('completed','rejected')");
+    $stats['graduation_pending'] = $result ? $result->fetch_assoc()['count'] : 0;
+    $result = $conn->query("SELECT COUNT(*) as count FROM graduation_applications WHERE status = 'completed'");
+    $stats['graduation_completed'] = $result ? $result->fetch_assoc()['count'] : 0;
+    // Per-step pending counts
+    foreach (['ict','librarian','admin','registrar','admissions'] as $step) {
+        $r = $conn->query("SELECT COUNT(*) as count FROM graduation_applications WHERE current_step = '$step' AND status NOT IN ('completed','rejected')");
+        $stats['graduation_pending_' . $step] = $r ? (int)$r->fetch_assoc()['count'] : 0;
+    }
+} else {
+    $stats['graduation_total'] = 0;
+    $stats['graduation_pending'] = 0;
+    $stats['graduation_completed'] = 0;
+    foreach (['ict','librarian','admin','registrar','admissions'] as $step) {
+        $stats['graduation_pending_' . $step] = 0;
+    }
+}
+
+// Count pending password reset requests
+$prr_check = $conn->query("SHOW TABLES LIKE 'password_reset_requests'");
+if ($prr_check && $prr_check->num_rows > 0) {
+    $result = $conn->query("SELECT COUNT(*) as count FROM password_reset_requests WHERE status = 'pending'");
+    $stats['pending_pwd_resets'] = $result ? (int)$result->fetch_assoc()['count'] : 0;
+} else {
+    $stats['pending_pwd_resets'] = 0;
 }
 
 // Recent student registrations
@@ -107,14 +159,12 @@ if ($result) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1e3c72">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Admin Dashboard - VLE System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="../assets/css/admin-dashboard.css" rel="stylesheet">
+    <?php include_once __DIR__ . '/../includes/pwa-head.php'; ?>
     <style>
         /* Interactive Dashboard Styles */
         :root {
@@ -624,7 +674,7 @@ if ($result) {
         <div class="header-actions">
             <button class="header-btn has-badge" onclick="location.href='approve_registrations.php'">
                 <i class="bi bi-bell-fill"></i>
-                <?php if($stats['pending_requests'] > 0): ?>
+                <?php if($stats['pending_requests'] > 0 || $stats['pending_pwd_resets'] > 0): ?>
                 <span class="badge-dot"></span>
                 <?php endif; ?>
             </button>
@@ -655,10 +705,16 @@ if ($result) {
                 <div class="nav-icons">
                     <a href="approve_registrations.php" class="nav-icon-btn position-relative" title="Pending Approvals">
                         <i class="bi bi-bell-fill"></i>
-                        <?php if($stats['pending_requests'] > 0): ?>
+                        <?php if($stats['pending_requests'] > 0 || $stats['pending_pwd_resets'] > 0): ?>
                         <span class="badge-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;background:#ef4444;border-radius:50%;"></span>
                         <?php endif; ?>
                     </a>
+                    <?php if($stats['pending_pwd_resets'] > 0): ?>
+                    <a href="reset_passwords.php" class="nav-icon-btn position-relative" title="Password Reset Requests" style="margin-left:4px;">
+                        <i class="bi bi-key-fill" style="color:#f59e0b;"></i>
+                        <span style="position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;font-size:.65rem;font-weight:700;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;padding:0 3px;"><?= $stats['pending_pwd_resets'] ?></span>
+                    </a>
+                    <?php endif; ?>
                 </div>
                 <div class="admin-dropdown">
                     <div class="nav-user">
@@ -710,6 +766,20 @@ if ($result) {
         </div>
         <?php endif; ?>
 
+        <!-- Password Reset Requests Alert -->
+        <?php if($stats['pending_pwd_resets'] > 0): ?>
+        <div class="pending-alert" style="background:linear-gradient(135deg,#fefce8,#fef9c3);border:1px solid #fde68a;">
+            <div class="alert-icon" style="background:#f59e0b;">
+                <i class="bi bi-key-fill"></i>
+            </div>
+            <div class="alert-content">
+                <div class="alert-title" style="color:#92400e;">Password Reset Requests</div>
+                <div class="alert-text" style="color:#78350f;"><?php echo $stats['pending_pwd_resets']; ?> user<?php echo $stats['pending_pwd_resets'] > 1 ? 's have' : ' has'; ?> requested a password reset</div>
+            </div>
+            <a href="reset_passwords.php" class="alert-btn" style="background:#f59e0b;">Reset Now</a>
+        </div>
+        <?php endif; ?>
+
         <!-- Stats Grid -->
         <div class="section-header">
             <h5 class="section-title"><i class="bi bi-graph-up-arrow me-2"></i>System Overview</h5>
@@ -722,6 +792,15 @@ if ($result) {
                 <div class="stat-content">
                     <span class="stat-value"><?php echo number_format($stats['students']); ?></span>
                     <span class="stat-label">Students</span>
+                </div>
+            </a>
+            <a href="convert_dissertation_students.php" class="stat-card" style="--accent-color: #a855f7; text-decoration: none;">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #a855f7, #7c3aed);">
+                    <i class="bi bi-person-badge"></i>
+                </div>
+                <div class="stat-content">
+                    <span class="stat-value"><?php echo number_format($stats['dissertation_students']); ?></span>
+                    <span class="stat-label">Dissertation Students</span>
                 </div>
             </a>
             <a href="manage_lecturers.php" class="stat-card" style="--accent-color: #10b981; text-decoration: none;">
@@ -845,18 +924,7 @@ if ($result) {
                 </div>
                 <span>Coordinators</span>
             </a>
-            <a href="database_manager.php" class="action-btn">
-                <div class="action-icon" style="background: linear-gradient(135deg, #059669, #047857);">
-                    <i class="bi bi-database-gear"></i>
-                </div>
-                <span>Backup DB</span>
-            </a>
-            <a href="#" class="action-btn" data-bs-toggle="modal" data-bs-target="#fileManagerLoginModal">
-                <div class="action-icon" style="background: linear-gradient(135deg, #f97316, #c2410c);">
-                    <i class="bi bi-folder2-open"></i>
-                </div>
-                <span>File Manager</span>
-            </a>
+
         </div>
         
         <!-- Core Management Section -->
@@ -913,10 +981,35 @@ if ($result) {
                 <div class="card-title">Approve Students</div>
                 <div class="card-subtitle"><?php echo $stats['pending_student_invites']; ?> pending</div>
             </a>
+            <a href="graduation_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #059669, #047857);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #059669, #047857); position:relative;">
+                    <i class="bi bi-mortarboard-fill"></i>
+                    <?php if (!empty($stats['pending_graduation_students']) && $stats['pending_graduation_students'] > 0): ?>
+                    <span style="position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:20px;height:20px;font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center;"><?= $stats['pending_graduation_students'] ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="card-title">Graduation Students</div>
+                <div class="card-subtitle"><?php echo $stats['pending_graduation_students']; ?> pending</div>
+            </a>
+            <a href="manage_examination_managers.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #7c3aed, #6d28d9);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);"><i class="bi bi-shield-lock-fill"></i></div>
+                <div class="card-title">Exam Managers</div>
+                <div class="card-subtitle">Senior exam staff</div>
+            </a>
             <a href="manage_examination_officers.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #ec4899, #db2777);">
                 <div class="card-icon" style="background: linear-gradient(135deg, #ec4899, #db2777);"><i class="bi bi-shield-check"></i></div>
                 <div class="card-title">Exam Officers</div>
                 <div class="card-subtitle">Manage officers</div>
+            </a>
+            <a href="manage_hod.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0d9488, #0f766e);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0d9488, #0f766e);"><i class="bi bi-building"></i></div>
+                <div class="card-title">HOD</div>
+                <div class="card-subtitle">Heads of Department</div>
+            </a>
+            <a href="manage_dean.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #9a3412, #7c2d12);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #9a3412, #7c2d12);"><i class="bi bi-award"></i></div>
+                <div class="card-title">Deans</div>
+                <div class="card-subtitle"><?php echo $stats['deans']; ?> deans</div>
             </a>
             <a href="export_data.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0891b2, #0e7490);">
                 <div class="card-icon" style="background: linear-gradient(135deg, #0891b2, #0e7490);"><i class="bi bi-box-arrow-up-right"></i></div>
@@ -927,6 +1020,82 @@ if ($result) {
                 <div class="card-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);"><i class="bi bi-person-video3"></i></div>
                 <div class="card-title">Coordinators</div>
                 <div class="card-subtitle">Manage ODL coordinators</div>
+            </a>
+            <a href="manage_research_coordinators.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #059669, #047857);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-journal-bookmark-fill"></i></div>
+                <div class="card-title">Research Coord.</div>
+                <div class="card-subtitle"><?php echo $stats['research_coordinators']; ?> coordinators</div>
+            </a>
+            <a href="manage_dissertation_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #a855f7, #7c3aed);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #a855f7, #7c3aed);"><i class="bi bi-mortarboard-fill"></i></div>
+                <div class="card-title">Dissertation Students</div>
+                <div class="card-subtitle"><?php echo $stats['dissertation_students']; ?> students</div>
+            </a>
+            <a href="graduation_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #059669, #047857); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-mortarboard"></i></div>
+                <div class="card-title">Graduation Clearance</div>
+                <div class="card-subtitle"><?php echo $stats['graduation_total']; ?> applications</div>
+                <?php if($stats['graduation_pending'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['graduation_pending'] ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="graduation_report.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #14b8a6, #0d9488);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #14b8a6, #0d9488);"><i class="bi bi-file-earmark-bar-graph-fill"></i></div>
+                <div class="card-title">Graduation Report</div>
+                <div class="card-subtitle"><?php echo $stats['graduation_completed']; ?> graduated</div>
+            </a>
+            <a href="graduation_invite_links.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0ea5e9, #0369a1);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0ea5e9, #0369a1);"><i class="bi bi-link-45deg"></i></div>
+                <div class="card-title">Grad Invite Links</div>
+                <div class="card-subtitle">Manage invites</div>
+            </a>
+            <a href="graduation_ict_clearance.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #6366f1, #4f46e5); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #6366f1, #4f46e5);"><i class="bi bi-pc-display-horizontal"></i></div>
+                <div class="card-title">ICT Clearance</div>
+                <div class="card-subtitle"><?= $stats['graduation_pending_ict'] ?> awaiting ICT</div>
+                <?php if ($stats['graduation_pending_ict'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['graduation_pending_ict'] ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="graduation_librarian_clearance.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #78350f, #92400e); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #78350f, #92400e);"><i class="bi bi-book-fill"></i></div>
+                <div class="card-title">Library Clearance</div>
+                <div class="card-subtitle"><?= $stats['graduation_pending_librarian'] ?> awaiting library</div>
+                <?php if ($stats['graduation_pending_librarian'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['graduation_pending_librarian'] ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="graduation_admin_clearance.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #1e40af, #1d4ed8); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #1e40af, #1d4ed8);"><i class="bi bi-shield-check"></i></div>
+                <div class="card-title">Admin Clearance</div>
+                <div class="card-subtitle"><?= $stats['graduation_pending_admin'] ?> awaiting admin</div>
+                <?php if ($stats['graduation_pending_admin'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['graduation_pending_admin'] ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="graduation_registrar_clearance.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0369a1, #075985); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0369a1, #075985);"><i class="bi bi-file-earmark-text-fill"></i></div>
+                <div class="card-title">Registrar Clearance</div>
+                <div class="card-subtitle"><?= $stats['graduation_pending_registrar'] ?> awaiting registrar</div>
+                <?php if ($stats['graduation_pending_registrar'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['graduation_pending_registrar'] ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="graduation_admissions_clearance.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #9a3412, #c2410c); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #9a3412, #c2410c);"><i class="bi bi-person-check-fill"></i></div>
+                <div class="card-title">Admissions Clearance</div>
+                <div class="card-subtitle"><?= $stats['graduation_pending_admissions'] ?> awaiting admissions</div>
+                <?php if ($stats['graduation_pending_admissions'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['graduation_pending_admissions'] ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="reset_passwords.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #f59e0b, #d97706); position:relative;">
+                <div class="card-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);"><i class="bi bi-key-fill"></i></div>
+                <div class="card-title">Password Resets</div>
+                <div class="card-subtitle"><?php echo $stats['pending_pwd_resets']; ?> pending request<?php echo $stats['pending_pwd_resets'] != 1 ? 's' : ''; ?></div>
+                <?php if($stats['pending_pwd_resets'] > 0): ?>
+                <span style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;border-radius:50%;font-size:.7rem;font-weight:700;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;"><?= $stats['pending_pwd_resets'] ?></span>
+                <?php endif; ?>
             </a>
         </div>
         <div class="management-list mb-4" id="coreList">
@@ -1002,11 +1171,48 @@ if ($result) {
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
+            <a href="graduation_students.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #059669, #047857);">
+                    <i class="bi bi-mortarboard-fill"></i>
+                    <?php if (!empty($stats['pending_graduation_students']) && $stats['pending_graduation_students'] > 0): ?>
+                    <span class="badge bg-danger" style="position:absolute;font-size:.65rem;"><?= $stats['pending_graduation_students'] ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="list-content">
+                    <div class="list-title">Graduation Students</div>
+                    <div class="list-subtitle"><?php echo $stats['pending_graduation_students']; ?> pending registrations</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="manage_examination_managers.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);"><i class="bi bi-shield-lock-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Examination Managers</div>
+                    <div class="list-subtitle">Senior exam oversight staff</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
             <a href="manage_examination_officers.php" class="list-item">
                 <div class="list-icon" style="background: linear-gradient(135deg, #ec4899, #db2777);"><i class="bi bi-shield-check"></i></div>
                 <div class="list-content">
                     <div class="list-title">Examination Officers</div>
                     <div class="list-subtitle">Manage exam officers</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="manage_hod.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #0d9488, #0f766e);"><i class="bi bi-building"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Heads of Department</div>
+                    <div class="list-subtitle">Manage HOD accounts</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="manage_dean.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #9a3412, #7c2d12);"><i class="bi bi-award"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Deans</div>
+                    <div class="list-subtitle">Manage faculty deans</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
@@ -1024,6 +1230,50 @@ if ($result) {
                     <div class="list-title">Coordinators</div>
                     <div class="list-subtitle">Manage ODL coordinator accounts</div>
                 </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="manage_research_coordinators.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-journal-bookmark-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Research Coordinators</div>
+                    <div class="list-subtitle"><?php echo $stats['research_coordinators']; ?> dissertation coordinators</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="manage_dissertation_students.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #a855f7, #7c3aed);"><i class="bi bi-mortarboard-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Dissertation Students</div>
+                    <div class="list-subtitle"><?php echo $stats['dissertation_students']; ?> dissertation students</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="graduation_students.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-mortarboard"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Graduation Clearance</div>
+                    <div class="list-subtitle"><?php echo $stats['graduation_total']; ?> applications (<?php echo $stats['graduation_pending']; ?> in progress)</div>
+                </div>
+                <?php if($stats['graduation_pending'] > 0): ?><span class="badge bg-danger ms-2"><?= $stats['graduation_pending'] ?></span><?php endif; ?>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="graduation_report.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #14b8a6, #0d9488);"><i class="bi bi-file-earmark-bar-graph-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Graduation Report</div>
+                    <div class="list-subtitle"><?php echo $stats['graduation_completed']; ?> graduated students</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="reset_passwords.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);"><i class="bi bi-key-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Password Resets</div>
+                    <div class="list-subtitle"><?php echo $stats['pending_pwd_resets']; ?> pending request<?php echo $stats['pending_pwd_resets'] != 1 ? 's' : ''; ?></div>
+                </div>
+                <?php if($stats['pending_pwd_resets'] > 0): ?>
+                <span class="badge bg-danger ms-2"><?= $stats['pending_pwd_resets'] ?></span>
+                <?php endif; ?>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
         </div>
@@ -1122,6 +1372,26 @@ if ($result) {
                 <div class="card-title">Password</div>
                 <div class="card-subtitle">Change credentials</div>
             </a>
+            <a href="calendar_settings.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0ea5e9, #0284c7);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);"><i class="bi bi-calendar-event-fill"></i></div>
+                <div class="card-title">Calendar</div>
+                <div class="card-subtitle">Academic calendar</div>
+            </a>
+            <a href="university_settings.php#system-time" class="management-card" style="--card-gradient: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);"><i class="bi bi-clock-fill"></i></div>
+                <div class="card-title">Date & Time</div>
+                <div class="card-subtitle">System timezone</div>
+            </a>
+            <a href="#" class="management-card" data-bs-toggle="modal" data-bs-target="#systemToolsLoginModal" data-tool="database_manager.php" style="--card-gradient: linear-gradient(135deg, #059669, #047857);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-database-gear"></i></div>
+                <div class="card-title">Database Manager</div>
+                <div class="card-subtitle"><i class="bi bi-lock-fill me-1"></i>Password protected</div>
+            </a>
+            <a href="#" class="management-card" data-bs-toggle="modal" data-bs-target="#systemToolsLoginModal" data-tool="file_manager.php" style="--card-gradient: linear-gradient(135deg, #f97316, #c2410c);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #f97316, #c2410c);"><i class="bi bi-folder2-open"></i></div>
+                <div class="card-title">File Manager</div>
+                <div class="card-subtitle"><i class="bi bi-lock-fill me-1"></i>Password protected</div>
+            </a>
         </div>
         <div class="management-list mb-4" id="settingsList">
             <a href="university_settings.php" class="list-item">
@@ -1153,6 +1423,38 @@ if ($result) {
                 <div class="list-content">
                     <div class="list-title">Change Password</div>
                     <div class="list-subtitle">Update your credentials</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="calendar_settings.php" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);"><i class="bi bi-calendar-event-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Calendar Settings</div>
+                    <div class="list-subtitle">Academic calendar & semester dates</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="university_settings.php#system-time" class="list-item">
+                <div class="list-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);"><i class="bi bi-clock-fill"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Date & Time</div>
+                    <div class="list-subtitle">System timezone & server clock</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="#" class="list-item" data-bs-toggle="modal" data-bs-target="#systemToolsLoginModal" data-tool="database_manager.php">
+                <div class="list-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-database-gear"></i></div>
+                <div class="list-content">
+                    <div class="list-title">Database Manager</div>
+                    <div class="list-subtitle"><i class="bi bi-lock-fill me-1"></i>Backup, restore & SQL console (password protected)</div>
+                </div>
+                <i class="bi bi-chevron-right list-arrow"></i>
+            </a>
+            <a href="#" class="list-item" data-bs-toggle="modal" data-bs-target="#systemToolsLoginModal" data-tool="file_manager.php">
+                <div class="list-icon" style="background: linear-gradient(135deg, #f97316, #c2410c);"><i class="bi bi-folder2-open"></i></div>
+                <div class="list-content">
+                    <div class="list-title">File Manager</div>
+                    <div class="list-subtitle"><i class="bi bi-lock-fill me-1"></i>Browse & edit system files (password protected)</div>
                 </div>
                 <i class="bi bi-chevron-right list-arrow"></i>
             </a>
@@ -1255,24 +1557,25 @@ if ($result) {
         ?>
     </main>
     
-    <!-- File Manager Login Modal -->
-    <div class="modal fade" id="fileManagerLoginModal" tabindex="-1" aria-labelledby="fileManagerLoginModalLabel" aria-hidden="true">
+    <!-- System Tools Password Modal (File Manager & Database Manager) -->
+    <div class="modal fade" id="systemToolsLoginModal" tabindex="-1" aria-labelledby="systemToolsLoginModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title" id="fileManagerLoginModalLabel"><i class="bi bi-shield-lock me-2"></i>File Manager Access</h5>
+                    <h5 class="modal-title" id="systemToolsLoginModalLabel"><i class="bi bi-shield-lock me-2"></i>Restricted Access</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="fileManagerLoginForm" action="file_manager.php" method="POST">
+                <form id="systemToolsLoginForm" method="POST">
+                    <input type="hidden" id="toolTarget" name="tool_target" value="">
                     <div class="modal-body">
                         <div class="alert alert-warning mb-3">
                             <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>Warning:</strong> This area allows direct access to system files. Unauthorized modifications may break the system.
+                            <strong>Warning:</strong> This tool grants direct access to critical system resources. Unauthorized use may damage the system.
                         </div>
-                        <div class="alert alert-danger d-none" id="fmLoginError"></div>
+                        <div class="alert alert-danger d-none" id="sysToolLoginError"></div>
                         <div class="mb-3">
-                            <label for="fmPassword" class="form-label">File Manager Password</label>
-                            <input type="password" class="form-control form-control-lg" id="fmPassword" name="fm_password" required autofocus>
+                            <label for="sysToolPassword" class="form-label">System Tools Password</label>
+                            <input type="password" class="form-control form-control-lg" id="sysToolPassword" name="sys_tool_password" required autofocus>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -1356,7 +1659,50 @@ if ($result) {
                     item.classList.remove('active');
                 }
             });
+
+            // System Tools modal: capture which tool was clicked
+            const sysModal = document.getElementById('systemToolsLoginModal');
+            if (sysModal) {
+                sysModal.addEventListener('show.bs.modal', function(e) {
+                    const trigger = e.relatedTarget;
+                    const tool = trigger ? trigger.getAttribute('data-tool') : '';
+                    document.getElementById('toolTarget').value = tool || '';
+                    document.getElementById('sysToolPassword').value = '';
+                    document.getElementById('sysToolLoginError').classList.add('d-none');
+                });
+            }
+
+            // System Tools form submit — verify password via AJAX
+            const sysForm = document.getElementById('systemToolsLoginForm');
+            if (sysForm) {
+                sysForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const password = document.getElementById('sysToolPassword').value;
+                    const tool = document.getElementById('toolTarget').value;
+                    const errDiv = document.getElementById('sysToolLoginError');
+
+                    fetch('verify_system_tool_password.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: 'password=' + encodeURIComponent(password) + '&tool=' + encodeURIComponent(tool)
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.href = tool;
+                        } else {
+                            errDiv.textContent = data.error || 'Invalid password.';
+                            errDiv.classList.remove('d-none');
+                        }
+                    })
+                    .catch(() => {
+                        errDiv.textContent = 'Request failed. Try again.';
+                        errDiv.classList.remove('d-none');
+                    });
+                });
+            }
         });
     </script>
+    <?php include_once __DIR__ . '/../includes/pwa-footer.php'; ?>
 </body>
 </html>

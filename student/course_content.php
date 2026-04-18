@@ -4,11 +4,18 @@
 
 require_once '../includes/auth.php';
 require_once '../includes/config.php';
+require_once '../includes/student_attendance_helper.php';
 requireLogin();
 requireRole(['student']);
 
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];
+
+// Auto-record attendance for viewing course content (only for paid students)
+$content_course_id = isset($_GET['course_id']) ? (int)$_GET['course_id'] : null;
+if ($content_course_id) {
+    recordAutoAttendance($conn, $student_id, 'content_view', $content_course_id);
+}
 
 // Get student's financial information
 $finance_data = null;
@@ -83,32 +90,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['progress_week'])) {
     $course_id = (int)$_POST['course_id'];
     $current_week = (int)$_POST['current_week'];
     
-    // Check if current week's assignment is submitted
+    // Check if current week's assignments are submitted AND passed (score >= 50%)
     $check_stmt = $conn->prepare("
-        SELECT COUNT(*) as submitted_count
+        SELECT 
+            COUNT(va.assignment_id) as total_assignments,
+            SUM(CASE WHEN vs.submission_id IS NOT NULL THEN 1 ELSE 0 END) as submitted_count,
+            SUM(CASE WHEN vs.score IS NOT NULL AND vs.score >= 50 THEN 1 ELSE 0 END) as passed_count,
+            MIN(CASE WHEN vs.score IS NOT NULL THEN vs.score ELSE NULL END) as min_score
         FROM vle_assignments va
         LEFT JOIN vle_submissions vs ON va.assignment_id = vs.assignment_id AND vs.student_id = ?
-        WHERE va.course_id = ? AND va.week_number = ? AND va.is_active = TRUE AND vs.submission_id IS NOT NULL
+        WHERE va.course_id = ? AND va.week_number = ? AND va.is_active = TRUE
     ");
     $check_stmt->bind_param("sii", $student_id, $course_id, $current_week);
     $check_stmt->execute();
     $result = $check_stmt->get_result();
     $check = $result->fetch_assoc();
     
-    // Get total assignments for the week
-    $total_stmt = $conn->prepare("
-        SELECT COUNT(*) as total_count
-        FROM vle_assignments
-        WHERE course_id = ? AND week_number = ? AND is_active = TRUE
-    ");
-    $total_stmt->bind_param("ii", $course_id, $current_week);
-    $total_stmt->execute();
-    $total_result = $total_stmt->get_result();
-    $total = $total_result->fetch_assoc();
+    // Check if assignments exist and if they're all submitted
+    if ($check['total_assignments'] > 0 && $check['submitted_count'] < $check['total_assignments']) {
+        $_SESSION['week_progress_error'] = "You must submit all assignments for Week $current_week before proceeding to the next week.";
+        header("Location: course_content.php?course_id=" . $course_id);
+        exit();
+    }
     
-    // Only allow progression if all assignments are submitted
-    if ($total['total_count'] > 0 && $check['submitted_count'] < $total['total_count']) {
-        $_SESSION['week_progress_error'] = "You must complete all assignments for Week $current_week before proceeding to the next week.";
+    // Check if all submitted assignments are graded and passed (>= 50%)
+    if ($check['total_assignments'] > 0 && $check['passed_count'] < $check['total_assignments']) {
+        if ($check['submitted_count'] > 0 && $check['min_score'] === null) {
+            $_SESSION['week_progress_error'] = "Your Week $current_week assignment(s) are pending grading. Please wait for your lecturer to grade them before proceeding.";
+        } else {
+            $_SESSION['week_progress_error'] = "You must achieve at least 50% on all Week $current_week assignments to proceed to the next week. Your current score does not meet the passing requirement.";
+        }
         header("Location: course_content.php?course_id=" . $course_id);
         exit();
     }
@@ -116,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['progress_week'])) {
     $stmt = $conn->prepare("UPDATE vle_enrollments SET current_week = current_week + 1 WHERE enrollment_id = ? AND student_id = ?");
     $stmt->bind_param("is", $enrollment_id, $student_id);
     $stmt->execute();
-    $_SESSION['week_progress_success'] = "Successfully progressed to Week " . ($current_week + 1) . "!";
+    $_SESSION['week_progress_success'] = "Congratulations! You passed Week $current_week and have progressed to Week " . ($current_week + 1) . "!";
     header("Location: course_content.php?course_id=" . $course_id);
     exit();
 }
@@ -242,6 +253,23 @@ if ($current_course_id) {
             $progress_data[$row['week_number']][] = $row;
         }
 
+        // Get week summaries and learning objectives
+        $week_summaries = [];
+        $summary_stmt = $conn->prepare("
+            SELECT * FROM vle_week_summaries
+            WHERE course_id = ?
+            ORDER BY week_number
+        ");
+        if ($summary_stmt) {
+            $summary_stmt->bind_param("i", $current_course_id);
+            $summary_stmt->execute();
+            $summary_result = $summary_stmt->get_result();
+            while ($row = $summary_result->fetch_assoc()) {
+                $week_summaries[$row['week_number']] = $row;
+            }
+            $summary_stmt->close();
+        }
+
         // Get student's submissions and grades
         $submissions = [];
         $submission_weeks = []; // Track which weeks have submissions
@@ -271,12 +299,18 @@ if ($current_course_id) {
             $marked_notification_ids = array_map(function($r) { return (int)$r['submission_id']; }, $new_marked_notifications);
         }
         
-        // Check completion status for each week
+        // Check completion and pass status for each week
         $week_completion = [];
+        $week_passed = [];
+        $week_status = [];
         for ($w = 1; $w <= $current_course['total_weeks']; $w++) {
             $completion_stmt = $conn->prepare("
-                SELECT COUNT(*) as total_assignments,
-                       SUM(CASE WHEN vs.submission_id IS NOT NULL THEN 1 ELSE 0 END) as submitted_count
+                SELECT 
+                    COUNT(va.assignment_id) as total_assignments,
+                    SUM(CASE WHEN vs.submission_id IS NOT NULL THEN 1 ELSE 0 END) as submitted_count,
+                    SUM(CASE WHEN vs.score IS NOT NULL AND vs.score >= 50 THEN 1 ELSE 0 END) as passed_count,
+                    SUM(CASE WHEN vs.score IS NOT NULL THEN 1 ELSE 0 END) as graded_count,
+                    AVG(vs.score) as avg_score
                 FROM vle_assignments va
                 LEFT JOIN vle_submissions vs ON va.assignment_id = vs.assignment_id AND vs.student_id = ?
                 WHERE va.course_id = ? AND va.week_number = ? AND va.is_active = TRUE
@@ -285,21 +319,39 @@ if ($current_course_id) {
             $completion_stmt->execute();
             $comp_result = $completion_stmt->get_result();
             $comp = $comp_result->fetch_assoc();
+            
+            // Week is complete if all assignments are submitted
             $week_completion[$w] = ($comp['total_assignments'] > 0 && $comp['submitted_count'] == $comp['total_assignments']);
+            
+            // Week is passed if all assignments are graded and scored >= 50%
+            $week_passed[$w] = ($comp['total_assignments'] > 0 && $comp['passed_count'] == $comp['total_assignments']);
+            
+            // Track detailed status
+            $week_status[$w] = [
+                'total' => $comp['total_assignments'],
+                'submitted' => $comp['submitted_count'],
+                'graded' => $comp['graded_count'],
+                'passed' => $comp['passed_count'],
+                'avg_score' => $comp['avg_score']
+            ];
         }
 
-        // Calculate max accessible week based on grades
-        $passed_weeks = [];
-        foreach ($submissions as $sub) {
-            if ($sub['score'] !== null && $sub['score'] >= 50) {
-                $passed_weeks[$sub['week_number']] = true;
+        // Calculate max accessible week based on passing grades (50% minimum)
+        // Week 1 is always accessible, subsequent weeks require passing previous week
+        $max_accessible_week = 1; // Start with week 1
+        for ($w = 1; $w <= $current_course['total_weeks']; $w++) {
+            if ($week_passed[$w]) {
+                // If week W is passed, week W+1 becomes accessible
+                $max_accessible_week = min($w + 1, $current_course['total_weeks']);
+            } else {
+                // Stop at first unpassed week
+                break;
             }
         }
-        $max_accessible_week = $current_course['current_week'];
-        for ($w = 1; $w <= $current_course['total_weeks']; $w++) {
-            if (!isset($passed_weeks[$w])) break;
-            $max_accessible_week = max($max_accessible_week, $w + 1);
-        }
+        
+        // Also consider the enrollment's current_week (for backward compatibility)
+        // But don't exceed what the student has earned through passing
+        $max_accessible_week = max($max_accessible_week, 1);
 
         // Get course participants
         $participants = [];
@@ -488,8 +540,9 @@ include 'header_nav.php';
                             <p class="mb-2">To gain access to course materials and assignments, you must pay your student fees.</p>
                             <p class="mb-3">
                                 <i class="bi bi-person-fill"></i> <strong>Please contact the Finance Office:</strong><br>
-                                <i class="bi bi-envelope-fill"></i> Email: <a href="mailto:finance@exploitsonline.com" class="alert-link">finance@exploitsonline.com</a><br>
-                                <i class="bi bi-telephone-fill"></i> Contact: Linda Chirwa - Finance Department
+                                <i class="bi bi-envelope-fill"></i> Email: <a href="mailto:finance@exploitsonline.com" class="alert-link">finance@exploitsonline.com</a> / <a href="mailto:accontantll1@exploitsmw.com" class="alert-link">accontantll1@exploitsmw.com</a><br>
+                                <i class="bi bi-telephone-fill"></i> Contact: Finance Officer/DCS - Finance Department<br>
+                                <i class="bi bi-whatsapp"></i> WhatsApp/Call: <a href="tel:0998368766" class="alert-link">0998368766</a>
                             </p>
                             <hr>
                             <div class="d-grid gap-2 d-md-flex">
@@ -508,8 +561,9 @@ include 'header_nav.php';
                             <p class="mb-2">Your current payment allows access to <strong>Week <?php echo $content_access_weeks; ?></strong> only.</p>
                             <p class="mb-2">You are currently on <strong>Week <?php echo $current_course['current_week']; ?></strong>. Additional payment is required to access all course content.</p>
                             <p class="mb-0">
-                                <i class="bi bi-person-fill"></i> <strong>Contact Finance:</strong> Linda Chirwa | 
-                                <i class="bi bi-envelope-fill"></i> <a href="mailto:finance@exploitsonline.com" class="alert-link">finance@exploitsonline.com</a>
+                                <i class="bi bi-person-fill"></i> <strong>Contact Finance:</strong> Finance Officer/DCS | 
+                                <i class="bi bi-envelope-fill"></i> <a href="mailto:finance@exploitsonline.com" class="alert-link">finance@exploitsonline.com</a> / <a href="mailto:accontantll1@exploitsmw.com" class="alert-link">accontantll1@exploitsmw.com</a> |
+                                <i class="bi bi-whatsapp"></i> <a href="tel:0998368766" class="alert-link">0998368766</a>
                             </p>
                         </div>
                     <?php endif; ?>
@@ -531,6 +585,21 @@ include 'header_nav.php';
                         <!-- Content Tab -->
                         <div class="tab-pane fade show active" id="content" role="tabpanel">
                             <div class="mt-3">
+                            
+                    <!-- Week Progression Requirements Info -->
+                    <?php if ($has_paid_fees && $max_accessible_week < $current_course['total_weeks']): ?>
+                        <div class="alert alert-light border mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <i class="bi bi-info-circle-fill text-primary" style="font-size: 1.5rem;"></i>
+                                </div>
+                                <div>
+                                    <strong>Course Progression:</strong> You must score at least <strong>50%</strong> on each week's assignment to unlock the next week's content.
+                                    <span class="ms-2 badge bg-primary">Week <?php echo $max_accessible_week; ?> of <?php echo $current_course['total_weeks']; ?></span>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
 
                     <?php if (!$has_paid_fees): ?>
                         <!-- No Payment - Block All Access -->
@@ -676,10 +745,16 @@ include 'header_nav.php';
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0">
                                     Week <?php echo $week; ?> - <?php echo $week_title; ?>
-                                    <?php if (isset($week_completion[$week]) && $week_completion[$week]): ?>
-                                        <span class="badge bg-success ms-2">✓ Marked as Complete</span>
+                                    <?php 
+                                    // Display week status badges
+                                    if (isset($week_passed[$week]) && $week_passed[$week]): ?>
+                                        <span class="badge bg-success ms-2"><i class="bi bi-check-circle-fill"></i> Passed (<?php echo round($week_status[$week]['avg_score']); ?>%)</span>
+                                    <?php elseif (isset($week_status[$week]) && $week_status[$week]['graded'] > 0 && $week_status[$week]['avg_score'] < 50): ?>
+                                        <span class="badge bg-danger ms-2"><i class="bi bi-x-circle-fill"></i> Below 50% (<?php echo round($week_status[$week]['avg_score']); ?>%)</span>
+                                    <?php elseif (isset($week_completion[$week]) && $week_completion[$week]): ?>
+                                        <span class="badge bg-info ms-2"><i class="bi bi-hourglass-split"></i> Awaiting Grades</span>
                                     <?php elseif (isset($assignments[$week]) && count($assignments[$week]) > 0): ?>
-                                        <span class="badge bg-warning text-dark ms-2">Pending Assignment</span>
+                                        <span class="badge bg-warning text-dark ms-2"><i class="bi bi-pencil-square"></i> Pending Assignment</span>
                                     <?php endif; ?>
                                 </h5>
                                 <div>
@@ -692,6 +767,33 @@ include 'header_nav.php';
                                 </div>
                             </div>
                             <div class="card-body">
+                                <?php if (isset($week_summaries[$week])): ?>
+                                    <!-- Week Summary and Learning Objectives -->
+                                    <div class="alert alert-info mb-4" style="border-left: 4px solid #0d6efd;">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <h6 class="alert-heading"><i class="bi bi-list-task"></i> Main Topics for Week <?php echo $week; ?></h6>
+                                                <div class="small">
+                                                    <?php echo $week_summaries[$week]['main_topics']; ?>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <h6 class="alert-heading"><i class="bi bi-bullseye"></i> Learning Objectives</h6>
+                                                <div class="small">
+                                                    <?php echo $week_summaries[$week]['learning_objectives']; ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <?php if (!empty($week_summaries[$week]['key_concepts'])): ?>
+                                            <hr class="my-2">
+                                            <div class="small">
+                                                <strong><i class="bi bi-key"></i> Key Concepts:</strong> 
+                                                <?php echo htmlspecialchars($week_summaries[$week]['key_concepts']); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                                
                                 <?php if (isset($weekly_content[$week])): ?>
                                     <h6>Content:</h6>
                                     <ul class="list-group mb-3">
@@ -715,18 +817,57 @@ include 'header_nav.php';
                                                     // File previews and links
                                                     if (!empty($file_path)) {
                                                         $file_url = "../uploads/" . htmlspecialchars($file_path);
+                                                        $full_file_path = __DIR__ . "/../uploads/" . $file_path;
+                                                        $file_exists = file_exists($full_file_path);
                                                         $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
                                                         $is_video = in_array($ext, ['mp4','webm','ogg','mov','avi','mkv']);
                                                         $is_image = in_array($ext, ['jpg','jpeg','png','gif','bmp','webp']);
                                                         $is_audio = in_array($ext, ['mp3','wav','aac','flac','ogg']);
-                                                        if ($is_image) {
-                                                            echo '<img src="' . $file_url . '" class="img-fluid my-2" alt="Content Image">';
+                                                        $is_pdf = ($ext === 'pdf');
+                                                        $is_ppt = in_array($ext, ['ppt','pptx']);
+                                                        $is_doc = in_array($ext, ['doc','docx']);
+                                                        
+                                                        if (!$file_exists) {
+                                                            // File doesn't exist - show friendly message
+                                                            $file_display_name = $content['file_name'] ?? basename($file_path);
+                                                            echo '<div class="mt-2">';
+                                                            echo '<span class="badge bg-secondary"><i class="bi bi-file-earmark"></i> ' . htmlspecialchars($file_display_name) . '</span>';
+                                                            echo ' <small class="text-muted">(Resource pending upload)</small>';
+                                                            echo '</div>';
+                                                        } elseif ($is_image) {
+                                                            echo '<div class="mt-2">';
+                                                            echo '<img src="' . $file_url . '" class="img-fluid rounded" style="max-height: 300px;" alt="Content Image">';
+                                                            echo '</div>';
                                                         } elseif ($is_video) {
-                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-primary" target="_blank">View Video Lecture</a>';
+                                                            echo '<div class="mt-2">';
+                                                            echo '<video controls class="w-100" style="max-height: 400px;"><source src="' . $file_url . '" type="video/' . $ext . '">Your browser does not support the video tag.</video>';
+                                                            echo '<br><a href="' . $file_url . '" class="btn btn-sm btn-outline-primary mt-1" target="_blank" download><i class="bi bi-download"></i> Download Video</a>';
+                                                            echo '</div>';
                                                         } elseif ($is_audio) {
-                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-info my-2" target="_blank">View Audio Lecture</a>';
+                                                            echo '<div class="mt-2">';
+                                                            echo '<audio controls class="w-100"><source src="' . $file_url . '" type="audio/' . $ext . '">Your browser does not support the audio tag.</audio>';
+                                                            echo '<br><a href="' . $file_url . '" class="btn btn-sm btn-outline-info mt-1" target="_blank" download><i class="bi bi-download"></i> Download Audio</a>';
+                                                            echo '</div>';
+                                                        } elseif ($is_pdf) {
+                                                            echo '<div class="mt-2">';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-danger" target="_blank"><i class="bi bi-file-pdf"></i> View PDF Document</a> ';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-outline-danger" download><i class="bi bi-download"></i> Download</a>';
+                                                            echo '</div>';
+                                                        } elseif ($is_ppt) {
+                                                            echo '<div class="mt-2">';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-warning" target="_blank"><i class="bi bi-file-slides"></i> View Presentation</a> ';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-outline-warning" download><i class="bi bi-download"></i> Download</a>';
+                                                            echo '</div>';
+                                                        } elseif ($is_doc) {
+                                                            echo '<div class="mt-2">';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-primary" target="_blank"><i class="bi bi-file-word"></i> View Document</a> ';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-outline-primary" download><i class="bi bi-download"></i> Download</a>';
+                                                            echo '</div>';
                                                         } else {
-                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-outline-primary" target="_blank">View Resource</a>';
+                                                            echo '<div class="mt-2">';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-outline-primary" target="_blank"><i class="bi bi-file-earmark"></i> View Resource</a> ';
+                                                            echo '<a href="' . $file_url . '" class="btn btn-sm btn-outline-secondary" download><i class="bi bi-download"></i> Download</a>';
+                                                            echo '</div>';
                                                         }
                                                     }
                                                     // For links
@@ -763,39 +904,84 @@ include 'header_nav.php';
                             </div>
                         </div>
                     <?php endfor; ?>
-                            
-                            <?php if ($current_course['current_week'] < $current_course['total_weeks']): ?>
-                                <?php 
-                                // Check if current week is complete
-                                $current_week = $current_course['current_week'];
-                                $is_current_week_complete = isset($week_completion[$current_week]) && $week_completion[$current_week];
+                    
+                    <?php 
+                    // Show locked weeks message if there are more weeks the student hasn't unlocked
+                    $next_locked_week = $max_accessible_week + 1;
+                    if ($next_locked_week <= min($content_access_weeks, $current_course['total_weeks'])): 
+                    ?>
+                        <div class="card mb-3 border-secondary">
+                            <div class="card-header bg-secondary text-white">
+                                <h5 class="mb-0"><i class="bi bi-lock-fill"></i> Week <?php echo $next_locked_week; ?> - Locked</h5>
+                            </div>
+                            <div class="card-body text-center py-4">
+                                <i class="bi bi-lock-fill text-secondary" style="font-size: 3rem;"></i>
+                                <h5 class="mt-3">Pass Week <?php echo $max_accessible_week; ?> to Unlock</h5>
+                                <p class="text-muted">You need to achieve at least <strong>50%</strong> on Week <?php echo $max_accessible_week; ?> assignment(s) to access this content.</p>
+                                <?php if (isset($week_status[$max_accessible_week])): 
+                                    $ws = $week_status[$max_accessible_week];
                                 ?>
-                                <div class="card mt-3 <?php echo $is_current_week_complete ? 'border-success' : 'border-warning'; ?>">
+                                    <div class="alert alert-light border mt-3">
+                                        <strong>Week <?php echo $max_accessible_week; ?> Status:</strong><br>
+                                        <?php if ($ws['total'] == 0): ?>
+                                            No assignments for this week
+                                        <?php elseif ($ws['submitted'] == 0): ?>
+                                            <span class="text-warning"><i class="bi bi-exclamation-circle"></i> Assignment not submitted yet</span>
+                                        <?php elseif ($ws['graded'] < $ws['submitted']): ?>
+                                            <span class="text-info"><i class="bi bi-hourglass-split"></i> Awaiting grading (<?php echo $ws['graded']; ?>/<?php echo $ws['submitted']; ?> graded)</span>
+                                        <?php elseif ($ws['avg_score'] < 50): ?>
+                                            <span class="text-danger"><i class="bi bi-x-circle"></i> Current score: <?php echo round($ws['avg_score']); ?>% (Need 50% to pass)</span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                            
+                            <?php 
+                            // Progress to next week section
+                            $current_week = $max_accessible_week;
+                            if ($current_week < $current_course['total_weeks'] && $current_week <= $content_access_weeks): 
+                                $is_current_week_complete = isset($week_completion[$current_week]) && $week_completion[$current_week];
+                                $is_current_week_passed = isset($week_passed[$current_week]) && $week_passed[$current_week];
+                                $current_status = $week_status[$current_week] ?? null;
+                            ?>
+                                <div class="card mt-3 <?php echo $is_current_week_passed ? 'border-success' : ($is_current_week_complete ? 'border-info' : 'border-warning'); ?>">
                                     <div class="card-body text-center">
-                                        <?php if ($is_current_week_complete): ?>
-                                            <h5 class="text-success"><i class="bi bi-check-circle-fill"></i> Week <?php echo $current_week; ?> Complete!</h5>
-                                            <p class="text-muted">You can now progress to Week <?php echo $current_week + 1; ?></p>
-                                            <form method="POST" class="d-inline">
-                                                <input type="hidden" name="enrollment_id" value="<?php echo $current_course['enrollment_id']; ?>">
-                                                <input type="hidden" name="course_id" value="<?php echo $current_course_id; ?>">
-                                                <input type="hidden" name="current_week" value="<?php echo $current_week; ?>">
-                                                <button type="submit" name="progress_week" class="btn btn-success btn-lg">
-                                                    <i class="bi bi-arrow-right-circle"></i> Proceed to Week <?php echo $current_week + 1; ?> →
-                                                </button>
-                                            </form>
+                                        <?php if ($is_current_week_passed): ?>
+                                            <h5 class="text-success"><i class="bi bi-trophy-fill"></i> Week <?php echo $current_week; ?> Passed!</h5>
+                                            <p class="text-muted">You scored <?php echo round($current_status['avg_score']); ?>% and can now access Week <?php echo $current_week + 1; ?></p>
+                                            <a href="#week-<?php echo $current_week + 1; ?>" class="btn btn-success btn-lg">
+                                                <i class="bi bi-arrow-right-circle"></i> Go to Week <?php echo $current_week + 1; ?> →
+                                            </a>
+                                        <?php elseif ($is_current_week_complete && $current_status && $current_status['graded'] < $current_status['submitted']): ?>
+                                            <h5 class="text-info"><i class="bi bi-hourglass-split"></i> Week <?php echo $current_week; ?> Submitted - Awaiting Grades</h5>
+                                            <p class="text-muted">Your assignment has been submitted. Please wait for your lecturer to grade it.</p>
+                                            <p class="text-muted">You need at least <strong>50%</strong> to unlock Week <?php echo $current_week + 1; ?>.</p>
+                                            <button type="button" class="btn btn-info btn-lg" disabled>
+                                                <i class="bi bi-hourglass-split"></i> Awaiting Grading
+                                            </button>
+                                        <?php elseif ($is_current_week_complete && $current_status && $current_status['avg_score'] < 50): ?>
+                                            <h5 class="text-danger"><i class="bi bi-x-circle-fill"></i> Week <?php echo $current_week; ?> - Score Below Passing</h5>
+                                            <p class="text-muted">Your current score is <strong><?php echo round($current_status['avg_score']); ?>%</strong>. You need at least <strong>50%</strong> to proceed.</p>
+                                            <p class="text-muted">Please contact your lecturer if you need to resubmit.</p>
+                                            <button type="button" class="btn btn-danger btn-lg" disabled>
+                                                <i class="bi bi-lock-fill"></i> Need 50% to Unlock
+                                            </button>
                                         <?php else: ?>
                                             <h5 class="text-warning"><i class="bi bi-exclamation-triangle"></i> Complete Week <?php echo $current_week; ?> First</h5>
-                                            <p class="text-muted">You must complete all assignments for Week <?php echo $current_week; ?> before proceeding.</p>
+                                            <p class="text-muted">Submit and pass the assignment(s) for Week <?php echo $current_week; ?> with at least <strong>50%</strong> to unlock Week <?php echo $current_week + 1; ?>.</p>
                                             <button type="button" class="btn btn-warning btn-lg" disabled>
                                                 <i class="bi bi-lock-fill"></i> Next Week Locked
                                             </button>
-                                            <p class="mt-2"><small class="text-muted">Complete the assignment(s) above to unlock Week <?php echo $current_week + 1; ?></small></p>
+                                            <p class="mt-2"><small class="text-muted">Complete and pass the assignment(s) above to unlock Week <?php echo $current_week + 1; ?></small></p>
                                         <?php endif; ?>
                                     </div>
                                 </div>
-                            <?php elseif ($current_course['current_week'] >= $current_course['total_weeks']): ?>
+                            <?php elseif ($max_accessible_week >= $current_course['total_weeks']): ?>
                                 <div class="alert alert-success mt-3">
-                                    <strong>Congratulations!</strong> You have completed all weeks for this course.
+                                    <h5><i class="bi bi-trophy-fill"></i> Congratulations!</h5>
+                                    <p class="mb-0">You have successfully completed all weeks for this course.</p>
                                 </div>
                             <?php endif; ?>
                             

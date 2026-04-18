@@ -1185,7 +1185,10 @@ function sendNewAssignmentEmail($student_email, $student_name, $lecturer_name, $
 function sendMessageNotificationEmail($recipient_email, $recipient_name, $sender_email, $sender_name, $subject_text, $message_content, $message_id, $recipient_type) {
     $subject = "New Message: " . htmlspecialchars($subject_text);
     
-    $view_url = SYSTEM_URL . "/$recipient_type/messages.php?message_id=$message_id";
+    // Deep-link: after login, redirect to the messages page with the specific message
+    $messages_path = $recipient_type . '/messages.php?message_id=' . $message_id;
+    $view_url = SYSTEM_URL . '/login.php?redirect_to=' . urlencode($messages_path);
+    $direct_url = SYSTEM_URL . '/' . $messages_path;
     $preview = substr(strip_tags($message_content), 0, 200);
     if (strlen($message_content) > 200) $preview .= '...';
     
@@ -1217,8 +1220,9 @@ function sendMessageNotificationEmail($recipient_email, $recipient_name, $sender
         </div>
         
         <div class='btn-container'>
-            <a href='$view_url' class='btn-primary'>Read Full Message</a>
+            <a href='$direct_url' class='btn-primary'>Read Full Message</a>
         </div>
+        <p style='font-size: 0.85em; color: #64748b; text-align: center;'>If you are not logged in, you will be redirected to login first and then taken to your message.</p>
     ";
     
     $body = getEmailTemplate("New Message", $content, '', '#0891b2');

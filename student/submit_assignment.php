@@ -46,8 +46,9 @@ $existing_submission = $stmt->get_result()->fetch_assoc();
 
 // Fetch assignment questions
 $questions = [];
+$asst_sections = [];
 if ($assignment_id) {
-    $qstmt = $conn->prepare("SELECT * FROM vle_assignment_questions WHERE assignment_id = ? ORDER BY question_id");
+    $qstmt = $conn->prepare("SELECT * FROM vle_assignment_questions WHERE assignment_id = ? ORDER BY section_id, question_order, question_id");
     $qstmt->bind_param("i", $assignment_id);
     $qstmt->execute();
     $qres = $qstmt->get_result();
@@ -55,6 +56,18 @@ if ($assignment_id) {
         $questions[] = $row;
     }
     $qstmt->close();
+
+    // Fetch sections (table may not exist if no assignments created yet)
+    $sec_stmt = @$conn->prepare("SELECT * FROM assignment_sections WHERE assignment_id = ? ORDER BY section_order");
+    if ($sec_stmt) {
+        $sec_stmt->bind_param("i", $assignment_id);
+        $sec_stmt->execute();
+        $sec_res = $sec_stmt->get_result();
+        while ($row = $sec_res->fetch_assoc()) {
+            $asst_sections[] = $row;
+        }
+        $sec_stmt->close();
+    }
 }
 
 // Fetch existing answers if submission exists
@@ -135,6 +148,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $submission_id = $existing_submission ? $existing_submission['submission_id'] : $conn->insert_id;
             $success = "Assignment submitted successfully!";
 
+            // ─── AUTO INTEGRITY CHECK (Plagiarism + AI) ───
+            try {
+                require_once '../includes/integrity_check.php';
+                $engine = new IntegrityCheckEngine($conn);
+
+                // Extract text from uploaded file or text content
+                $check_text = '';
+                if ($file_path) {
+                    $abs_path = '../uploads/submissions/' . $file_path;
+                    if (file_exists($abs_path)) {
+                        $ext = strtolower(pathinfo($abs_path, PATHINFO_EXTENSION));
+                        if ($ext === 'txt') $check_text = file_get_contents($abs_path);
+                        elseif ($ext === 'docx') $check_text = $engine->extractDocxText($abs_path);
+                        elseif ($ext === 'pdf') $check_text = $engine->extractPdfText($abs_path);
+                        elseif ($ext === 'doc') $check_text = $engine->extractDocText($abs_path);
+                        elseif ($ext === 'odt') $check_text = $engine->extractOdtText($abs_path);
+                    }
+                }
+                if (!empty($text_content)) {
+                    $check_text .= "\n" . strip_tags($text_content);
+                }
+                $check_text = trim($check_text);
+
+                if (strlen($check_text) >= 30) {
+                    // Ensure score columns exist
+                    $conn->query("ALTER TABLE vle_submissions ADD COLUMN IF NOT EXISTS plagiarism_score DECIMAL(5,2) DEFAULT NULL");
+                    $conn->query("ALTER TABLE vle_submissions ADD COLUMN IF NOT EXISTS ai_score DECIMAL(5,2) DEFAULT NULL");
+                    $conn->query("ALTER TABLE vle_submissions ADD COLUMN IF NOT EXISTS check_date DATETIME DEFAULT NULL");
+
+                    $ic_result = $engine->checkSubmission($check_text, $submission_id, [
+                        'type' => 'assignment',
+                        'assignment_id' => $assignment_id,
+                        'student_id' => $student_id,
+                    ]);
+
+                    $ic_plag = $ic_result['plagiarism']['score'];
+                    $ic_ai   = $ic_result['ai']['score'];
+
+                    $ic_save = $conn->prepare("UPDATE vle_submissions SET plagiarism_score = ?, ai_score = ?, check_date = NOW() WHERE submission_id = ?");
+                    $ic_save->bind_param("ddi", $ic_plag, $ic_ai, $submission_id);
+                    $ic_save->execute();
+                    $ic_save->close();
+
+                    $success .= " Integrity check complete — Plagiarism: " . round($ic_plag, 1) . "%, AI: " . round($ic_ai, 1) . "%.";
+                }
+            } catch (\Throwable $ic_err) {
+                // Integrity check failure should not block submission
+                error_log("Auto integrity check failed for submission $submission_id: " . $ic_err->getMessage());
+            }
+
             // Save answers to assignment questions
             if (isset($_POST['answers']) && is_array($_POST['answers'])) {
                 foreach ($_POST['answers'] as $qid => $ans) {
@@ -152,10 +215,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $answer_text = is_array($ans) ? json_encode($ans) : trim($ans);
                     $is_correct = null;
                     
-                    // Check if answer is correct for multiple choice and checkboxes
-                    if ($qtype === 'multiple_choice' && $correct_answer) {
+                    // Check if answer is correct for auto-gradeable types
+                    if ($qtype === 'multiple_choice' && $correct_answer !== null && $correct_answer !== '') {
                         $is_correct = ($answer_text == $correct_answer) ? 1 : 0;
-                    } elseif ($qtype === 'checkboxes' && $correct_answer) {
+                    } elseif ($qtype === 'checkboxes' && $correct_answer !== null && $correct_answer !== '') {
+                        $is_correct = ($answer_text == $correct_answer) ? 1 : 0;
+                    } elseif ($qtype === 'true_false' && $correct_answer !== null && $correct_answer !== '') {
+                        $is_correct = (strtolower(trim($answer_text)) === strtolower(trim($correct_answer))) ? 1 : 0;
+                    } elseif ($qtype === 'dropdown' && $correct_answer !== null && $correct_answer !== '') {
                         $is_correct = ($answer_text == $correct_answer) ? 1 : 0;
                     }
                     
@@ -171,6 +238,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $anstmt->execute();
                     $anstmt->close();
                 }
+            }
+
+            // Auto-grade: if all questions are auto-gradeable, compute weighted score by marks
+            $auto_gradeable_types = ['multiple_choice', 'checkboxes', 'true_false', 'dropdown'];
+            $total_questions = count($questions);
+            $auto_gradeable_count = 0;
+            foreach ($questions as $q) {
+                if (in_array($q['question_type'], $auto_gradeable_types) && $q['correct_answer'] !== null && $q['correct_answer'] !== '') {
+                    $auto_gradeable_count++;
+                }
+            }
+
+            if ($auto_gradeable_count > 0 && $auto_gradeable_count === $total_questions) {
+                // Fetch answers with marks per question
+                $score_stmt = $conn->prepare("SELECT aa.question_id, aa.is_correct, COALESCE(aq.marks, 1) as marks FROM vle_assignment_answers aa JOIN vle_assignment_questions aq ON aa.question_id = aq.question_id WHERE aa.assignment_id = ? AND aa.student_id = ?");
+                $score_stmt->bind_param("is", $assignment_id, $student_id);
+                $score_stmt->execute();
+                $score_result = $score_stmt->get_result();
+
+                $earned_marks = 0;
+                $total_marks = 0;
+                while ($row = $score_result->fetch_assoc()) {
+                    $total_marks += (int)$row['marks'];
+                    if ($row['is_correct'] == 1) {
+                        $earned_marks += (int)$row['marks'];
+                    }
+                }
+                $score_stmt->close();
+
+                $max_score = (int)$assignment['max_score'];
+                $auto_score = ($total_marks > 0) ? round(($earned_marks / $total_marks) * $max_score, 2) : 0;
+
+                $grade_stmt = $conn->prepare("UPDATE vle_submissions SET score = ?, status = 'graded', graded_date = NOW() WHERE submission_id = ?");
+                $grade_stmt->bind_param("di", $auto_score, $submission_id);
+                $grade_stmt->execute();
+                $grade_stmt->close();
+
+                $success = "Assignment submitted and auto-graded! Your score: " . $auto_score . "/" . $max_score;
             }
 
             // Get student details
@@ -279,6 +384,29 @@ $user = getCurrentUser();
             font-size: 12px;
             font-weight: 500;
         }
+        /* Integrity Check Styles */
+        .integrity-results {
+            background: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 16px;
+            display: none;
+        }
+        .integrity-results.show { display: block; }
+        .integrity-results h6 { font-weight: 600; color: #202124; margin-bottom: 16px; }
+        .integrity-bar-group { margin-bottom: 14px; }
+        .integrity-bar-group label { font-size: 13px; font-weight: 500; color: #5f6368; display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .integrity-bar-group label span { font-weight: 700; }
+        .integrity-bar { height: 10px; border-radius: 5px; background: #e8eaed; overflow: hidden; }
+        .integrity-bar-fill { height: 100%; border-radius: 5px; transition: width 0.8s ease; }
+        .integrity-scanning { text-align: center; padding: 24px; color: #5f6368; }
+        .integrity-scanning .spinner-border { width: 1.5rem; height: 1.5rem; margin-bottom: 8px; }
+        .integrity-error { color: #d93025; font-size: 13px; margin-top: 8px; }
+        .integrity-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .badge-low { background: #e6f4ea; color: #137333; }
+        .badge-medium { background: #fef7e0; color: #b06000; }
+        .badge-high { background: #fce8e6; color: #c5221f; }
     </style>
 </head>
 <body class="bg-light">
@@ -427,96 +555,99 @@ $user = getCurrentUser();
                         <div class="question-card">
                             <h5 class="mb-4"><i class="bi bi-list-check"></i> Assignment Questions</h5>
                             
-                            <?php foreach ($questions as $index => $q): ?>
+                            <?php
+                            // Group questions: top-level vs sub-questions
+                            $top_questions = array_filter($questions, function($q) { return empty($q['parent_question_id']); });
+                            $sub_map = [];
+                            foreach ($questions as $q) {
+                                if (!empty($q['parent_question_id'])) {
+                                    $sub_map[$q['parent_question_id']][] = $q;
+                                }
+                            }
+                            // Group by section
+                            $by_section = [];
+                            $unsectioned = [];
+                            foreach ($top_questions as $q) {
+                                if (!empty($q['section_id'])) {
+                                    $by_section[$q['section_id']][] = $q;
+                                } else {
+                                    $unsectioned[] = $q;
+                                }
+                            }
+                            $qnum = 0;
+                            ?>
+
+                            <?php foreach ($asst_sections as $sec): ?>
+                                <div class="p-3 mb-3 rounded text-white" style="background: linear-gradient(135deg, #1e3a5f, #2d5a87);">
+                                    <h6 class="mb-1">Section <?php echo htmlspecialchars($sec['section_label']); ?>: <?php echo htmlspecialchars($sec['section_title']); ?></h6>
+                                    <?php if (!empty($sec['instructions'])): ?>
+                                        <small class="text-white-50"><?php echo htmlspecialchars($sec['instructions']); ?></small>
+                                    <?php endif; ?>
+                                    <?php if ($sec['total_marks']): ?>
+                                        <span class="badge bg-light text-dark ms-2"><?php echo $sec['total_marks']; ?> marks</span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php
+                                $sec_qs = $by_section[$sec['section_id']] ?? [];
+                                foreach ($sec_qs as $q):
+                                    $qnum++;
+                                    $q_id = $q['question_id'];
+                                    $q_marks = $q['marks'] ?? 1;
+                                ?>
                                 <div class="mb-4 pb-4" style="border-bottom: 1px solid #dadce0;">
                                     <div class="question-label">
-                                        <span class="badge bg-primary me-2"><?php echo ($index + 1); ?></span>
+                                        <span class="badge bg-primary me-2"><?php echo $qnum; ?></span>
                                         <?php echo htmlspecialchars($q['question_text']); ?>
+                                        <span class="badge bg-info ms-2"><?php echo $q_marks; ?> mk</span>
                                     </div>
-                                    
-                                    <?php if ($q['question_type'] === 'multiple_choice' && !empty($q['options'])): ?>
-                                        <?php 
-                                        $opts = json_decode($q['options'], true);
-                                        $saved_answer = $existing_answers[$q['question_id']] ?? '';
-                                        if (is_array($opts)): 
-                                            foreach ($opts as $oi => $opt): 
+                                    <?php include __DIR__ . '/_render_question_input.php'; ?>
+                                    <?php if (!empty($sub_map[$q_id])): ?>
+                                        <?php foreach ($sub_map[$q_id] as $sub):
+                                            $q = $sub;
+                                            $q_id = $sub['question_id'];
+                                            $q_marks = $sub['marks'] ?? 1;
                                         ?>
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input" type="radio" 
-                                                       name="answers[<?php echo $q['question_id']; ?>]" 
-                                                       id="q_<?php echo $q['question_id']; ?>_opt_<?php echo $oi; ?>" 
-                                                       value="<?php echo htmlspecialchars($opt); ?>"
-                                                       <?php echo ($saved_answer == $opt) ? 'checked' : ''; ?>
-                                                       required>
-                                                <label class="form-check-label" 
-                                                       for="q_<?php echo $q['question_id']; ?>_opt_<?php echo $oi; ?>">
-                                                    <?php echo htmlspecialchars($opt); ?>
-                                                </label>
+                                        <div class="ms-4 mt-3 p-3 bg-light border-start border-3 border-info rounded">
+                                            <div class="question-label">
+                                                <span class="badge bg-secondary me-1">(<?php echo htmlspecialchars($sub['sub_label'] ?? '?'); ?>)</span>
+                                                <?php echo htmlspecialchars($sub['question_text']); ?>
+                                                <span class="badge bg-info ms-2"><?php echo $q_marks; ?> mk</span>
                                             </div>
-                                        <?php 
-                                            endforeach; 
-                                        endif; 
+                                            <?php include __DIR__ . '/_render_question_input.php'; ?>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endforeach; ?>
+                            <?php endforeach; ?>
+
+                            <?php foreach ($unsectioned as $q):
+                                $qnum++;
+                                $q_id = $q['question_id'];
+                                $q_marks = $q['marks'] ?? 1;
+                            ?>
+                                <div class="mb-4 pb-4" style="border-bottom: 1px solid #dadce0;">
+                                    <div class="question-label">
+                                        <span class="badge bg-primary me-2"><?php echo $qnum; ?></span>
+                                        <?php echo htmlspecialchars($q['question_text']); ?>
+                                        <span class="badge bg-info ms-2"><?php echo $q_marks; ?> mk</span>
+                                    </div>
+                                    <?php include __DIR__ . '/_render_question_input.php'; ?>
+                                    <?php if (!empty($sub_map[$q_id])): ?>
+                                        <?php foreach ($sub_map[$q_id] as $sub):
+                                            $q = $sub;
+                                            $q_id = $sub['question_id'];
+                                            $q_marks = $sub['marks'] ?? 1;
                                         ?>
-                                        
-                                    <?php elseif ($q['question_type'] === 'checkboxes' && !empty($q['options'])): ?>
-                                        <?php 
-                                        $opts = json_decode($q['options'], true);
-                                        $saved_answer = $existing_answers[$q['question_id']] ?? '[]';
-                                        $saved_array = json_decode($saved_answer, true) ?: [];
-                                        if (is_array($opts)): 
-                                            foreach ($opts as $oi => $opt): 
-                                        ?>
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input" type="checkbox" 
-                                                       name="answers[<?php echo $q['question_id']; ?>][]" 
-                                                       id="q_<?php echo $q['question_id']; ?>_opt_<?php echo $oi; ?>" 
-                                                       value="<?php echo htmlspecialchars($opt); ?>"
-                                                       <?php echo in_array($opt, $saved_array) ? 'checked' : ''; ?>>
-                                                <label class="form-check-label" 
-                                                       for="q_<?php echo $q['question_id']; ?>_opt_<?php echo $oi; ?>">
-                                                    <?php echo htmlspecialchars($opt); ?>
-                                                </label>
+                                        <div class="ms-4 mt-3 p-3 bg-light border-start border-3 border-info rounded">
+                                            <div class="question-label">
+                                                <span class="badge bg-secondary me-1">(<?php echo htmlspecialchars($sub['sub_label'] ?? '?'); ?>)</span>
+                                                <?php echo htmlspecialchars($sub['question_text']); ?>
+                                                <span class="badge bg-info ms-2"><?php echo $q_marks; ?> mk</span>
                                             </div>
-                                        <?php 
-                                            endforeach; 
-                                        endif; 
-                                        ?>
-                                        
-                                    <?php elseif ($q['question_type'] === 'dropdown' && !empty($q['options'])): ?>
-                                        <?php 
-                                        $opts = json_decode($q['options'], true);
-                                        $saved_answer = $existing_answers[$q['question_id']] ?? '';
-                                        ?>
-                                        <select class="form-select" name="answers[<?php echo $q['question_id']; ?>]" required>
-                                            <option value="">-- Select an option --</option>
-                                            <?php if (is_array($opts)): 
-                                                foreach ($opts as $opt): 
-                                            ?>
-                                                <option value="<?php echo htmlspecialchars($opt); ?>"
-                                                        <?php echo ($saved_answer == $opt) ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($opt); ?>
-                                                </option>
-                                            <?php 
-                                                endforeach; 
-                                            endif; 
-                                            ?>
-                                        </select>
-                                        
-                                    <?php elseif ($q['question_type'] === 'short_answer'): ?>
-                                        <?php $saved_answer = $existing_answers[$q['question_id']] ?? ''; ?>
-                                        <input type="text" class="form-control" 
-                                               name="answers[<?php echo $q['question_id']; ?>]" 
-                                               value="<?php echo htmlspecialchars($saved_answer); ?>"
-                                               placeholder="Type your answer here..." 
-                                               required>
-                                               
-                                    <?php else: ?>
-                                        <?php $saved_answer = $existing_answers[$q['question_id']] ?? ''; ?>
-                                        <textarea class="form-control" 
-                                                  name="answers[<?php echo $q['question_id']; ?>]" 
-                                                  rows="4" 
-                                                  placeholder="Type your answer here..." 
-                                                  required><?php echo htmlspecialchars($saved_answer); ?></textarea>
+                                            <?php include __DIR__ . '/_render_question_input.php'; ?>
+                                        </div>
+                                        <?php endforeach; ?>
                                     <?php endif; ?>
                                 </div>
                             <?php endforeach; ?>
@@ -539,15 +670,38 @@ $user = getCurrentUser();
                                 <label class="form-label">
                                     <i class="bi bi-file-earmark-arrow-up"></i> File Upload (Optional)
                                 </label>
-                                <input type="file" class="form-control" name="submission_file">
-                                <div class="form-text">Upload documents, PDFs, images, or other files</div>
+                                <input type="file" class="form-control" name="submission_file" id="submissionFileInput">
+                                <div class="form-text">Upload documents, PDFs, images, or other files. Supported files (PDF, DOCX, DOC, TXT) will be auto-checked for plagiarism &amp; AI content.</div>
+                            </div>
+
+                            <!-- Integrity Check Results -->
+                            <div class="integrity-results" id="integrityResults">
+                                <div id="integrityScanningState" class="integrity-scanning">
+                                    <div class="spinner-border text-primary" role="status"></div>
+                                    <div>Scanning your document for plagiarism &amp; AI content...</div>
+                                </div>
+                                <div id="integrityResultsContent" style="display:none;">
+                                    <h6><i class="bi bi-shield-check"></i> Document Integrity Check</h6>
+                                    <div class="integrity-bar-group">
+                                        <label>Plagiarism Similarity <span id="plagiarismScore">0%</span></label>
+                                        <div class="integrity-bar"><div class="integrity-bar-fill" id="plagiarismBar" style="width:0%"></div></div>
+                                        <div class="mt-1"><span class="integrity-badge" id="plagiarismBadge"></span></div>
+                                    </div>
+                                    <div class="integrity-bar-group">
+                                        <label>AI Content Detection <span id="aiScore">0%</span></label>
+                                        <div class="integrity-bar"><div class="integrity-bar-fill" id="aiBar" style="width:0%"></div></div>
+                                        <div class="mt-1"><span class="integrity-badge" id="aiBadge"></span></div>
+                                    </div>
+                                    <div class="form-text mt-2" id="wordCountInfo"></div>
+                                </div>
+                                <div id="integrityError" class="integrity-error" style="display:none;"></div>
                             </div>
                         </div>
                     <?php endif; ?>
 
                     <!-- Submit Button -->
                     <div class="text-end">
-                        <button type="submit" class="btn btn-primary btn-lg px-5">
+                        <button type="submit" class="btn btn-primary btn-lg px-5" id="submitBtn">
                             <i class="bi bi-send"></i> Submit Assignment
                         </button>
                     </div>
@@ -558,6 +712,21 @@ $user = getCurrentUser();
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Disable submit button on form submission
+    (function() {
+        var form = document.getElementById('assignmentForm');
+        var btn = document.getElementById('submitBtn');
+        if (form && btn) {
+            form.addEventListener('submit', function() {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Submitted';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-success');
+            });
+        }
+    })();
+    </script>
         <?php $time_limit = isset($assignment['time_limit']) ? (int)$assignment['time_limit'] : 0; ?>
         <?php if ($time_limit > 0): ?>
         <script>
@@ -599,6 +768,90 @@ $user = getCurrentUser();
         <?php endif; ?>
     <script src="https://cdn.ckeditor.com/ckeditor5/41.2.1/classic/ckeditor.js"></script>
     <script>
+        // ─── Integrity Check on File Upload ───
+        (function() {
+            const fileInput = document.getElementById('submissionFileInput');
+            const resultsBox = document.getElementById('integrityResults');
+            if (!fileInput || !resultsBox) return;
+
+            const scanningState = document.getElementById('integrityScanningState');
+            const resultsContent = document.getElementById('integrityResultsContent');
+            const errorDiv = document.getElementById('integrityError');
+            const checkableExts = ['pdf', 'docx', 'doc', 'txt'];
+
+            fileInput.addEventListener('change', function() {
+                const file = this.files[0];
+                if (!file) { resultsBox.classList.remove('show'); return; }
+
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!checkableExts.includes(ext)) {
+                    resultsBox.classList.remove('show');
+                    return;
+                }
+
+                // Show scanning state
+                resultsBox.classList.add('show');
+                scanningState.style.display = '';
+                resultsContent.style.display = 'none';
+                errorDiv.style.display = 'none';
+
+                const formData = new FormData();
+                formData.append('check_file', file);
+                formData.append('assignment_id', '<?php echo (int)$assignment_id; ?>');
+
+                // Include text content if available
+                const textEl = document.getElementById('text_content');
+                if (textEl && textEl.value.trim()) {
+                    formData.append('text_content', textEl.value);
+                }
+
+                fetch('../api/check_upload.php', { method: 'POST', body: formData })
+                    .then(r => r.json())
+                    .then(data => {
+                        scanningState.style.display = 'none';
+                        if (!data.success) {
+                            errorDiv.textContent = data.error || 'Check failed.';
+                            errorDiv.style.display = '';
+                            return;
+                        }
+                        resultsContent.style.display = '';
+                        renderBar('plagiarism', data.plagiarism_score);
+                        renderBar('ai', data.ai_score);
+                        document.getElementById('wordCountInfo').textContent = 'Word count: ' + (data.word_count || 0);
+                    })
+                    .catch(() => {
+                        scanningState.style.display = 'none';
+                        errorDiv.textContent = 'Could not complete integrity check. You may still submit.';
+                        errorDiv.style.display = '';
+                    });
+            });
+
+            function renderBar(type, score) {
+                score = parseFloat(score) || 0;
+                const bar = document.getElementById(type === 'plagiarism' ? 'plagiarismBar' : 'aiBar');
+                const label = document.getElementById(type === 'plagiarism' ? 'plagiarismScore' : 'aiScore');
+                const badge = document.getElementById(type === 'plagiarism' ? 'plagiarismBadge' : 'aiBadge');
+
+                label.textContent = score.toFixed(1) + '%';
+                bar.style.width = Math.min(score, 100) + '%';
+
+                let color, badgeClass, badgeText;
+                if (type === 'plagiarism') {
+                    if (score <= 15) { color = '#34a853'; badgeClass = 'badge-low'; badgeText = 'Low similarity'; }
+                    else if (score <= 30) { color = '#fbbc04'; badgeClass = 'badge-medium'; badgeText = 'Moderate similarity'; }
+                    else { color = '#ea4335'; badgeClass = 'badge-high'; badgeText = 'High similarity'; }
+                } else {
+                    if (score <= 20) { color = '#34a853'; badgeClass = 'badge-low'; badgeText = 'Likely human'; }
+                    else if (score <= 40) { color = '#fbbc04'; badgeClass = 'badge-medium'; badgeText = 'Mixed signals'; }
+                    else { color = '#ea4335'; badgeClass = 'badge-high'; badgeText = 'Likely AI-generated'; }
+                }
+
+                bar.style.backgroundColor = color;
+                badge.className = 'integrity-badge ' + badgeClass;
+                badge.textContent = badgeText;
+            }
+        })();
+
         const textContentElement = document.querySelector('#text_content');
         if (textContentElement) {
             ClassicEditor.create(textContentElement, {

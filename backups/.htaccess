@@ -1,0 +1,8 @@
+# Protect SQL backup files from direct access
+<FilesMatch "\.(sql|bak|backup)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Allow directory listing only for authorized users
+Options -Indexes

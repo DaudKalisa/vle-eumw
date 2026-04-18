@@ -9,7 +9,12 @@ $conn = getDbConnection();
 // Auto-add semester column if missing
 $col_check = $conn->query("SHOW COLUMNS FROM vle_courses LIKE 'semester'");
 if ($col_check && $col_check->num_rows === 0) {
-    $conn->query("ALTER TABLE vle_courses ADD COLUMN semester ENUM('One','Two') DEFAULT 'One' AFTER year_of_study");
+    $conn->query("ALTER TABLE vle_courses ADD COLUMN semester ENUM('One','Two','Both') DEFAULT 'One' AFTER year_of_study");
+}
+// Auto-add applicable_years column if missing
+$col_check2 = $conn->query("SHOW COLUMNS FROM vle_courses LIKE 'applicable_years'");
+if ($col_check2 && $col_check2->num_rows === 0) {
+    $conn->query("ALTER TABLE vle_courses ADD COLUMN applicable_years VARCHAR(50) DEFAULT NULL AFTER year_of_study");
 }
 
 // Auto-ensure required programs exist in programs table
@@ -70,9 +75,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['inline_update_course'
         $stmt->close();
     } elseif ($field === 'year_semester') {
         $year = (int)($_POST['year'] ?? 0);
-        $semester = in_array($_POST['semester'] ?? '', ['One', 'Two']) ? $_POST['semester'] : 'One';
-        $stmt = $conn->prepare("UPDATE vle_courses SET year_of_study = ?, semester = ? WHERE course_id = ?");
-        $stmt->bind_param("isi", $year, $semester, $course_id);
+        $semester = in_array($_POST['semester'] ?? '', ['One', 'Two', 'Both']) ? $_POST['semester'] : 'One';
+        $applicable_years = trim($_POST['applicable_years'] ?? '');
+        $applicable_years = !empty($applicable_years) ? $applicable_years : null;
+        $stmt = $conn->prepare("UPDATE vle_courses SET year_of_study = ?, applicable_years = ?, semester = ? WHERE course_id = ?");
+        $stmt->bind_param("issi", $year, $applicable_years, $semester, $course_id);
         if ($stmt->execute()) {
             echo json_encode(['success' => true, 'message' => 'Year/Semester updated']);
         } else {
@@ -94,12 +101,64 @@ if (isset($_SESSION['success_message'])) {
 // Handle template download
 if (isset($_GET['download_template'])) {
     header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="courses_template.csv"');
     
-    echo "Course Code,Course Name,Description,Program of Study,Year of Study,Semester,Total Weeks,Lecturer ID\n";
-    echo "CS101,Introduction to Programming,Basic programming concepts,Computer Science,1,One,16,\n";
-    echo "CS201,Data Structures,Advanced data structures,Computer Science,2,One,16,\n";
-    echo "BUS101,Business Fundamentals,Introduction to business,Business Administration,1,Two,16,\n";
+    // Build list of available programs for instructions
+    $prog_list = [];
+    $prog_result = $conn->query("SELECT program_name FROM programs WHERE is_active = 1 ORDER BY program_name");
+    if ($prog_result) {
+        while ($p = $prog_result->fetch_assoc()) {
+            $prog_list[] = $p['program_name'];
+        }
+    }
+    
+    if (isset($_GET['export_existing'])) {
+        // Export all existing courses WITH their associated programs
+        header('Content-Disposition: attachment; filename="courses_export.csv"');
+        
+        $output = fopen('php://output', 'w');
+        fputcsv($output, ['Course Code', 'Course Name', 'Description', 'Program of Study', 'Year of Study', 'Semester', 'Total Weeks', 'Lecturer ID', 'Associated Programs']);
+        
+        $courses_result = $conn->query("SELECT c.course_id, c.course_code, c.course_name, c.description, c.program_of_study, c.year_of_study, c.semester, c.total_weeks, c.lecturer_id FROM vle_courses c ORDER BY c.course_code");
+        if ($courses_result) {
+            while ($c = $courses_result->fetch_assoc()) {
+                // Get associated programs for this course
+                $assoc_progs = [];
+                $ap_result = $conn->query("SELECT p.program_name FROM course_programs cp INNER JOIN programs p ON cp.program_id = p.program_id WHERE cp.course_id = " . (int)$c['course_id'] . " ORDER BY p.program_name");
+                if ($ap_result) {
+                    while ($ap = $ap_result->fetch_assoc()) {
+                        $assoc_progs[] = $ap['program_name'];
+                    }
+                }
+                
+                fputcsv($output, [
+                    $c['course_code'],
+                    $c['course_name'],
+                    $c['description'] ?? '',
+                    $c['program_of_study'] ?? '',
+                    $c['year_of_study'] ?? 1,
+                    $c['semester'] ?? 'One',
+                    $c['total_weeks'] ?? 16,
+                    $c['lecturer_id'] ?? '',
+                    implode(';', $assoc_progs)
+                ]);
+            }
+        }
+        fclose($output);
+    } else {
+        // Download blank template with sample rows
+        header('Content-Disposition: attachment; filename="courses_template.csv"');
+        
+        echo "Course Code,Course Name,Description,Program of Study,Year of Study,Semester,Total Weeks,Lecturer ID,Associated Programs\n";
+        echo "CS101,Introduction to Programming,Basic programming concepts,Computer Science,1,One,16,,\"Information Technology;Business Administration\"\n";
+        echo "CS201,Data Structures,Advanced data structures,Computer Science,2,One,16,,\n";
+        echo "BUS101,Business Fundamentals,Introduction to business,Business Administration,1,Two,16,,\"Accounting and Finance;Marketing;Economics\"\n";
+        echo "\n";
+        echo "# INSTRUCTIONS:\n";
+        echo "# Associated Programs column: semicolon-separated list of additional programs that also study this course\n";
+        echo "# Available programs: " . implode('; ', $prog_list) . "\n";
+        echo "# Leave Associated Programs empty if the course belongs only to its primary Program of Study\n";
+        echo "# Re-uploading existing course codes will UPDATE the course and REPLACE its associated programs\n";
+    }
     exit;
 }
 
@@ -119,11 +178,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                 $header = fgetcsv($handle);
                 
                 $imported_count = 0;
+                $updated_count = 0;
                 $error_rows = [];
                 $row_number = 1;
                 
                 while (($data = fgetcsv($handle)) !== false) {
                     $row_number++;
+                    
+                    // Skip comment/instruction rows
+                    if (isset($data[0]) && strpos(trim($data[0]), '#') === 0) {
+                        continue;
+                    }
                     
                     if (count($data) < 7) {
                         $error_rows[] = "Row $row_number: Insufficient columns";
@@ -136,9 +201,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                     $program = trim($data[3]);
                     $year_of_study = isset($data[4]) ? (int)trim($data[4]) : 1;
                     $semester = isset($data[5]) ? trim($data[5]) : 'One';
-                    $semester = in_array($semester, ['One', 'Two']) ? $semester : 'One';
+                    $semester = in_array($semester, ['One', 'Two', 'Both']) ? $semester : 'One';
                     $total_weeks = isset($data[6]) ? (int)trim($data[6]) : 16;
                     $lecturer_id = isset($data[7]) && !empty(trim($data[7])) ? (int)trim($data[7]) : NULL;
+                    $associated_programs_str = isset($data[8]) ? trim($data[8]) : '';
                     
                     if (empty($course_code) || empty($course_name)) {
                         $error_rows[] = "Row $row_number: Course code and name are required";
@@ -149,31 +215,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                     $check_stmt = $conn->prepare("SELECT course_id FROM vle_courses WHERE course_code = ?");
                     $check_stmt->bind_param("s", $course_code);
                     $check_stmt->execute();
-                    $result = $check_stmt->get_result();
-                    
-                    if ($result->num_rows > 0) {
-                        $error_rows[] = "Row $row_number: Course code '$course_code' already exists";
-                        $check_stmt->close();
-                        continue;
-                    }
+                    $check_result = $check_stmt->get_result();
+                    $existing_course = $check_result->fetch_assoc();
                     $check_stmt->close();
                     
-                    // Insert course
-                    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("sssiisis", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester);
-                    
-                    if ($stmt->execute()) {
-                        $imported_count++;
-                    } else {
-                        $error_rows[] = "Row $row_number: Database error - " . $stmt->error;
+                    // Validate lecturer_id exists in lecturers table (FK constraint)
+                    if ($lecturer_id !== NULL) {
+                        $lec_check = $conn->prepare("SELECT lecturer_id FROM lecturers WHERE lecturer_id = ?");
+                        $lec_check->bind_param("i", $lecturer_id);
+                        $lec_check->execute();
+                        if ($lec_check->get_result()->num_rows === 0) {
+                            $lecturer_id = NULL;
+                        }
+                        $lec_check->close();
                     }
-                    $stmt->close();
+                    
+                    if ($existing_course) {
+                        // UPDATE existing course details
+                        $existing_id = (int)$existing_course['course_id'];
+                        $upd = $conn->prepare("UPDATE vle_courses SET course_name = ?, description = ?, program_of_study = ?, year_of_study = ?, semester = ?, total_weeks = ?, lecturer_id = ? WHERE course_id = ?");
+                        $upd->bind_param("sssisiii", $course_name, $description, $program, $year_of_study, $semester, $total_weeks, $lecturer_id, $existing_id);
+                        
+                        if ($upd->execute()) {
+                            $updated_count++;
+                            
+                            // Update associated programs — replace existing with what's in the CSV
+                            if (!empty($associated_programs_str)) {
+                                // Clear existing associations first, then insert from CSV
+                                $conn->query("DELETE FROM course_programs WHERE course_id = $existing_id");
+                                
+                                $assoc_names = array_map('trim', explode(';', $associated_programs_str));
+                                $assoc_insert = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
+                                foreach ($assoc_names as $assoc_name) {
+                                    if (empty($assoc_name)) continue;
+                                    $prog_lookup = $conn->prepare("SELECT program_id FROM programs WHERE program_name = ? AND is_active = 1");
+                                    $prog_lookup->bind_param("s", $assoc_name);
+                                    $prog_lookup->execute();
+                                    $prog_result = $prog_lookup->get_result();
+                                    if ($prog_row = $prog_result->fetch_assoc()) {
+                                        $assoc_insert->bind_param("ii", $existing_id, $prog_row['program_id']);
+                                        $assoc_insert->execute();
+                                    }
+                                    $prog_lookup->close();
+                                }
+                                $assoc_insert->close();
+                            }
+                            // If Associated Programs column is empty, existing associations are kept unchanged
+                        } else {
+                            $error_rows[] = "Row $row_number: Error updating '$course_code' - " . $upd->error;
+                        }
+                        $upd->close();
+                    } else {
+                        // INSERT new course
+                        $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->bind_param("sssiisis", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester);
+                    
+                        if ($stmt->execute()) {
+                            $new_course_id = $conn->insert_id;
+                            $imported_count++;
+                        
+                            // Handle associated programs from CSV
+                            if (!empty($associated_programs_str)) {
+                                $assoc_names = array_map('trim', explode(';', $associated_programs_str));
+                                $assoc_insert = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
+                                foreach ($assoc_names as $assoc_name) {
+                                    if (empty($assoc_name)) continue;
+                                    $prog_lookup = $conn->prepare("SELECT program_id FROM programs WHERE program_name = ? AND is_active = 1");
+                                    $prog_lookup->bind_param("s", $assoc_name);
+                                    $prog_lookup->execute();
+                                    $prog_result = $prog_lookup->get_result();
+                                    if ($prog_row = $prog_result->fetch_assoc()) {
+                                        $assoc_insert->bind_param("ii", $new_course_id, $prog_row['program_id']);
+                                        $assoc_insert->execute();
+                                    }
+                                    $prog_lookup->close();
+                                }
+                                $assoc_insert->close();
+                            }
+                        } else {
+                            $error_rows[] = "Row $row_number: Database error - " . $stmt->error;
+                        }
+                        $stmt->close();
+                    }
                 }
                 
                 fclose($handle);
                 
-                if ($imported_count > 0) {
-                    $success_message = "Successfully imported $imported_count course(s)!";
+                // Build success message
+                $msg_parts = [];
+                if ($imported_count > 0) $msg_parts[] = "imported $imported_count new course(s)";
+                if ($updated_count > 0) $msg_parts[] = "updated $updated_count existing course(s)";
+                if (!empty($msg_parts)) {
+                    $success_message = "Successfully " . implode(" and ", $msg_parts) . "!";
                 }
                 
                 if (!empty($error_rows)) {
@@ -200,15 +333,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_course'])) {
     $course_name = $_POST['course_name'];
     $description = $_POST['description'];
     $program = $_POST['program'];
-    $year_of_study = $_POST['year_of_study'];
+    
+    // Handle multi-year selection
+    $selected_years = $_POST['years'] ?? [];
+    $selected_years = array_filter(array_map('intval', $selected_years), function($y) { return $y >= 1 && $y <= 4; });
+    sort($selected_years);
+    $year_of_study = !empty($selected_years) ? $selected_years[0] : (int)($_POST['year_of_study'] ?? 1);
+    $additional_years = array_filter($selected_years, function($y) use ($year_of_study) { return $y != $year_of_study; });
+    $applicable_years = !empty($additional_years) ? implode(',', $additional_years) : null;
+    
     $semester = $_POST['semester'];
-    $lecturer_id = !empty($_POST['lecturer_id']) ? $_POST['lecturer_id'] : NULL;
+    $semester = in_array($semester, ['One', 'Two', 'Both']) ? $semester : 'One';
+    $lecturer_id = !empty($_POST['lecturer_id']) ? (int)$_POST['lecturer_id'] : NULL;
     $total_weeks = $_POST['total_weeks'];
     
-    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssiisis", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester);
+    // Validate lecturer_id exists in lecturers table (FK constraint)
+    if ($lecturer_id !== NULL) {
+        $lec_check = $conn->prepare("SELECT lecturer_id FROM lecturers WHERE lecturer_id = ?");
+        $lec_check->bind_param("i", $lecturer_id);
+        $lec_check->execute();
+        if ($lec_check->get_result()->num_rows === 0) {
+            $lecturer_id = NULL;
+        }
+        $lec_check->close();
+    }
+    
+    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, applicable_years, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("sssiisiss", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $applicable_years, $semester);
     
     if ($stmt->execute()) {
+        $new_course_id = $conn->insert_id;
+        
+        // Handle additional program associations
+        $additional_programs = $_POST['additional_programs'] ?? [];
+        if (!empty($additional_programs)) {
+            $assoc_stmt = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
+            foreach ($additional_programs as $prog_id) {
+                $prog_id = (int)$prog_id;
+                if ($prog_id > 0) {
+                    $assoc_stmt->bind_param("ii", $new_course_id, $prog_id);
+                    $assoc_stmt->execute();
+                }
+            }
+            $assoc_stmt->close();
+        }
+        
         $success_message = "Course created successfully!";
     } else {
         $error_message = "Error creating course: " . $conn->error;
@@ -422,6 +591,15 @@ while ($row = $result->fetch_assoc()) {
     $programs[] = $row['program_name'];
 }
 
+// Get all programs with IDs for associated programs multi-select
+$all_programs = [];
+$result = $conn->query("SELECT program_id, program_code, program_name FROM programs WHERE is_active = 1 ORDER BY program_name");
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $all_programs[] = $row;
+    }
+}
+
 // Check if program_of_study and year_of_study columns exist in vle_courses
 $columns_exist = false;
 $result = $conn->query("SHOW COLUMNS FROM vle_courses LIKE 'program_of_study'");
@@ -478,28 +656,7 @@ while ($row = $result->fetch_assoc()) {
             border-radius: 12px;
             padding: 1.25rem;
         }
-        .ys-btn {
-            border: 2px solid #dee2e6;
-            background: #fff;
-            color: #495057;
-            font-weight: 600;
-            font-size: 0.82rem;
-            padding: 0.45rem 0.9rem;
-            border-radius: 8px;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-        .ys-btn:hover {
-            border-color: #1e3c72;
-            color: #1e3c72;
-            background: #eef2ff;
-        }
-        .ys-btn.active {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: #fff;
-            border-color: #1e3c72;
-            box-shadow: 0 2px 8px rgba(30,60,114,0.3);
-        }
+
         .inline-program-select, .inline-year-select {
             transition: border-color 0.3s, box-shadow 0.3s;
             cursor: pointer;
@@ -542,7 +699,10 @@ while ($row = $result->fetch_assoc()) {
             </div>
             <div class="btn-group" role="group">
                 <a href="?download_template" class="btn btn-success">
-                    <i class="bi bi-download"></i> Download Template
+                    <i class="bi bi-download"></i> Blank Template
+                </a>
+                <a href="?download_template&export_existing" class="btn btn-outline-success">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export Courses
                 </a>
                 <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#uploadTemplateModal">
                     <i class="bi bi-upload"></i> Upload Template
@@ -553,36 +713,45 @@ while ($row = $result->fetch_assoc()) {
             </div>
         </div>
         
-        <!-- Quick Action Filters -->
+        <!-- Filter Bar -->
         <div class="quick-filter-bar mb-4">
             <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-                <h6 class="mb-0 fw-bold"><i class="bi bi-lightning-charge me-2"></i>Quick Filter</h6>
-                <button class="btn btn-sm btn-outline-secondary" onclick="clearQuickFilter()">
-                    <i class="bi bi-x-circle me-1"></i>Clear
+                <h6 class="mb-0 fw-bold"><i class="bi bi-funnel me-2"></i>Filter Courses</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearAllFilters()">
+                    <i class="bi bi-x-circle me-1"></i>Clear All
                 </button>
             </div>
             <div class="row g-3 align-items-end">
-                <div class="col-md-4 col-lg-3">
+                <div class="col-md-3">
                     <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-diagram-3 me-1"></i>Program</label>
-                    <select class="form-select" id="quickFilterProgram" onchange="applyQuickFilter()">
+                    <select class="form-select" id="filterProgram" onchange="applyFilters()">
                         <option value="">All Programs</option>
                         <?php foreach ($programs as $prog): ?>
                             <option value="<?= htmlspecialchars($prog) ?>"><?= htmlspecialchars($prog) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-8 col-lg-9">
-                    <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-calendar-week me-1"></i>Year &amp; Semester</label>
-                    <div class="d-flex flex-wrap gap-2">
-                        <button type="button" class="ys-btn" data-year="1" data-sem="One" onclick="selectYearSem(this)">Y1 Sem 1</button>
-                        <button type="button" class="ys-btn" data-year="1" data-sem="Two" onclick="selectYearSem(this)">Y1 Sem 2</button>
-                        <button type="button" class="ys-btn" data-year="2" data-sem="One" onclick="selectYearSem(this)">Y2 Sem 1</button>
-                        <button type="button" class="ys-btn" data-year="2" data-sem="Two" onclick="selectYearSem(this)">Y2 Sem 2</button>
-                        <button type="button" class="ys-btn" data-year="3" data-sem="One" onclick="selectYearSem(this)">Y3 Sem 1</button>
-                        <button type="button" class="ys-btn" data-year="3" data-sem="Two" onclick="selectYearSem(this)">Y3 Sem 2</button>
-                        <button type="button" class="ys-btn" data-year="4" data-sem="One" onclick="selectYearSem(this)">Y4 Sem 1</button>
-                        <button type="button" class="ys-btn" data-year="4" data-sem="Two" onclick="selectYearSem(this)">Y4 Sem 2</button>
-                    </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-calendar3 me-1"></i>Year of Study</label>
+                    <select class="form-select" id="filterYear" onchange="applyFilters()">
+                        <option value="">All Years</option>
+                        <option value="1">Year 1</option>
+                        <option value="2">Year 2</option>
+                        <option value="3">Year 3</option>
+                        <option value="4">Year 4</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-calendar-week me-1"></i>Semester</label>
+                    <select class="form-select" id="filterSemester" onchange="applyFilters()">
+                        <option value="">All Semesters</option>
+                        <option value="One">Semester One</option>
+                        <option value="Two">Semester Two</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;"><i class="bi bi-search me-1"></i>Search</label>
+                    <input type="text" class="form-control" id="filterSearch" placeholder="Code or name..." oninput="applyFilters()">
                 </div>
             </div>
         </div>
@@ -596,7 +765,7 @@ while ($row = $result->fetch_assoc()) {
                 </div>
                 <div>
                     <span class="badge bg-light text-dark me-2" id="activeFilterCount">0 courses</span>
-                    <button class="btn btn-sm btn-outline-light" onclick="clearQuickFilter()">
+                    <button class="btn btn-sm btn-outline-light" onclick="clearAllFilters()">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
@@ -622,26 +791,7 @@ while ($row = $result->fetch_assoc()) {
             <div class="card-header bg-warning text-dark">
                 <h5 class="mb-0"><i class="bi bi-list-ul"></i> All Courses (<?php echo count($courses); ?>)</h5>
             </div>
-            <div class="card-body">
-                <!-- Filter Section -->
-                <div class="row g-3 mb-3 p-3 bg-light rounded">
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold"><i class="bi bi-funnel"></i> Filter by Program</label>
-                        <select class="form-select" id="courseFilterProgram" onchange="filterCourses()">
-                            <option value="">All Programs</option>
-                        </select>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold"><i class="bi bi-search"></i> Search</label>
-                        <input type="text" class="form-control" id="courseSearch" placeholder="Search by code or name..." oninput="filterCourses()">
-                    </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                        <button class="btn btn-secondary" onclick="clearCourseFilters()">
-                            <i class="bi bi-x-circle"></i> Clear Filters
-                        </button>
-                    </div>
-                </div>
-            </div>
+
             <div class="card-body p-0">
                 <?php if (empty($courses)): ?>
                     <div class="text-center text-muted py-5">
@@ -681,20 +831,32 @@ while ($row = $result->fetch_assoc()) {
                                             </select>
                                         </td>
                                         <td>
-                                            <select class="form-select form-select-sm inline-year-select"
-                                                    data-course-id="<?php echo $course['course_id']; ?>"
-                                                    onchange="inlineUpdateYear(this)"
-                                                    style="min-width:120px;font-size:0.78rem;padding:2px 24px 2px 6px;">
-                                                <option value="" <?php echo empty($course['year_of_study']) || $course['year_of_study'] == 0 ? 'selected' : ''; ?>>N/A</option>
-                                                <option value="1-One" <?php echo ($course['year_of_study'] ?? 0) == 1 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y1 Sem 1</option>
-                                                <option value="1-Two" <?php echo ($course['year_of_study'] ?? 0) == 1 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y1 Sem 2</option>
-                                                <option value="2-One" <?php echo ($course['year_of_study'] ?? 0) == 2 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y2 Sem 1</option>
-                                                <option value="2-Two" <?php echo ($course['year_of_study'] ?? 0) == 2 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y2 Sem 2</option>
-                                                <option value="3-One" <?php echo ($course['year_of_study'] ?? 0) == 3 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y3 Sem 1</option>
-                                                <option value="3-Two" <?php echo ($course['year_of_study'] ?? 0) == 3 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y3 Sem 2</option>
-                                                <option value="4-One" <?php echo ($course['year_of_study'] ?? 0) == 4 && ($course['semester'] ?? '') === 'One' ? 'selected' : ''; ?>>Y4 Sem 1</option>
-                                                <option value="4-Two" <?php echo ($course['year_of_study'] ?? 0) == 4 && ($course['semester'] ?? '') === 'Two' ? 'selected' : ''; ?>>Y4 Sem 2</option>
-                                            </select>
+                                            <?php
+                                            // Build display for year/semester with multi-year support
+                                            $cy = (int)($course['year_of_study'] ?? 0);
+                                            $cs = $course['semester'] ?? 'One';
+                                            $ay = $course['applicable_years'] ?? '';
+                                            $all_years = $cy > 0 ? [$cy] : [];
+                                            if (!empty($ay)) {
+                                                foreach (explode(',', $ay) as $ey) {
+                                                    $ey = (int)trim($ey);
+                                                    if ($ey > 0 && !in_array($ey, $all_years)) $all_years[] = $ey;
+                                                }
+                                                sort($all_years);
+                                            }
+                                            $year_display = !empty($all_years) ? implode(',', array_map(fn($y) => "Y$y", $all_years)) : 'N/A';
+                                            $sem_labels = ['One' => 'S1', 'Two' => 'S2', 'Both' => 'S1&2'];
+                                            $sem_display = $sem_labels[$cs] ?? 'S1';
+                                            ?>
+                                            <a href="edit_course.php?id=<?php echo $course['course_id']; ?>" 
+                                               class="btn btn-sm btn-outline-primary" style="font-size:0.78rem;white-space:nowrap;"
+                                               title="Click to edit year/semester association">
+                                                <?php echo $year_display; ?> <?php echo $sem_display; ?>
+                                                <?php if (count($all_years) > 1 || $cs === 'Both'): ?>
+                                                    <i class="bi bi-layers-fill text-warning ms-1" title="Multi-year/semester"></i>
+                                                <?php endif; ?>
+                                                <i class="bi bi-pencil-square ms-1"></i>
+                                            </a>
                                         </td>
                                         <td><?php echo htmlspecialchars($course['lecturer_name'] ?? 'Not assigned'); ?></td>
                                         <td>
@@ -769,8 +931,8 @@ while ($row = $result->fetch_assoc()) {
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle"></i> <strong>Instructions:</strong>
                             <ol class="mb-0 mt-2">
-                                <li>Click "Download Template" to get the CSV template</li>
-                                <li>Fill in the course details in the template</li>
+                                <li>Click "Blank Template" for a new CSV, or "Export Courses" to get existing courses</li>
+                                <li>Fill in or edit the course details in the CSV</li>
                                 <li>Upload the completed template below</li>
                             </ol>
                         </div>
@@ -782,7 +944,11 @@ while ($row = $result->fetch_assoc()) {
                         
                         <div class="alert alert-warning">
                             <i class="bi bi-exclamation-triangle"></i> <strong>Template Format:</strong><br>
-                            <small>Course Code, Course Name, Description, Program of Study, Year of Study, Total Weeks, Lecturer ID (optional)</small>
+                            <small>Course Code, Course Name, Description, Program of Study, Year of Study, Semester, Total Weeks, Lecturer ID (optional), Associated Programs (optional, semicolon-separated)</small>
+                        </div>
+                        
+                        <div class="alert alert-secondary py-2">
+                            <small><i class="bi bi-arrow-repeat"></i> <strong>Update behaviour:</strong> If a course code already exists, its details and associated programs will be <strong>updated</strong> from the CSV. Leave the Associated Programs column empty to keep existing associations unchanged.</small>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -846,22 +1012,36 @@ while ($row = $result->fetch_assoc()) {
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label fw-bold"><i class="bi bi-123"></i> Year of Study *</label>
-                                <select class="form-select" name="year_of_study" id="addCourseYear" required>
-                                    <option value="">Select year...</option>
-                                    <option value="1">Year 1</option>
-                                    <option value="2">Year 2</option>
-                                    <option value="3">Year 3</option>
-                                    <option value="4">Year 4</option>
-                                </select>
+                                <label class="form-label fw-bold"><i class="bi bi-123"></i> Year(s) of Study *</label>
+                                <div class="border rounded p-2">
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input add-year-check" type="checkbox" name="years[]" value="1" id="addYear1">
+                                        <label class="form-check-label fw-semibold" for="addYear1">Year 1</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input add-year-check" type="checkbox" name="years[]" value="2" id="addYear2">
+                                        <label class="form-check-label fw-semibold" for="addYear2">Year 2</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input add-year-check" type="checkbox" name="years[]" value="3" id="addYear3">
+                                        <label class="form-check-label fw-semibold" for="addYear3">Year 3</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input add-year-check" type="checkbox" name="years[]" value="4" id="addYear4">
+                                        <label class="form-check-label fw-semibold" for="addYear4">Year 4</label>
+                                    </div>
+                                </div>
+                                <small class="text-muted">Select all years that can take this course</small>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold"><i class="bi bi-calendar"></i> Semester *</label>
                                 <select class="form-select" name="semester" id="addCourseSemester" required>
                                     <option value="">Select semester...</option>
-                                    <option value="One">Semester One</option>
-                                    <option value="Two">Semester Two</option>
+                                    <option value="One">Semester 1</option>
+                                    <option value="Two">Semester 2</option>
+                                    <option value="Both">Both Semesters</option>
                                 </select>
+                                <small class="text-muted">Select "Both" if offered in Semester 1 &amp; 2</small>
                             </div>
                         </div>
                         
@@ -874,6 +1054,32 @@ while ($row = $result->fetch_assoc()) {
                                 <?php endforeach; ?>
                             </select>
                             <small class="text-muted">Lecturers can be assigned to courses from any department or program</small>
+                        </div>
+                        
+                        <!-- Associated Programs -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><i class="bi bi-link-45deg"></i> Associate with Additional Programs</label>
+                            <div class="alert alert-info py-2 mb-2">
+                                <small><i class="bi bi-info-circle"></i> Select additional programs where this course should also be available (cross-departmental courses).</small>
+                            </div>
+                            <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                                <?php if (!empty($all_programs)): ?>
+                                    <?php foreach ($all_programs as $prog): ?>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" 
+                                                   name="additional_programs[]" 
+                                                   value="<?php echo $prog['program_id']; ?>"
+                                                   id="add_prog_<?php echo $prog['program_id']; ?>">
+                                            <label class="form-check-label" for="add_prog_<?php echo $prog['program_id']; ?>">
+                                                <?php echo htmlspecialchars($prog['program_name']); ?> (<?php echo htmlspecialchars($prog['program_code']); ?>)
+                                            </label>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <p class="text-muted mb-0">No programs available.</p>
+                                <?php endif; ?>
+                            </div>
+                            <small class="text-muted">Students from selected programs will also see this course in their module selection.</small>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -1347,60 +1553,83 @@ while ($row = $result->fetch_assoc()) {
         document.getElementById('searchStudent')?.addEventListener('input', displayStudents);
         
         // Course filtering functionality
-        function filterCourses() {
-            // Delegate to the quick filter which handles all filtering
-            // Sync program from existing dropdown to quick filter
-            const existingProg = document.getElementById('courseFilterProgram')?.value || '';
-            if (existingProg) {
-                const quickProg = document.getElementById('quickFilterProgram');
-                // Match case-insensitive
-                for (const opt of quickProg.options) {
-                    if (opt.value.toLowerCase() === existingProg.toLowerCase()) {
-                        quickProg.value = opt.value;
-                        break;
-                    }
+        function applyFilters() {
+            const program = document.getElementById('filterProgram').value;
+            const year = document.getElementById('filterYear').value;
+            const semester = document.getElementById('filterSemester').value;
+            const searchTerm = (document.getElementById('filterSearch').value || '').toLowerCase();
+            const rows = document.querySelectorAll('#coursesTableBody tr');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const rowProgram = (row.dataset.program || '').trim();
+                const rowYear = (row.dataset.year || '0');
+                const rowSem = (row.dataset.semester || '').trim();
+                const rowCode = (row.dataset.code || '').toLowerCase();
+                const rowName = (row.dataset.name || '').toLowerCase();
+
+                const matchesProgram = !program || rowProgram.toLowerCase() === program.toLowerCase();
+                const matchesYear = !year || rowYear === year;
+                const matchesSem = !semester || rowSem === semester;
+                const matchesSearch = !searchTerm || rowCode.includes(searchTerm) || rowName.includes(searchTerm);
+
+                if (matchesProgram && matchesYear && matchesSem && matchesSearch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
                 }
+            });
+
+            // Update active filter display bar
+            const display = document.getElementById('activeFilterDisplay');
+            const textEl = document.getElementById('activeFilterText');
+            const countEl = document.getElementById('activeFilterCount');
+
+            if (program || year || semester || searchTerm) {
+                display.classList.add('show');
+                let parts = [];
+                if (program) parts.push(program);
+                if (year) parts.push('Year ' + year);
+                if (semester) parts.push('Semester ' + semester);
+                if (searchTerm) parts.push('"' + searchTerm + '"');
+                textEl.textContent = parts.join(' — ');
+                countEl.textContent = visibleCount + ' course' + (visibleCount !== 1 ? 's' : '');
+            } else {
+                display.classList.remove('show');
             }
-            applyQuickFilter();
         }
-        
-        function clearCourseFilters() {
-            document.getElementById('courseFilterProgram').value = '';
-            document.getElementById('courseSearch').value = '';
-            filterCourses();
-            // Remove URL parameter
+
+        function clearAllFilters() {
+            document.getElementById('filterProgram').value = '';
+            document.getElementById('filterYear').value = '';
+            document.getElementById('filterSemester').value = '';
+            document.getElementById('filterSearch').value = '';
+            document.getElementById('activeFilterDisplay').classList.remove('show');
+            document.querySelectorAll('#coursesTableBody tr').forEach(row => row.style.display = '');
             window.history.pushState({}, '', 'manage_courses.php');
         }
+
+        // Legacy aliases for compatibility
+        function filterCourses() { applyFilters(); }
+        function clearCourseFilters() { clearAllFilters(); }
         
-        // Initialize course program filter on page load
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            const programFilter = document.getElementById('courseFilterProgram');
-            
-            // Get all unique programs from table rows
-            const programs = new Set();
-            document.querySelectorAll('#coursesTableBody tr').forEach(row => {
-                const program = row.dataset.program;
-                if (program && program !== 'N/A') {
-                    programs.add(program);
-                }
-            });
-            
-            // Populate filter dropdown
-            Array.from(programs).sort().forEach(program => {
-                const option = document.createElement('option');
-                option.value = program.toLowerCase();
-                option.textContent = program;
-                programFilter.appendChild(option);
-            });
-            
             // Check for URL parameter
             const urlParams = new URLSearchParams(window.location.search);
             const programParam = urlParams.get('program');
             
             if (programParam) {
-                // Set the filter and apply
-                programFilter.value = programParam.toLowerCase();
-                filterCourses();
+                // Set the filter dropdown and apply
+                const progSelect = document.getElementById('filterProgram');
+                for (const opt of progSelect.options) {
+                    if (opt.value.toLowerCase() === programParam.toLowerCase()) {
+                        progSelect.value = opt.value;
+                        break;
+                    }
+                }
+                applyFilters();
                 
                 // Show notification
                 const alert = document.createElement('div');
@@ -1636,9 +1865,12 @@ while ($row = $result->fetch_assoc()) {
                 }
             }
             
-            // Set Year
+            // Set Year (checkbox instead of select)
             if (year >= 1 && year <= 4) {
-                document.getElementById('addCourseYear').value = year.toString();
+                // Uncheck all first, then check the detected year
+                document.querySelectorAll('.add-year-check').forEach(cb => cb.checked = false);
+                const yearCb = document.getElementById('addYear' + year);
+                if (yearCb) yearCb.checked = true;
             }
             
             // Set Semester
@@ -1696,7 +1928,7 @@ while ($row = $result->fetch_assoc()) {
             resultDiv.innerHTML = html;
             
             // Flash the changed fields
-            ['addCourseProgram', 'addCourseYear', 'addCourseSemester'].forEach(id => {
+            ['addCourseProgram', 'addCourseSemester'].forEach(id => {
                 const el = document.getElementById(id);
                 el.style.transition = 'box-shadow 0.3s, border-color 0.3s';
                 el.style.borderColor = '#198754';
@@ -1713,6 +1945,15 @@ while ($row = $result->fetch_assoc()) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 autoAssignFromCode();
+            }
+        });
+        
+        // Validate Add Course form: require at least one year checkbox
+        document.querySelector('#addCourseModal form')?.addEventListener('submit', function(e) {
+            const checkedYears = document.querySelectorAll('.add-year-check:checked');
+            if (checkedYears.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one Year of Study.');
             }
         });
 
@@ -1807,90 +2048,8 @@ while ($row = $result->fetch_assoc()) {
                 });
         }
 
-        // ==========================================
-        // Quick Filter: Program + Year/Semester
-        // ==========================================
-        let quickFilterYear = '';
-        let quickFilterSem = '';
-
-        function selectYearSem(btn) {
-            const year = btn.dataset.year;
-            const sem = btn.dataset.sem;
-
-            // Toggle: if already active, deselect
-            if (quickFilterYear === year && quickFilterSem === sem) {
-                quickFilterYear = '';
-                quickFilterSem = '';
-                btn.classList.remove('active');
-            } else {
-                quickFilterYear = year;
-                quickFilterSem = sem;
-                document.querySelectorAll('.ys-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            }
-            applyQuickFilter();
-        }
-
-        function applyQuickFilter() {
-            const program = document.getElementById('quickFilterProgram').value;
-            const rows = document.querySelectorAll('#coursesTableBody tr');
-            let visibleCount = 0;
-
-            // Also sync the existing filter dropdown
-            const existingProgramFilter = document.getElementById('courseFilterProgram');
-            if (existingProgramFilter) existingProgramFilter.value = program ? program.toLowerCase() : '';
-
-            rows.forEach(row => {
-                const rowProgram = (row.dataset.program || '').trim();
-                const rowYear = (row.dataset.year || '0');
-                const rowSem = (row.dataset.semester || '').trim();
-                const searchTerm = (document.getElementById('courseSearch')?.value || '').toLowerCase();
-                const rowCode = (row.dataset.code || '').toLowerCase();
-                const rowName = (row.dataset.name || '').toLowerCase();
-
-                const matchesProgram = !program || rowProgram.toLowerCase() === program.toLowerCase();
-                const matchesYear = !quickFilterYear || rowYear === quickFilterYear;
-                const matchesSem = !quickFilterSem || rowSem === quickFilterSem;
-                const matchesSearch = !searchTerm || rowCode.includes(searchTerm) || rowName.includes(searchTerm);
-
-                if (matchesProgram && matchesYear && matchesSem && matchesSearch) {
-                    row.style.display = '';
-                    visibleCount++;
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-
-            // Update the active filter display bar
-            const display = document.getElementById('activeFilterDisplay');
-            const textEl = document.getElementById('activeFilterText');
-            const countEl = document.getElementById('activeFilterCount');
-
-            if (program || quickFilterYear) {
-                display.classList.add('show');
-                let parts = [];
-                if (program) parts.push(program);
-                if (quickFilterYear) parts.push('Year ' + quickFilterYear + ' Semester ' + (quickFilterSem === 'Two' ? '2' : '1'));
-                textEl.textContent = parts.join(' — ');
-                countEl.textContent = visibleCount + ' course' + (visibleCount !== 1 ? 's' : '');
-            } else {
-                display.classList.remove('show');
-            }
-        }
-
-        function clearQuickFilter() {
-            quickFilterYear = '';
-            quickFilterSem = '';
-            document.getElementById('quickFilterProgram').value = '';
-            document.querySelectorAll('.ys-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('activeFilterDisplay').classList.remove('show');
-            // Reset existing filters too
-            if (document.getElementById('courseFilterProgram')) document.getElementById('courseFilterProgram').value = '';
-            if (document.getElementById('courseSearch')) document.getElementById('courseSearch').value = '';
-            // Show all rows
-            document.querySelectorAll('#coursesTableBody tr').forEach(row => row.style.display = '');
-            window.history.pushState({}, '', 'manage_courses.php');
-        }
+        // Legacy alias for any remaining references
+        function clearQuickFilter() { clearAllFilters(); }
     </script>
 </body>
 </html>

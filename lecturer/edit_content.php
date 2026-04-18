@@ -4,7 +4,7 @@ requireLogin();
 requireRole(['lecturer']);
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 if (!isset($_GET['content_id'])) {
     die('No content selected.');
@@ -55,7 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="mb-3">
         <button class="btn btn-outline-secondary" onclick="window.history.back();"><i class="bi bi-arrow-left"></i> Back</button>
     </div>
-    <h2>Edit Content</h2>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header py-3" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h4 class="mb-0 text-white"><i class="bi bi-pencil-square me-2"></i> Edit Content</h4>
+            <p class="mb-0 mt-1 text-white-50">Modify content details below</p>
+        </div>
+    </div>
     <?php if (!empty($success)): ?>
         <div class="alert alert-success"><?php echo $success; ?></div>
     <?php endif; ?>

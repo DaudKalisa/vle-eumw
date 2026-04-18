@@ -218,8 +218,59 @@ while ($row = $result->fetch_assoc()) {
 }
 
 // Note: Don't close $conn here - header_nav.php needs it for getCurrentUser()
-?>
 
+// Calculate statistics
+$total_faculties = count($faculties);
+$total_departments_assigned = 0;
+foreach ($faculties as $f) {
+    $total_departments_assigned += $f['department_count'];
+}
+$total_unassigned = count($unassigned_departments);
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Faculties - VLE Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="../assets/css/global-theme.css" rel="stylesheet">
+    <style>
+        .faculty-card {
+            transition: all 0.3s ease;
+            border-left: 4px solid #6366f1;
+        }
+        .faculty-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        .dept-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            background: #e0e7ff;
+            color: #4338ca;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .head-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            background: #d1fae5;
+            color: #065f46;
+            border-radius: 6px;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
 <body>
     <?php 
     $currentPage = 'manage_faculties';
@@ -229,342 +280,145 @@ while ($row = $result->fetch_assoc()) {
     ?>
 
     <div class="vle-content">
-        <div class="vle-page-header mb-4">
-            <h1 class="h3 mb-1"><i class="bi bi-building-fill me-2"></i>Manage Faculties</h1>
-            <p class="text-muted mb-0">Manage university faculties and their departments</p>
+        <!-- Page Header -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="vle-page-title"><i class="bi bi-building me-2"></i>Manage Faculties</h2>
+                <p class="text-muted mb-0">Organize university faculties and their departments</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="?download_template=1" class="btn btn-outline-success">
+                    <i class="bi bi-download me-1"></i>CSV Template
+                </a>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addFacultyModal">
+                    <i class="bi bi-plus-circle me-1"></i>Add Faculty
+                </button>
+            </div>
         </div>
 
+        <!-- Alerts -->
         <?php if (isset($success)): ?>
-            <div class="alert vle-alert-success alert-dismissible fade show">
-                <i class="bi bi-check-circle-fill"></i> <?php echo $success; ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-2"></i><?= htmlspecialchars($success) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
-
         <?php if (isset($error)): ?>
-            <div class="alert vle-alert-error alert-dismissible fade show">
-                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i><?= $error ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
 
-        <!-- Upload from Template Section -->
-        <div class="card mb-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Bulk Upload Faculties</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
-                        <form method="POST" enctype="multipart/form-data" class="d-flex align-items-end gap-2">
-                            <div class="flex-grow-1">
-                                <label for="template_file" class="form-label">Upload CSV File</label>
-                                <input type="file" class="form-control" id="template_file" name="template_file" 
-                                       accept=".csv" required>
-                                <small class="text-muted">Upload a CSV file with columns: Faculty Code, Faculty Name, Head of Faculty</small>
-                            </div>
-                            <div>
-                                <button type="submit" name="upload_template" class="btn btn-success">
-                                    <i class="bi bi-upload"></i> Upload
-                                </button>
-                            </div>
-                        </form>
+        <!-- Statistics Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body text-center">
+                        <div class="display-5 fw-bold text-primary"><?= $total_faculties ?></div>
+                        <small class="text-muted">Total Faculties</small>
                     </div>
-                    <div class="col-md-4 text-end">
-                        <label class="form-label">Need a template?</label>
-                        <div>
-                            <a href="?download_template=1" class="btn btn-outline-success">
-                                <i class="bi bi-download"></i> Download CSV Template
-                            </a>
-                        </div>
-                        <small class="text-muted">Download a sample CSV file with example data</small>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body text-center">
+                        <div class="display-5 fw-bold text-success"><?= $total_departments_assigned ?></div>
+                        <small class="text-muted">Assigned Departments</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body text-center">
+                        <div class="display-5 fw-bold text-warning"><?= $total_unassigned ?></div>
+                        <small class="text-muted">Unassigned Departments</small>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Add Faculty Form -->
-        <div class="card mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Faculty</h5>
+        <!-- Upload Template Section -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-success bg-opacity-10 border-0">
+                <h5 class="mb-0 text-success"><i class="bi bi-file-earmark-arrow-up me-2"></i>Bulk Upload Faculties</h5>
             </div>
             <div class="card-body">
-                <form method="POST">
-                    <div class="row g-3">
-                        <div class="col-md-2">
-                            <label for="faculty_code" class="form-label">Faculty Code *</label>
-                            <input type="text" class="form-control" id="faculty_code" name="faculty_code" 
-                                   placeholder="e.g., FICT" maxlength="20" style="text-transform: uppercase;" required>
-                            <small class="text-muted">Max 20 characters</small>
-                        </div>
-                        <div class="col-md-5">
-                            <label for="faculty_name" class="form-label">Faculty Name *</label>
-                            <input type="text" class="form-control" id="faculty_name" name="faculty_name" 
-                                   placeholder="e.g., Faculty of ICT" required>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="head_of_faculty" class="form-label">Head of Faculty</label>
-                            <input type="text" class="form-control" id="head_of_faculty" name="head_of_faculty" 
-                                   placeholder="e.g., Dr. John Doe">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">&nbsp;</label>
-                            <button type="submit" name="add_faculty" class="btn btn-info w-100">
-                                <i class="bi bi-plus-lg"></i> Add
-                            </button>
-                        </div>
+                <form method="POST" enctype="multipart/form-data" class="row g-3 align-items-end">
+                    <div class="col-md-8">
+                        <label for="template_file" class="form-label">Upload CSV File</label>
+                        <input type="file" class="form-control" id="template_file" name="template_file" accept=".csv" required>
+                        <small class="text-muted">Columns: Faculty Code, Faculty Name, Head of Faculty</small>
+                    </div>
+                    <div class="col-md-4">
+                        <button type="submit" name="upload_template" class="btn btn-success w-100">
+                            <i class="bi bi-upload me-1"></i>Upload CSV
+                        </button>
                     </div>
                 </form>
             </div>
         </div>
 
-        <!-- Faculties List -->
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-list-ul"></i> All Faculties (<?php echo count($faculties); ?>)</h5>
+        <!-- Faculties Directory -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-building me-2"></i>Faculty Directory</h5>
+                <span class="badge bg-light text-dark"><?= count($faculties) ?> faculties</span>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 <?php if (empty($faculties)): ?>
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> No faculties found. Add your first faculty above.
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-building display-4 d-block mb-3"></i>
+                        <p>No faculties registered yet.</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addFacultyModal">
+                            <i class="bi bi-plus-circle me-1"></i>Add First Faculty
+                        </button>
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead class="table-dark">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
                                 <tr>
-                                    <th>Faculty Code</th>
+                                    <th>Code</th>
                                     <th>Faculty Name</th>
                                     <th>Head of Faculty</th>
-                                    <th>Programs/Departments</th>
+                                    <th>Departments</th>
                                     <th>Created</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($faculties as $faculty): ?>
-                                    <tr>
-                                        <td><strong><?php echo htmlspecialchars($faculty['faculty_code']); ?></strong></td>
-                                        <td><?php echo htmlspecialchars($faculty['faculty_name']); ?></td>
-                                        <td>
-                                            <?php if (!empty($faculty['head_of_faculty'])): ?>
-                                                <i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($faculty['head_of_faculty']); ?>
-                                            <?php else: ?>
-                                                <span class="text-muted">Not assigned</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-secondary">
-                                                <i class="bi bi-building"></i> <?php echo $faculty['department_count']; ?> department(s)
-                                            </span>
-                                        </td>
-                                        <td><small class="text-muted"><?php echo date('M d, Y', strtotime($faculty['created_at'])); ?></small></td>
-                                        <td>
-                                            <button class="btn btn-sm btn-success" data-bs-toggle="modal" 
-                                                    data-bs-target="#departmentsModal<?php echo $faculty['faculty_id']; ?>"
-                                                    title="Manage Departments">
-                                                <i class="bi bi-building"></i> Departments
+                                <tr>
+                                    <td><strong class="text-primary"><?= htmlspecialchars($faculty['faculty_code']) ?></strong></td>
+                                    <td><?= htmlspecialchars($faculty['faculty_name']) ?></td>
+                                    <td>
+                                        <?php if (!empty($faculty['head_of_faculty'])): ?>
+                                            <span class="head-badge"><i class="bi bi-person-badge"></i><?= htmlspecialchars($faculty['head_of_faculty']) ?></span>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="dept-badge">
+                                            <i class="bi bi-diagram-3"></i><?= $faculty['department_count'] ?> dept(s)
+                                        </span>
+                                    </td>
+                                    <td><small class="text-muted"><?= date('M d, Y', strtotime($faculty['created_at'])) ?></small></td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#departmentsModal<?= $faculty['faculty_id'] ?>" title="Manage Departments">
+                                                <i class="bi bi-diagram-3"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" 
-                                                    data-bs-target="#editModal<?php echo $faculty['faculty_id']; ?>"
-                                                    title="Edit Faculty">
-                                                <i class="bi bi-pencil-fill"></i>
+                                            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal<?= $faculty['faculty_id'] ?>" title="Edit">
+                                                <i class="bi bi-pencil"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-danger" data-bs-toggle="modal" 
-                                                    data-bs-target="#deleteModal<?php echo $faculty['faculty_id']; ?>"
-                                                    title="Delete Faculty">
-                                                <i class="bi bi-trash-fill"></i>
+                                            <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal<?= $faculty['faculty_id'] ?>" title="Delete">
+                                                <i class="bi bi-trash"></i>
                                             </button>
-                                        </td>
-                                    </tr>
-
-                                    <!-- Manage Departments Modal -->
-                                    <div class="modal fade" id="departmentsModal<?php echo $faculty['faculty_id']; ?>" tabindex="-1">
-                                        <div class="modal-dialog modal-lg">
-                                            <div class="modal-content">
-                                                <div class="modal-header bg-success text-white">
-                                                    <h5 class="modal-title">
-                                                        <i class="bi bi-building"></i> Manage Departments - 
-                                                        <?php echo htmlspecialchars($faculty['faculty_name']); ?>
-                                                    </h5>
-                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <div class="modal-body">
-                                                    <!-- Add New Department Form -->
-                                                    <div class="card mb-3">
-                                                        <div class="card-header bg-info text-white">
-                                                            <h6 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Department</h6>
-                                                        </div>
-                                                        <div class="card-body">
-                                                            <form method="POST">
-                                                                <input type="hidden" name="faculty_id" value="<?php echo $faculty['faculty_id']; ?>">
-                                                                <div class="row g-2">
-                                                                    <div class="col-md-3">
-                                                                        <input type="text" class="form-control" name="department_code" 
-                                                                               placeholder="Code (e.g., CS)" maxlength="10" 
-                                                                               style="text-transform: uppercase;" required>
-                                                                    </div>
-                                                                    <div class="col-md-7">
-                                                                        <input type="text" class="form-control" name="department_name" 
-                                                                               placeholder="Department/Program Name" required>
-                                                                    </div>
-                                                                    <div class="col-md-2">
-                                                                        <button type="submit" name="add_department_to_faculty" class="btn btn-info w-100">
-                                                                            <i class="bi bi-plus-lg"></i> Add
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            </form>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Current Departments -->
-                                                    <div class="card mb-3">
-                                                        <div class="card-header bg-primary text-white">
-                                                            <h6 class="mb-0"><i class="bi bi-list-ul"></i> Departments in this Faculty</h6>
-                                                        </div>
-                                                        <div class="card-body">
-                                                            <?php 
-                                                            $current_depts = $faculty_departments[$faculty['faculty_id']] ?? [];
-                                                            if (empty($current_depts)): 
-                                                            ?>
-                                                                <div class="alert alert-info mb-0">
-                                                                    <i class="bi bi-info-circle"></i> No departments assigned to this faculty yet.
-                                                                </div>
-                                                            <?php else: ?>
-                                                                <div class="list-group">
-                                                                    <?php foreach ($current_depts as $dept): ?>
-                                                                        <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                                            <div>
-                                                                                <span class="badge bg-info me-2"><?php echo htmlspecialchars($dept['department_code']); ?></span>
-                                                                                <strong><?php echo htmlspecialchars($dept['department_name']); ?></strong>
-                                                                            </div>
-                                                                            <form method="POST" style="display:inline;">
-                                                                                <input type="hidden" name="department_id" value="<?php echo $dept['department_id']; ?>">
-                                                                                <button type="submit" name="remove_department_from_faculty" 
-                                                                                        class="btn btn-sm btn-outline-danger"
-                                                                                        onclick="return confirm('Remove this department from the faculty?');">
-                                                                                    <i class="bi bi-x-circle"></i> Remove
-                                                                                </button>
-                                                                            </form>
-                                                                        </div>
-                                                                    <?php endforeach; ?>
-                                                                </div>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Assign Existing Departments -->
-                                                    <?php if (!empty($unassigned_departments)): ?>
-                                                        <div class="card">
-                                                            <div class="card-header bg-warning">
-                                                                <h6 class="mb-0"><i class="bi bi-arrow-down-circle"></i> Assign Existing Departments</h6>
-                                                            </div>
-                                                            <div class="card-body">
-                                                                <p class="text-muted small mb-2">These departments are not assigned to any faculty:</p>
-                                                                <div class="list-group">
-                                                                    <?php foreach ($unassigned_departments as $dept): ?>
-                                                                        <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                                            <div>
-                                                                                <span class="badge bg-secondary me-2"><?php echo htmlspecialchars($dept['department_code']); ?></span>
-                                                                                <?php echo htmlspecialchars($dept['department_name']); ?>
-                                                                            </div>
-                                                                            <form method="POST" style="display:inline;">
-                                                                                <input type="hidden" name="department_id" value="<?php echo $dept['department_id']; ?>">
-                                                                                <input type="hidden" name="faculty_id" value="<?php echo $faculty['faculty_id']; ?>">
-                                                                                <button type="submit" name="assign_department" class="btn btn-sm btn-success">
-                                                                                    <i class="bi bi-plus-circle"></i> Assign to Faculty
-                                                                                </button>
-                                                                            </form>
-                                                                        </div>
-                                                                    <?php endforeach; ?>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                </div>
-                                                <div class="modal-footer">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                                                        <i class="bi bi-x-circle"></i> Close
-                                                    </button>
-                                                </div>
-                                            </div>
                                         </div>
-                                    </div>
-
-                                    <!-- Edit Modal -->
-                                    <div class="modal fade" id="editModal<?php echo $faculty['faculty_id']; ?>" tabindex="-1">
-                                        <div class="modal-dialog">
-                                            <div class="modal-content">
-                                                <div class="modal-header bg-primary text-white">
-                                                    <h5 class="modal-title"><i class="bi bi-pencil-fill"></i> Edit Faculty</h5>
-                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <form method="POST">
-                                                    <div class="modal-body">
-                                                        <input type="hidden" name="faculty_id" value="<?php echo $faculty['faculty_id']; ?>">
-                                                        <div class="mb-3">
-                                                            <label class="form-label">Faculty Code *</label>
-                                                            <input type="text" class="form-control" name="faculty_code" 
-                                                                   value="<?php echo htmlspecialchars($faculty['faculty_code']); ?>" 
-                                                                   maxlength="20" style="text-transform: uppercase;" required>
-                                                        </div>
-                                                        <div class="mb-3">
-                                                            <label class="form-label">Faculty Name *</label>
-                                                            <input type="text" class="form-control" name="faculty_name" 
-                                                                   value="<?php echo htmlspecialchars($faculty['faculty_name']); ?>" required>
-                                                        </div>
-                                                        <div class="mb-3">
-                                                            <label class="form-label">Head of Faculty</label>
-                                                            <input type="text" class="form-control" name="head_of_faculty" 
-                                                                   value="<?php echo htmlspecialchars($faculty['head_of_faculty'] ?? ''); ?>">
-                                                        </div>
-                                                    </div>
-                                                    <div class="modal-footer">
-                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                                                            <i class="bi bi-x-circle"></i> Cancel
-                                                        </button>
-                                                        <button type="submit" name="update_faculty" class="btn btn-primary">
-                                                            <i class="bi bi-check-circle"></i> Update Faculty
-                                                        </button>
-                                                    </div>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Delete Modal -->
-                                    <div class="modal fade" id="deleteModal<?php echo $faculty['faculty_id']; ?>" tabindex="-1">
-                                        <div class="modal-dialog">
-                                            <div class="modal-content">
-                                                <div class="modal-header bg-danger text-white">
-                                                    <h5 class="modal-title"><i class="bi bi-trash-fill"></i> Confirm Delete</h5>
-                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <form method="POST">
-                                                    <div class="modal-body">
-                                                        <input type="hidden" name="faculty_id" value="<?php echo $faculty['faculty_id']; ?>">
-                                                        <p>Are you sure you want to delete the faculty:</p>
-                                                        <p class="fw-bold"><?php echo htmlspecialchars($faculty['faculty_code']); ?> - <?php echo htmlspecialchars($faculty['faculty_name']); ?></p>
-                                                        <?php if ($faculty['department_count'] > 0): ?>
-                                                            <div class="alert alert-warning">
-                                                                <i class="bi bi-exclamation-triangle"></i> This faculty has <?php echo $faculty['department_count']; ?> department(s). 
-                                                                They will be unassigned if you delete this faculty.
-                                                            </div>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                    <div class="modal-footer">
-                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                                                            <i class="bi bi-x-circle"></i> Cancel
-                                                        </button>
-                                                        <button type="submit" name="delete_faculty" class="btn btn-danger">
-                                                            <i class="bi bi-trash-fill"></i> Delete Faculty
-                                                        </button>
-                                                    </div>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    </td>
+                                </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
@@ -573,6 +427,197 @@ while ($row = $result->fetch_assoc()) {
             </div>
         </div>
     </div>
+
+    <!-- Add Faculty Modal -->
+    <div class="modal fade" id="addFacultyModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add New Faculty</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Faculty Code <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="faculty_code" placeholder="e.g., FICT" maxlength="20" style="text-transform: uppercase;" required>
+                            <small class="text-muted">Max 20 characters</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Faculty Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="faculty_name" placeholder="e.g., Faculty of ICT" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Head of Faculty</label>
+                            <input type="text" class="form-control" name="head_of_faculty" placeholder="e.g., Dr. John Doe">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="add_faculty" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-1"></i>Add Faculty
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Faculty Modals (Edit, Delete, Departments) -->
+    <?php foreach ($faculties as $faculty): ?>
+        <!-- Departments Modal -->
+        <div class="modal fade" id="departmentsModal<?= $faculty['faculty_id'] ?>" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i>Manage Departments - <?= htmlspecialchars($faculty['faculty_name']) ?></h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Add New Department -->
+                        <div class="card mb-3 border-0 bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title mb-3"><i class="bi bi-plus-circle me-2"></i>Add New Department</h6>
+                                <form method="POST">
+                                    <input type="hidden" name="faculty_id" value="<?= $faculty['faculty_id'] ?>">
+                                    <div class="row g-2">
+                                        <div class="col-md-3">
+                                            <input type="text" class="form-control" name="department_code" placeholder="Code (e.g., CS)" maxlength="10" style="text-transform: uppercase;" required>
+                                        </div>
+                                        <div class="col-md-7">
+                                            <input type="text" class="form-control" name="department_name" placeholder="Department Name" required>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <button type="submit" name="add_department_to_faculty" class="btn btn-success w-100">
+                                                <i class="bi bi-plus-lg"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Current Departments -->
+                        <h6 class="mb-3"><i class="bi bi-list-ul me-2"></i>Departments in Faculty</h6>
+                        <?php $current_depts = $faculty_departments[$faculty['faculty_id']] ?? []; ?>
+                        <?php if (empty($current_depts)): ?>
+                            <div class="alert alert-info mb-3">
+                                <i class="bi bi-info-circle me-2"></i>No departments assigned yet.
+                            </div>
+                        <?php else: ?>
+                            <div class="list-group mb-3">
+                                <?php foreach ($current_depts as $dept): ?>
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge bg-primary me-2"><?= htmlspecialchars($dept['department_code']) ?></span>
+                                            <?= htmlspecialchars($dept['department_name']) ?>
+                                        </div>
+                                        <form method="POST" style="display:inline;">
+                                            <input type="hidden" name="department_id" value="<?= $dept['department_id'] ?>">
+                                            <button type="submit" name="remove_department_from_faculty" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this department?');">
+                                                <i class="bi bi-x-circle"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Unassigned Departments -->
+                        <?php if (!empty($unassigned_departments)): ?>
+                            <h6 class="mb-3"><i class="bi bi-arrow-down-circle me-2"></i>Assign Existing Departments</h6>
+                            <div class="list-group">
+                                <?php foreach ($unassigned_departments as $dept): ?>
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge bg-secondary me-2"><?= htmlspecialchars($dept['department_code']) ?></span>
+                                            <?= htmlspecialchars($dept['department_name']) ?>
+                                        </div>
+                                        <form method="POST" style="display:inline;">
+                                            <input type="hidden" name="department_id" value="<?= $dept['department_id'] ?>">
+                                            <input type="hidden" name="faculty_id" value="<?= $faculty['faculty_id'] ?>">
+                                            <button type="submit" name="assign_department" class="btn btn-sm btn-success">
+                                                <i class="bi bi-plus-circle me-1"></i>Assign
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div class="modal fade" id="editModal<?= $faculty['faculty_id'] ?>" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Faculty</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form method="POST">
+                        <div class="modal-body">
+                            <input type="hidden" name="faculty_id" value="<?= $faculty['faculty_id'] ?>">
+                            <div class="mb-3">
+                                <label class="form-label">Faculty Code <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="faculty_code" value="<?= htmlspecialchars($faculty['faculty_code']) ?>" maxlength="20" style="text-transform: uppercase;" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Faculty Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="faculty_name" value="<?= htmlspecialchars($faculty['faculty_name']) ?>" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Head of Faculty</label>
+                                <input type="text" class="form-control" name="head_of_faculty" value="<?= htmlspecialchars($faculty['head_of_faculty'] ?? '') ?>">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" name="update_faculty" class="btn btn-primary">
+                                <i class="bi bi-save me-1"></i>Update
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Modal -->
+        <div class="modal fade" id="deleteModal<?= $faculty['faculty_id'] ?>" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete Faculty</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form method="POST">
+                        <div class="modal-body">
+                            <input type="hidden" name="faculty_id" value="<?= $faculty['faculty_id'] ?>">
+                            <p>Are you sure you want to delete:</p>
+                            <p class="fw-bold text-danger"><?= htmlspecialchars($faculty['faculty_code']) ?> - <?= htmlspecialchars($faculty['faculty_name']) ?></p>
+                            <?php if ($faculty['department_count'] > 0): ?>
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    This faculty has <strong><?= $faculty['department_count'] ?></strong> department(s) that will be unassigned.
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" name="delete_faculty" class="btn btn-danger">
+                                <i class="bi bi-trash me-1"></i>Delete
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

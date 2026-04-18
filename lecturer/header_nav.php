@@ -12,7 +12,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
 // Load notification system
 require_once __DIR__ . '/../includes/notifications.php';
 $notif_user_id = $_SESSION['vle_user_id'] ?? 0;
-$notif_lecturer_id = $_SESSION['vle_related_id'] ?? '';
+$notif_lecturer_id = getRelatedIdForRole('lecturer') ?? '';
 if ($notif_user_id && $notif_lecturer_id) {
     generateLecturerNotifications($notif_user_id, $notif_lecturer_id);
 }
@@ -28,6 +28,7 @@ $nav_items = [
     ['url' => 'forum.php', 'icon' => 'bi-chat-left-text', 'title' => 'Forums'],
     ['url' => 'gradebook.php', 'icon' => 'bi-journal-check', 'title' => 'Gradebook'],
     ['url' => 'exam_marking.php', 'icon' => 'bi-pencil-square', 'title' => 'Exam Marking'],
+    ['url' => 'dissertation_supervision.php', 'icon' => 'bi-mortarboard', 'title' => 'Dissertations'],
 ];
 
 // Get page title from breadcrumbs or default
@@ -64,7 +65,7 @@ $page_title = $page_title ?? 'Lecturer Portal';
                         <i class="bi bi-grid me-1"></i> More
                     </a>
                     <ul class="dropdown-menu" aria-labelledby="moreDropdown">
-                        <li><a class="dropdown-item" href="class_session.php"><i class="bi bi-clipboard-check me-2"></i>Attendance Sessions</a></li>
+                        <li><a class="dropdown-item" href="attendance_register.php"><i class="bi bi-clipboard-data me-2"></i>Attendance Register</a></li>
                         <li><a class="dropdown-item" href="manage_content.php"><i class="bi bi-folder me-2"></i>Course Content</a></li>
                         <li><a class="dropdown-item" href="approve_downloads.php"><i class="bi bi-download me-2"></i>Download Requests</a></li>
                         <li><hr class="dropdown-divider"></li>
@@ -166,6 +167,7 @@ $page_title = $page_title ?? 'Lecturer Portal';
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>My Profile</a></li>
                         <li><a class="dropdown-item" href="change_password.php"><i class="bi bi-key me-2"></i>Change Password</a></li>
+                        <li><a class="dropdown-item" href="help.php"><i class="bi bi-question-circle me-2"></i>Help & Guide</a></li>
                         <li><a class="dropdown-item" href="../theme_settings.php"><i class="bi bi-palette me-2"></i>Theme</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="../logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>

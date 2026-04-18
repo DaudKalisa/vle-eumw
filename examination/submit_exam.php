@@ -30,7 +30,10 @@ if (!$session) {
 }
 
 // Get exam details
-$exam = $conn->query("SELECT * FROM exams WHERE exam_id = $exam_id")->fetch_assoc();
+$stmt = $conn->prepare("SELECT * FROM exams WHERE exam_id = ?");
+$stmt->bind_param("i", $exam_id);
+$stmt->execute();
+$exam = $stmt->get_result()->fetch_assoc();
 if (!$exam) {
     echo json_encode(['success' => false, 'message' => 'Exam not found']);
     exit;
@@ -128,8 +131,10 @@ try {
     $stmt->execute();
     $result_id = $conn->insert_id;
 
-    // Update session status
-    $conn->query("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = $session_id");
+    // Update session status - end this student's exam session
+    $stmt = $conn->prepare("UPDATE exam_sessions SET status = 'completed', ended_at = NOW() WHERE session_id = ? AND student_id = ?");
+    $stmt->bind_param("is", $session_id, $student_id);
+    $stmt->execute();
 
     $conn->commit();
 

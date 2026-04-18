@@ -1,20 +1,77 @@
 {
-  "name": "Exploits University Malawi VLE",
-  "short_name": "EU VLE",
-  "start_url": "/student/attendance_confirm.php",
+  "name": "Exploits University of Malawi - Virtual Learning Environment",
+  "short_name": "EUMW VLE",
+  "description": "Access your courses, assignments, grades, attendance, and more from any device.",
+  "start_url": "/login.php",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#198754",
+  "orientation": "any",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0d1b4a",
+  "categories": ["education"],
+  "lang": "en",
   "icons": [
+    {
+      "src": "/assets/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icons/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icons/icon-152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/assets/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/assets/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "My Dashboard",
+      "short_name": "Dashboard",
+      "url": "/dashboard.php",
+      "icons": [{"src": "/assets/icons/icon-96.png", "sizes": "96x96"}]
+    },
+    {
+      "name": "Login",
+      "short_name": "Login",
+      "url": "/login.php",
+      "icons": [{"src": "/assets/icons/icon-96.png", "sizes": "96x96"}]
     }
   ]
 }

@@ -5,7 +5,7 @@ requireLogin();
 requireRole(['lecturer']);
 
 $conn = getDbConnection();
-$lecturer_id = $_SESSION['vle_related_id'];
+$lecturer_id = getRelatedIdForRole('lecturer');
 
 // Get lecturer profile data
 $stmt = $conn->prepare("SELECT * FROM lecturers WHERE lecturer_id = ?");
@@ -14,27 +14,35 @@ $stmt->execute();
 $lecturer = $stmt->get_result()->fetch_assoc();
 
 if (!$lecturer) {
-    die("Error: Lecturer profile not found.");
+    $_SESSION['vle_error'] = 'Lecturer profile not found. Please contact administrator to link your account.';
+    header('Location: ../dashboard.php');
+    exit();
 }
 
-// Determine hourly rate based on position
+// Get rates from fee_settings (configurable by finance)
+$conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS lecturer_hourly_rate DECIMAL(10,2) DEFAULT 9500.00");
+$conn->query("ALTER TABLE fee_settings ADD COLUMN IF NOT EXISTS lecturer_airtime_rate DECIMAL(10,2) DEFAULT 15000.00");
+$conn->query("ALTER TABLE lecturer_finance_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100) DEFAULT NULL");
+$conn->query("ALTER TABLE lecturer_finance_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(50) DEFAULT NULL");
+$fee_rates = $conn->query("SELECT lecturer_hourly_rate, lecturer_airtime_rate FROM fee_settings LIMIT 1")->fetch_assoc();
+$db_hourly_rate = (float)($fee_rates['lecturer_hourly_rate'] ?? 9500);
+$db_airtime_rate = (float)($fee_rates['lecturer_airtime_rate'] ?? 15000);
+
+// Determine hourly rate based on position (using DB rate as base)
 $position = strtolower($lecturer['position'] ?? '');
+$hourly_rate = $db_hourly_rate;
 if (strpos($position, 'senior lecturer') !== false) {
-    $hourly_rate = 8500;
-    $rate_label = 'Senior Lecturer (K8,500/hr)';
+    $rate_label = 'Senior Lecturer (MKW' . number_format($hourly_rate) . '/hr)';
 } elseif (strpos($position, 'lecturer') !== false && strpos($position, 'associate') === false) {
-    $hourly_rate = 6500;
-    $rate_label = 'Lecturer (K6,500/hr)';
+    $rate_label = 'Lecturer (MKW' . number_format($hourly_rate) . '/hr)';
 } elseif (strpos($position, 'associate') !== false) {
-    $hourly_rate = 5500;
-    $rate_label = 'Associate Lecturer (K5,500/hr)';
+    $rate_label = 'Associate Lecturer (MKW' . number_format($hourly_rate) . '/hr)';
 } else {
-    $hourly_rate = 5500;
-    $rate_label = 'Default (K5,500/hr)';
+    $rate_label = 'Default (MKW' . number_format($hourly_rate) . '/hr)';
 }
 
-// Airtime/Bundle rate
-$airtime_bundle_rate = 15000;
+// Airtime/Bundle rate from DB
+$airtime_bundle_rate = $db_airtime_rate;
 
 // Get lecturer's courses with statistics
 $courses_query = "
@@ -66,40 +74,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $selected_courses = $_POST['courses'] ?? [];
     $month = $_POST['month'] ?? '';
     $year = $_POST['year'] ?? '';
-    $total_hours = (float)($_POST['total_hours'] ?? 0);
     $additional_notes = trim($_POST['additional_notes'] ?? '');
     $signature_data = $_POST['signature'] ?? '';
+    $bank_name = trim($_POST['bank_name'] ?? '');
+    $account_number = trim($_POST['account_number'] ?? '');
+    $course_hours = $_POST['course_hours'] ?? [];
     
     if (empty($selected_courses)) {
         $error_message = "Please select at least one course.";
     } elseif (empty($signature_data)) {
         $error_message = "Please provide your signature.";
-    } elseif ($total_hours <= 0) {
-        $error_message = "Please enter valid total hours worked.";
     } else {
         // Calculate totals
         $total_students = 0;
         $total_assignments_marked = 0;
         $total_content = 0;
+        $total_hours = 0;
         $courses_data = [];
         
         foreach ($selected_courses as $course_id) {
             foreach ($courses as $course) {
                 if ($course['course_id'] == $course_id) {
+                    $ch = (float)($course_hours[$course_id] ?? 0);
                     $total_students += $course['enrolled_students'];
                     $total_assignments_marked += $course['marked_assignments'];
                     $total_content += $course['uploaded_content'];
+                    $total_hours += $ch;
                     $courses_data[] = [
                         'course_id' => $course['course_id'],
                         'course_name' => $course['course_name'],
                         'students' => $course['enrolled_students'],
                         'assignments' => $course['marked_assignments'],
-                        'content' => $course['uploaded_content']
+                        'content' => $course['uploaded_content'],
+                        'hours' => $ch
                     ];
                 }
             }
         }
         
+        if ($total_hours <= 0) {
+            $error_message = "Please enter valid hours for at least one course.";
+        } else {
         $total_amount = $total_hours * $hourly_rate;
         $courses_json = json_encode($courses_data);
         
@@ -125,16 +140,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             INSERT INTO lecturer_finance_requests 
             (lecturer_id, month, year, courses_data, total_students, total_modules, 
              total_assignments_marked, total_content_uploaded, total_hours, hourly_rate, 
-             total_amount, signature_path, additional_notes, status, submission_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+             total_amount, signature_path, additional_notes, bank_name, account_number, status, submission_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
         ");
         
         $total_modules = count($selected_courses);
         $stmt->bind_param(
-            "siisiiidddsss",
+            "siisiiidddsssss",
             $lecturer_id, $month, $year, $courses_json, $total_students, $total_modules,
             $total_assignments_marked, $total_content, $total_hours, $hourly_rate,
-            $total_amount, $signature_filename, $additional_notes
+            $total_amount, $signature_filename, $additional_notes, $bank_name, $account_number
         );
         
         if ($stmt->execute()) {
@@ -142,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $error_message = "Failed to submit request: " . $conn->error;
         }
+        } // end total_hours check
     }
 }
 
@@ -150,7 +166,7 @@ $previous_requests = [];
 $stmt = $conn->prepare("
     SELECT * FROM lecturer_finance_requests 
     WHERE lecturer_id = ? 
-    ORDER BY request_date DESC 
+    ORDER BY submission_date DESC 
     LIMIT 10
 ");
 $stmt->bind_param("s", $lecturer_id);
@@ -271,9 +287,31 @@ $user = getCurrentUser();
                             <div class="col-md-6">
                                 <p><strong>Qualification:</strong> <?php echo htmlspecialchars($lecturer['qualification'] ?? 'N/A'); ?></p>
                                 <p><strong>Department:</strong> <?php echo htmlspecialchars($lecturer['department'] ?? 'N/A'); ?></p>
-                                <p><strong>Hourly Rate:</strong> <span class="badge bg-success fs-6">K<?php echo number_format($hourly_rate); ?></span> <span class="text-muted small ms-2"><?php echo $rate_label; ?></span></p>
-                                <p><strong>Airtime/Bundle Rate:</strong> <span class="badge bg-info fs-6">K<?php echo number_format($airtime_bundle_rate); ?></span> <span class="text-muted small ms-2">per request</span></p>
+                                <p><strong>Hourly Rate:</strong> <span class="badge bg-success fs-6">MKW<?php echo number_format($hourly_rate); ?></span> <span class="text-muted small ms-2"><?php echo $rate_label; ?></span></p>
+                                <p><strong>Airtime/Bundle Rate:</strong> <span class="badge bg-info fs-6">MKW<?php echo number_format($airtime_bundle_rate); ?></span> <span class="text-muted small ms-2">per request</span></p>
                                 <p><strong>NRC:</strong> <?php echo htmlspecialchars($lecturer['nrc'] ?? 'N/A'); ?></p>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6 class="mb-3"><i class="bi bi-bank me-2"></i>Banking Details <small class="text-muted">(for payment processing)</small></h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Bank Name *</label>
+                                <select class="form-select" name="bank_name" id="bank_name" required>
+                                    <option value="">Select Bank</option>
+                                    <?php
+                                    $banks = ['National Bank of Malawi', 'FDH Bank', 'Standard Bank', 'NBS Bank', 'Ecobank', 'CDH Investment Bank', 'First Capital Bank', 'Opportunity Bank', 'MyBucks Bank', 'Airtel Money', 'TNM Mpamba', 'Other'];
+                                    foreach ($banks as $bank):
+                                    ?>
+                                    <option value="<?php echo $bank; ?>" <?php echo ($lecturer['bank_name'] ?? '') === $bank ? 'selected' : ''; ?>><?php echo $bank; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Account Number *</label>
+                                <input type="text" class="form-control" name="account_number" id="account_number" 
+                                       value="<?php echo htmlspecialchars($lecturer['account_number'] ?? ''); ?>" 
+                                       placeholder="Enter account number" required>
                             </div>
                         </div>
                     </div>
@@ -322,7 +360,7 @@ $user = getCurrentUser();
                     <!-- Select Courses -->
                     <div class="card mb-4">
                         <div class="card-header bg-info text-white">
-                            <h5 class="mb-0"><i class="bi bi-book"></i> Select Modules/Courses</h5>
+                            <h5 class="mb-0"><i class="bi bi-book"></i> Select Courses</h5>
                         </div>
                         <div class="card-body">
                             <?php if (empty($courses)): ?>
@@ -353,6 +391,14 @@ $user = getCurrentUser();
                                                         <i class="bi bi-file-earmark"></i> <?php echo $course['uploaded_content']; ?> Content
                                                     </span>
                                                 </div>
+                                                <div class="mt-2 course-hours-row" id="hours_row_<?php echo $course['course_id']; ?>" style="display:none">
+                                                    <label class="form-label small fw-bold mb-1">Hours for this module:</label>
+                                                    <input type="number" class="form-control form-control-sm course-hours-input" 
+                                                           name="course_hours[<?php echo $course['course_id']; ?>]" 
+                                                           data-course-id="<?php echo $course['course_id']; ?>"
+                                                           step="0.5" min="0" placeholder="Enter hours" 
+                                                           onchange="updateTotalHours()" oninput="updateTotalHours()">
+                                                </div>
                                             </div>
                                         </div>
                                     <?php endforeach; ?>
@@ -369,7 +415,7 @@ $user = getCurrentUser();
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-md-3 mb-3">
-                                    <label class="form-label">Total Modules</label>
+                                    <label class="form-label">Total Courses</label>
                                     <input type="text" class="form-control readonly-field" id="total_modules" readonly value="0">
                                 </div>
                                 <div class="col-md-3 mb-3">
@@ -396,28 +442,27 @@ $user = getCurrentUser();
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-md-3 mb-3">
-                                    <label class="form-label">Total Hours Worked *</label>
-                                    <input type="number" class="form-control" name="total_hours" 
-                                           id="total_hours" step="0.5" min="0" required 
-                                           onchange="calculateTotal()">
-                                    <div class="form-text">Enter total hours worked for selected courses</div>
+                                    <label class="form-label">Total Hours Worked</label>
+                                    <input type="number" class="form-control readonly-field" name="total_hours" 
+                                           id="total_hours" step="0.5" min="0" readonly value="0">
+                                    <div class="form-text">Auto-calculated from per-course hours</div>
                                 </div>
                                 <div class="col-md-3 mb-3">
                                     <label class="form-label">Hourly Rate</label>
                                     <input type="text" class="form-control readonly-field" 
-                                           value="K<?php echo number_format($hourly_rate); ?>" readonly>
+                                           value="MKW<?php echo number_format($hourly_rate); ?>" readonly>
                                     <div class="form-text">Based on your position</div>
                                 </div>
                                 <div class="col-md-3 mb-3">
                                     <label class="form-label">Airtime/Bundle Rate</label>
                                     <input type="text" class="form-control readonly-field" 
-                                           value="K<?php echo number_format($airtime_bundle_rate); ?>" readonly>
+                                           value="MKW<?php echo number_format($airtime_bundle_rate); ?>" readonly>
                                     <div class="form-text">Per request</div>
                                 </div>
                                 <div class="col-md-3 mb-3">
                                     <label class="form-label">Total Amount</label>
                                     <input type="text" class="form-control readonly-field bg-success text-white" 
-                                           id="total_amount" readonly value="K0.00">
+                                           id="total_amount" readonly value="MKW0.00">
                                     <div class="form-text">Calculated automatically (Hours x Rate + Airtime)</div>
                                 </div>
                             </div>
@@ -478,7 +523,7 @@ $user = getCurrentUser();
                                         <tr>
                                             <th>Date</th>
                                             <th>Period</th>
-                                            <th>Modules</th>
+                                            <th>Courses</th>
                                             <th>Hours</th>
                                             <th>Amount</th>
                                             <th>Status</th>
@@ -529,7 +574,7 @@ $user = getCurrentUser();
                                                     <strong>
                                                     <?php
                                                     if (isset($req['total_amount']) && $req['total_amount'] !== null && $req['total_amount'] !== '') {
-                                                        echo 'K' . number_format((float)$req['total_amount'], 2);
+                                                        echo 'MKW' . number_format((float)$req['total_amount'], 2);
                                                     } else {
                                                         echo '<span class="text-muted">N/A</span>';
                                                     }
@@ -551,25 +596,30 @@ $user = getCurrentUser();
                                                     </span>
                                                 </td>
                                                 <td>
+                                                    <?php if (!empty($req['request_id'])): ?>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="previewClaim(<?php echo (int)$req['request_id']; ?>)" title="Preview Claim">
+                                                        <i class="bi bi-eye"></i>
+                                                    </button>
+                                                    <?php endif; ?>
                                                      <?php if (!empty($req['request_id']) && $req['status'] === 'paid'): ?>
                                                     <a href="../finance/print_lecturer_payment.php?id=<?php echo urlencode($req['request_id']); ?>" 
                                                        class="btn btn-sm btn-outline-success" target="_blank" title="View/Print Payment Confirmation">
                                                         <i class="bi bi-printer"></i> Print
                                                     </a>
                                                     <?php elseif (!empty($req['request_id']) && $req['status'] === 'pending'): ?>
-                                                    <span class="btn btn-sm btn-outline-warning disabled" title="Awaiting approval">
+                                                    <span class="badge bg-warning text-dark" title="Awaiting approval">
                                                         <i class="bi bi-hourglass-split"></i> Pending
                                                     </span>
                                                     <?php elseif (!empty($req['request_id']) && $req['status'] === 'approved'): ?>
-                                                    <span class="btn btn-sm btn-outline-info disabled" title="Approved, awaiting payment">
+                                                    <span class="badge bg-success" title="Approved, awaiting payment">
                                                         <i class="bi bi-check-circle"></i> Approved
                                                     </span>
                                                     <?php elseif (!empty($req['request_id']) && $req['status'] === 'rejected'): ?>
-                                                    <span class="btn btn-sm btn-outline-danger disabled" title="Request rejected">
+                                                    <span class="badge bg-danger" title="Request rejected">
                                                         <i class="bi bi-x-circle"></i> Rejected
                                                     </span>
                                                     <?php else: ?>
-                                                    <span class="btn btn-sm btn-outline-secondary disabled" title="No request ID">
+                                                    <span class="badge bg-secondary" title="No request ID">
                                                         <i class="bi bi-eye-slash"></i> N/A
                                                     </span>
                                                     <?php endif; ?>
@@ -582,6 +632,27 @@ $user = getCurrentUser();
                         </div>
                     </div>
                 <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Claim Modal -->
+    <div class="modal fade" id="previewClaimModal" tabindex="-1" aria-labelledby="previewClaimModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="previewClaimModalLabel"><i class="bi bi-eye me-2"></i>Claim Preview</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="previewClaimContent">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Loading claim details...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
         </div>
     </div>
@@ -667,26 +738,50 @@ $user = getCurrentUser();
 
         // Update totals when courses are selected
         function updateTotals() {
-            const checkboxes = document.querySelectorAll('input[name="courses[]"]:checked');
+            const checkboxes = document.querySelectorAll('input[name="courses[]"]');
             let totalStudents = 0;
             let totalMarked = 0;
             let totalContent = 0;
+            let checkedCount = 0;
 
             checkboxes.forEach(checkbox => {
                 const courseId = parseInt(checkbox.value);
-                const course = coursesData.find(c => c.course_id === courseId);
-                if (course) {
-                    totalStudents += parseInt(course.enrolled_students);
-                    totalMarked += parseInt(course.marked_assignments);
-                    totalContent += parseInt(course.uploaded_content);
+                const hoursRow = document.getElementById('hours_row_' + courseId);
+                if (checkbox.checked) {
+                    checkedCount++;
+                    if (hoursRow) hoursRow.style.display = 'block';
+                    const course = coursesData.find(c => c.course_id === courseId);
+                    if (course) {
+                        totalStudents += parseInt(course.enrolled_students);
+                        totalMarked += parseInt(course.marked_assignments);
+                        totalContent += parseInt(course.uploaded_content);
+                    }
+                } else {
+                    if (hoursRow) {
+                        hoursRow.style.display = 'none';
+                        const input = hoursRow.querySelector('input');
+                        if (input) input.value = '';
+                    }
                 }
             });
 
-            document.getElementById('total_modules').value = checkboxes.length;
+            document.getElementById('total_modules').value = checkedCount;
             document.getElementById('total_students').value = totalStudents;
             document.getElementById('total_marked').value = totalMarked;
             document.getElementById('total_content').value = totalContent;
             
+            updateTotalHours();
+        }
+
+        // Sum per-course hours and recalculate
+        function updateTotalHours() {
+            let totalHours = 0;
+            document.querySelectorAll('.course-hours-input').forEach(input => {
+                if (input.closest('.course-hours-row').style.display !== 'none') {
+                    totalHours += parseFloat(input.value) || 0;
+                }
+            });
+            document.getElementById('total_hours').value = totalHours;
             calculateTotal();
         }
 
@@ -694,10 +789,25 @@ $user = getCurrentUser();
         function calculateTotal() {
             const hours = parseFloat(document.getElementById('total_hours').value) || 0;
             const total = (hours * hourlyRate) + <?php echo $airtime_bundle_rate; ?>;
-            document.getElementById('total_amount').value = 'K' + total.toLocaleString('en-US', {
+            document.getElementById('total_amount').value = 'MKW' + total.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             });
+        }
+
+        // Preview Claim
+        function previewClaim(requestId) {
+            var modal = new bootstrap.Modal(document.getElementById('previewClaimModal'));
+            document.getElementById('previewClaimContent').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading claim details...</p></div>';
+            modal.show();
+            fetch('get_claim_details.php?id=' + requestId)
+                .then(function(r) { return r.text(); })
+                .then(function(html) {
+                    document.getElementById('previewClaimContent').innerHTML = html;
+                })
+                .catch(function() {
+                    document.getElementById('previewClaimContent').innerHTML = '<div class="alert alert-danger">Failed to load claim details.</div>';
+                });
         }
 
         // Form validation

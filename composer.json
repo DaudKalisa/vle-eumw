@@ -2,6 +2,8 @@
     "name": "vle-system/university-portal",
     "description": "Virtual Learning Environment System",
     "require": {
-        "phpmailer/phpmailer": "^6.8"
+        "phpmailer/phpmailer": "^6.8",
+        "mpdf/mpdf": "^8.2",
+        "phpoffice/phpspreadsheet": "^1.29"
     }
 }
