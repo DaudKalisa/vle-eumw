@@ -548,8 +548,8 @@ $breadcrumbs = [['title' => 'Dashboard', 'url' => 'dashboard.php'], ['title' => 
                             <div class="alert alert-success">Certificate No: <strong><?= htmlspecialchars($existing_clearance['certificate_number']) ?></strong></div>
                         <?php endif; ?>
                         <p class="text-muted small">Cleared on <?= date('M j, Y H:i', strtotime($existing_clearance['cleared_at'])) ?></p>
-                        <a href="../finance/exam_clearance_certificate.php?id=<?= $existing_clearance['clearance_id'] ?>" target="_blank" class="btn btn-success mt-2">
-                            <i class="bi bi-download me-2"></i>Download / Print Certificate
+                        <a href="../finance/exam_clearance_certificate.php?id=<?= $existing_clearance['clearance_id'] ?>" class="btn btn-success mt-2">
+                            <i class="bi bi-file-earmark-pdf me-2"></i>Download Certificate PDF
                         </a>
                     
                     <?php elseif ($existing_clearance['status'] === 'rejected'): ?>

@@ -119,6 +119,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $success = "Payment approved. Student AUTO-CLEARED — balance is fully paid! Certificate: $cert_number";
             }
             
+            // AUTO-CLEAR: If balance is zero or less after approval, automatically clear the student
+            if ($decision === 'approved' && $new_balance <= 0 && $student['status'] !== 'cleared') {
+                $clearance_type = $student['clearance_type'] ?? 'endsemester';
+                $year = date('Y');
+                $prefix = ($clearance_type === 'midsemester') ? 'ECM' : 'EC';
+                $cnt_rs = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE certificate_number IS NOT NULL AND certificate_number LIKE '{$prefix}-$year%'");
+                $cnt = ($cnt_rs->fetch_assoc()['cnt'] ?? 0) + 1;
+                $cert_number = $prefix . '-' . $year . '-' . str_pad($cnt, 5, '0', STR_PAD_LEFT);
+                
+                $auto_stmt = $conn->prepare("UPDATE exam_clearance_students SET status = 'cleared', cleared_by = ?, cleared_at = NOW(), certificate_number = ?, finance_notes = 'Auto-cleared: balance fully paid', amount_paid = ? WHERE clearance_id = ?");
+                $auto_stmt->bind_param("isdi", $uid, $cert_number, $total_approved, $clearance_id);
+                $auto_stmt->execute();
+                
+                // Record revenue
+                $rev_check = $conn->query("SELECT revenue_recorded FROM exam_clearance_students WHERE clearance_id = $clearance_id");
+                $already_recorded = (int)($rev_check->fetch_assoc()['revenue_recorded'] ?? 0);
+                
+                if (!$already_recorded && $total_approved > 0) {
+                    $reg_fee = (float)($student['registration_fee'] ?? 0);
+                    $tuition_paid = $total_approved - $reg_fee;
+                    if ($tuition_paid < 0) { $tuition_paid = 0; $reg_fee = $total_approved; }
+                    $today = date('Y-m-d');
+                    $sid = $student['student_id'];
+                    $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
+                    
+                    if ($tuition_paid > 0) {
+                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?)");
+                        $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
+                        $rev_stmt->bind_param("sdsss", $sid, $tuition_paid, $today, $desc, $cert_number);
+                        $rev_stmt->execute();
+                    }
+                    if ($reg_fee > 0) {
+                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?)");
+                        $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
+                        $rev_stmt2->bind_param("sdsss", $sid, $reg_fee, $today, $desc2, $cert_number);
+                        $rev_stmt2->execute();
+                    }
+                    $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
+                }
+                
+                // Log auto-clearance
+                logExamClearanceActivity($conn, $clearance_id, 'cleared', 'system', $uid, 'System (Auto-Clear)', "Auto-cleared: balance fully paid. Certificate: {$cert_number}. Amount: MWK " . number_format($total_approved, 2));
+                
+                // Email student
+                notifyStudentCleared($conn, $student['email'], $student['full_name'], $cert_number, 'System (Auto-Clearance)');
+                
+                $success = "Payment approved. Student AUTO-CLEARED — balance is fully paid! Certificate: $cert_number";
+            }
+            
             // Reload
             $stmt2 = $conn->prepare("SELECT * FROM exam_clearance_students WHERE clearance_id = ?");
             $stmt2->bind_param("i", $clearance_id);
