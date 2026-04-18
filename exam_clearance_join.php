@@ -145,29 +145,43 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                 if ($email_check->get_result()->num_rows > 0) {
                     $error = 'This email has already been used to register with this invite link.';
                 } else {
-                    // Calculate invoice amount based on program type
-                    $invoiced_amount = 0;
+                    // Calculate registration fee based on entry type (NE/ME = new, CE = continuing)
+                    $registration_fee = 0;
+                    if ($fee_settings) {
+                        if ($entry_type === 'CE') {
+                            $registration_fee = (float)($fee_settings['continuing_reg_fee'] ?? 35000);
+                        } else {
+                            $registration_fee = (float)($fee_settings['new_student_reg_fee'] ?? 39500);
+                        }
+                    } else {
+                        $registration_fee = ($entry_type === 'CE') ? 35000 : 39500;
+                    }
                     
+                    // Calculate tuition based on program type
+                    $tuition_amount = 0;
                     if ($fee_settings) {
                         switch ($program_type) {
                             case 'masters':
-                                $invoiced_amount = (float)($fee_settings['tuition_masters'] ?? 1100000);
+                                $tuition_amount = (float)($fee_settings['tuition_masters'] ?? 1100000);
                                 break;
                             case 'doctorate':
-                                $invoiced_amount = (float)($fee_settings['tuition_doctorate'] ?? 2200000);
+                                $tuition_amount = (float)($fee_settings['tuition_doctorate'] ?? 2200000);
                                 break;
-                            default: // degree, diploma, certificate, professional
-                                $invoiced_amount = (float)($fee_settings['tuition_degree'] ?? 500000);
+                            default:
+                                $tuition_amount = (float)($fee_settings['tuition_degree'] ?? 500000);
                                 break;
                         }
                     } else {
-                        $invoiced_amount = $program_type === 'masters' ? 1100000 : ($program_type === 'doctorate' ? 2200000 : 500000);
+                        $tuition_amount = $program_type === 'masters' ? 1100000 : ($program_type === 'doctorate' ? 2200000 : 500000);
                     }
                     
-                    $stmt = $conn->prepare("INSERT INTO exam_clearance_students (student_id, full_name, email, phone, program, program_id, program_type, department, department_id, campus, year_of_study, gender, national_id, address, entry_type, semester, year_of_registration, invite_token, invoiced_amount, balance, status, is_system_student) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'invoiced', 0)");
+                    // Total invoice = tuition + registration fee
+                    $invoiced_amount = $tuition_amount + $registration_fee;
+                    
+                    $stmt = $conn->prepare("INSERT INTO exam_clearance_students (student_id, full_name, email, phone, program, program_id, program_type, department, department_id, campus, year_of_study, gender, national_id, address, entry_type, semester, year_of_registration, invite_token, invoiced_amount, registration_fee, balance, status, is_system_student) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'registered', 0)");
                     $balance = $invoiced_amount;
                     $current_year = date('Y');
-                    $stmt->bind_param("sssssississsssssisdd", $student_id, $full_name, $email, $phone, $program, $program_id, $program_type, $department, $department_id, $campus, $year_of_study, $gender, $national_id, $address, $entry_type, $semester, $current_year, $token, $invoiced_amount, $balance);
+                    $stmt->bind_param("sssssississssssssddd", $student_id, $full_name, $email, $phone, $program, $program_id, $program_type, $department, $department_id, $campus, $year_of_study, $gender, $national_id, $address, $entry_type, $semester, $current_year, $token, $invoiced_amount, $registration_fee, $balance);
                     
                     if ($stmt->execute()) {
                         $clearance_id = $conn->insert_id;
@@ -183,8 +197,8 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                         $existing_user = $check_user->get_result()->fetch_assoc();
                         
                         if (!$existing_user) {
-                            $default_password = password_hash($student_id, PASSWORD_DEFAULT);
-                            $user_stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'exam_clearance_student')");
+                            $default_password = password_hash('password123', PASSWORD_DEFAULT);
+                            $user_stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, is_active) VALUES (?, ?, ?, 'exam_clearance_student', 0)");
                             $user_stmt->bind_param("sss", $username, $email, $default_password);
                             $user_stmt->execute();
                         }
@@ -195,11 +209,48 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                         $stmt2->execute();
                         $student = $stmt2->get_result()->fetch_assoc();
                         
-                        $step = 'upload_proof';
-                        $success = 'Registration successful! You have been invoiced <strong>MWK ' . number_format($invoiced_amount, 2) . '</strong> for ' . ucfirst($program_type) . ' program. Please upload your proof of payment below.';
+                        $step = 'registration_success';
+                        
+                        // Send email with login details
                         if (!$existing_user) {
-                            $success .= '<br><br><div class="alert alert-info mb-0 mt-2"><strong>Your Login Details:</strong><br>Username: <code>' . htmlspecialchars($username) . '</code><br>Password: <code>' . htmlspecialchars($student_id) . '</code><br>You can log in at the VLE portal to track your clearance status.</div>';
+                            require_once 'includes/exam_clearance_helpers.php';
+                            $login_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/login.php';
+                            $reg_fee_label = ($entry_type === 'CE') ? 'Continuing Student' : (($entry_type === 'ME') ? 'Mature Entry' : 'Normal Entry');
+                            $email_content = "
+                                <p class='greeting'>Dear {$full_name},</p>
+                                <p class='content-text'>Your registration for examination clearance has been <strong>submitted successfully</strong> and is pending approval by the administrator.</p>
+                                <div class='info-box'>
+                                    <h3>Registration Details</h3>
+                                    <div class='info-row'><span class='info-label'>Student ID</span><span class='info-value'>{$student_id}</span></div>
+                                    <div class='info-row'><span class='info-label'>Program</span><span class='info-value'>{$program}</span></div>
+                                    <div class='info-row'><span class='info-label'>Entry Type</span><span class='info-value'>{$reg_fee_label}</span></div>
+                                    <div class='info-row'><span class='info-label'>Registration Fee</span><span class='info-value'>MWK " . number_format($registration_fee, 2) . "</span></div>
+                                    <div class='info-row'><span class='info-label'>Tuition Fee</span><span class='info-value'>MWK " . number_format($tuition_amount, 2) . "</span></div>
+                                    <div class='info-row'><span class='info-label'>Total Invoiced</span><span class='info-value'>MWK " . number_format($invoiced_amount, 2) . "</span></div>
+                                </div>
+                                <div class='info-box' style='background:#e8f5e9;border-color:#4caf50;'>
+                                    <h3>Your Login Credentials</h3>
+                                    <div class='info-row'><span class='info-label'>Username</span><span class='info-value'>{$username}</span></div>
+                                    <div class='info-row'><span class='info-label'>Email</span><span class='info-value'>{$email}</span></div>
+                                    <div class='info-row'><span class='info-label'>Student ID</span><span class='info-value'>{$student_id}</span></div>
+                                    <div class='info-row'><span class='info-label'>Password</span><span class='info-value'>password123</span></div>
+                                </div>
+                                <p class='content-text'><strong>You can log in using your Student ID, Email, or Username.</strong></p>
+                                <p class='content-text'>Your account will be activated once the administrator approves your registration. You will receive another email when your account is approved.</p>
+                                <p class='content-text'>Please change your password after your first login for security.</p>
+                            ";
+                            sendExamClearanceEmail($email, $full_name, 'Registration Submitted - Exam Clearance', $email_content);
+                            
+                            // Notify admin/finance of new registration
+                            notifyFinanceNewApplication($conn, $full_name, $student_id, $program_type);
                         }
+                        
+                        $login_details = !$existing_user ? [
+                            'username' => $username,
+                            'email' => $email,
+                            'student_id' => $student_id,
+                            'password' => 'password123'
+                        ] : null;
                     } else {
                         $error = 'Registration failed. Please try again.';
                     }
@@ -457,7 +508,54 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
 
 <div class="reg-card">
 
-    <?php if ($step === 'done' && $student): ?>
+    <?php if ($step === 'registration_success'): ?>
+        <!-- REGISTRATION SUCCESS PAGE -->
+        <div class="success-box">
+            <div class="icon"><i class="bi bi-check-circle-fill"></i></div>
+            <h3 style="margin-bottom:12px;font-weight:700;">Registered Successfully!</h3>
+            <p style="color:var(--text-muted);max-width:560px;margin:0 auto 20px;">
+                Your examination clearance registration has been submitted. An administrator will review and approve your registration.
+                You will receive an email notification once approved.
+            </p>
+            
+            <!-- Invoice Breakdown -->
+            <div class="invoice-box" style="max-width:500px;margin:0 auto 20px;">
+                <p class="mb-1" style="color:var(--text-muted);">Invoice Breakdown (<?php echo ucfirst($student['program_type']); ?> &mdash; <?php echo ($student['entry_type'] === 'CE') ? 'Continuing' : (($student['entry_type'] === 'ME') ? 'Mature Entry' : 'Normal Entry'); ?>)</p>
+                <table style="width:100%;font-size:0.95rem;margin:10px 0;">
+                    <tr><td style="text-align:left;padding:4px 0;">Registration Fee</td><td style="text-align:right;font-weight:600;">MWK <?php echo number_format($student['registration_fee'], 2); ?></td></tr>
+                    <tr><td style="text-align:left;padding:4px 0;">Tuition Fee</td><td style="text-align:right;font-weight:600;">MWK <?php echo number_format($student['invoiced_amount'] - $student['registration_fee'], 2); ?></td></tr>
+                    <tr style="border-top:2px solid #059669;"><td style="text-align:left;padding:8px 0;font-weight:700;">Total Invoiced</td><td style="text-align:right;"><div class="invoice-amount" style="font-size:1.5rem;">MWK <?php echo number_format($student['invoiced_amount'], 2); ?></div></td></tr>
+                </table>
+            </div>
+            
+            <?php if (isset($login_details) && $login_details): ?>
+            <!-- Login Credentials -->
+            <div style="background:#e8f5e9;border:2px solid #4caf50;border-radius:12px;padding:20px;max-width:500px;margin:0 auto 20px;text-align:left;">
+                <h5 style="color:#2e7d32;margin-bottom:12px;text-align:center;"><i class="bi bi-key-fill me-1"></i> Your Login Credentials</h5>
+                <table style="width:100%;font-size:0.9rem;">
+                    <tr><td style="padding:6px 0;font-weight:600;width:40%;">Username:</td><td><code style="background:#c8e6c9;padding:3px 8px;border-radius:4px;"><?php echo htmlspecialchars($login_details['username']); ?></code></td></tr>
+                    <tr><td style="padding:6px 0;font-weight:600;">Email:</td><td><code style="background:#c8e6c9;padding:3px 8px;border-radius:4px;"><?php echo htmlspecialchars($login_details['email']); ?></code></td></tr>
+                    <tr><td style="padding:6px 0;font-weight:600;">Student ID:</td><td><code style="background:#c8e6c9;padding:3px 8px;border-radius:4px;"><?php echo htmlspecialchars($login_details['student_id']); ?></code></td></tr>
+                    <tr><td style="padding:6px 0;font-weight:600;">Password:</td><td><code style="background:#c8e6c9;padding:3px 8px;border-radius:4px;"><?php echo htmlspecialchars($login_details['password']); ?></code></td></tr>
+                </table>
+                <p style="margin:10px 0 0;font-size:0.82rem;color:#555;text-align:center;">
+                    <i class="bi bi-info-circle me-1"></i>You can log in using your <strong>Student ID</strong>, <strong>Email</strong>, or <strong>Username</strong>.<br>
+                    These credentials have also been sent to your email.
+                </p>
+            </div>
+            <?php endif; ?>
+            
+            <div class="alert alert-warning" style="border-radius:10px;max-width:500px;margin:0 auto 16px;">
+                <i class="bi bi-hourglass-split me-1"></i>
+                <strong>Pending Approval:</strong> Your account is currently inactive. Once approved by the administrator, you will be able to log in and upload your proof of payment.
+            </div>
+            
+            <a href="login.php" class="btn btn-outline-primary mt-2">
+                <i class="bi bi-box-arrow-in-right me-1"></i> Go to Login Page
+            </a>
+        </div>
+
+    <?php elseif ($step === 'done' && $student): ?>
         <!-- STEP 3: Final Confirmation -->
         <?php if ($student['status'] === 'cleared'): ?>
         <div class="success-box">
