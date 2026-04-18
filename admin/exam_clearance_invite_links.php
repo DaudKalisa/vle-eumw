@@ -173,7 +173,10 @@ $page_title = 'Exam Clearance Invite Links';
                             <?php if ($lnk['creator_name']): ?> by <?= htmlspecialchars($lnk['creator_name']) ?><?php endif; ?>
                             <?php if ($lnk['expires_at']): ?> &nbsp;|&nbsp; Expires: <?= date('M d, Y', strtotime($lnk['expires_at'])) ?><?php endif; ?>
                         </div>
-                        <input type="text" class="form-control form-control-sm bg-light" value="<?= htmlspecialchars($url) ?>" readonly onclick="this.select();document.execCommand('copy');">
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control bg-light" id="link-<?= $lnk['invite_id'] ?>" value="<?= htmlspecialchars($url) ?>" readonly>
+                            <button class="btn btn-outline-primary" type="button" onclick="copyLink(<?= $lnk['invite_id'] ?>, this)" title="Copy link"><i class="bi bi-clipboard"></i></button>
+                        </div>
                     </div>
                     <div class="d-flex gap-1">
                         <?php if ($active): ?>
@@ -191,5 +194,19 @@ $page_title = 'Exam Clearance Invite Links';
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function copyLink(id, btn) {
+    var input = document.getElementById('link-' + id);
+    input.select();
+    navigator.clipboard.writeText(input.value).then(function() {
+        btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+        btn.classList.replace('btn-outline-primary', 'btn-success');
+        setTimeout(function() {
+            btn.innerHTML = '<i class="bi bi-clipboard"></i>';
+            btn.classList.replace('btn-success', 'btn-outline-primary');
+        }, 2000);
+    });
+}
+</script>
 </body>
 </html>
