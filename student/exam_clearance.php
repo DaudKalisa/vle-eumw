@@ -8,7 +8,7 @@
 require_once '../includes/auth.php';
 require_once '../includes/exam_clearance_helpers.php';
 requireLogin();
-requireRole(['student', 'exam_clearance_student']);
+requireRole(['student', 'exam_clearance_student', 'dissertation_student']);
 
 $conn = getDbConnection();
 $user = getCurrentUser();
