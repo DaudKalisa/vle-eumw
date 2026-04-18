@@ -2,13 +2,7 @@
 // dashboard.php - Student Dashboard for VLE System
 require_once '../includes/auth.php';
 requireLogin();
-requireRole(['student']);
-
-// If this user is a dissertation-only student, send them to the dissertation portal instead of the main student dashboard.
-if (function_exists('hasRole') && hasRole('dissertation_student')) {
-    header('Location: dissertation.php');
-    exit();
-}
+requireRole(['student', 'exam_clearance_student', 'dissertation_student']);
 
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];

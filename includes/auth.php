@@ -309,14 +309,14 @@ function getUserDashboardUrl() {
         return $base . 'graduation_student/dashboard.php';
     }
 
-    // Dissertation students have a dedicated portal even though they are stored as student users.
+    // Dissertation students land on the student dashboard.
     if (hasRole('dissertation_student')) {
-        return $base . 'student/dissertation.php';
+        return $base . 'student/dashboard.php';
     }
 
-    // Exam clearance students go straight to the exam clearance page.
+    // Exam clearance students land on the student dashboard.
     if (hasRole('exam_clearance_student')) {
-        return $base . 'student/exam_clearance.php';
+        return $base . 'student/dashboard.php';
     }
 
     switch ($role) {
@@ -364,6 +364,7 @@ function requireRole($allowed_roles) {
         $page = basename($script_name);
         $is_examination_page = strpos($script_name, '/examination/') !== false;
         $allowed_ec_pages = [
+            'dashboard.php',
             'exam_clearance.php',
             'exam_clearance_certificate.php',
             'profile.php',
@@ -376,7 +377,7 @@ function requireRole($allowed_roles) {
         ];
         if (!in_array($page, $allowed_ec_pages, true) && !$is_examination_page) {
             $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
-            header('Location: ' . $base . 'student/exam_clearance.php');
+            header('Location: ' . $base . 'student/dashboard.php');
             exit();
         }
     }
@@ -389,6 +390,7 @@ function requireRole($allowed_roles) {
         if ($is_student_page) {
             $student_page = basename($script_name);
             $allowed_dissertation_pages = [
+                'dashboard.php',
                 'dissertation.php',
                 'dissertation_guidelines.php',
                 'ethics_form_online.php',
@@ -404,13 +406,13 @@ function requireRole($allowed_roles) {
             ];
             if (!in_array($student_page, $allowed_dissertation_pages, true)) {
                 $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
-                header('Location: ' . $base . 'student/dissertation.php');
+                header('Location: ' . $base . 'student/dashboard.php');
                 exit();
             }
         } elseif (!$is_examination_page) {
             // Allow examination pages, redirect others
             $base = str_contains($_SERVER['SCRIPT_NAME'], '/') ? '../' : '';
-            header('Location: ' . $base . 'student/dissertation.php');
+            header('Location: ' . $base . 'student/dashboard.php');
             exit();
         }
     }
