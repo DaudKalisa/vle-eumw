@@ -6,6 +6,8 @@ requireRole(['student', 'exam_clearance_student', 'dissertation_student']);
 
 $conn = getDbConnection();
 $student_id = $_SESSION['vle_related_id'];
+$_is_exam_clearance_only = (isset($_SESSION['vle_role']) && $_SESSION['vle_role'] === 'exam_clearance_student');
+$_is_dissertation_only = (isset($_SESSION['vle_role']) && $_SESSION['vle_role'] === 'dissertation_student');
 
 // Get student's financial information
 $finance_data = null;
@@ -25,6 +27,24 @@ if ($result->num_rows > 0) {
     $student_info = $result->fetch_assoc();
 }
 $stmt->close();
+
+// Fallback: if no record in students table, try exam_clearance_students (for EC students)
+if (!$student_info && $_is_exam_clearance_only) {
+    $ec_query = "SELECT ecs.*, ecs.full_name, ecs.email, ecs.phone, ecs.program, ecs.campus,
+                        ecs.year_of_study, ecs.semester, ecs.gender, ecs.national_id, ecs.address,
+                        ecs.department as department_name, '' as department_code, '' as profile_picture
+                 FROM exam_clearance_students ecs WHERE ecs.student_id = ?";
+    $ec_stmt = $conn->prepare($ec_query);
+    if ($ec_stmt) {
+        $ec_stmt->bind_param("s", $student_id);
+        $ec_stmt->execute();
+        $ec_result = $ec_stmt->get_result();
+        if ($ec_result->num_rows > 0) {
+            $student_info = $ec_result->fetch_assoc();
+        }
+        $ec_stmt->close();
+    }
+}
 
 $finance_query = "SELECT sf.*, s.program_type FROM student_finances sf 
                   JOIN students s ON sf.student_id COLLATE utf8mb4_general_ci = s.student_id COLLATE utf8mb4_general_ci 

@@ -828,7 +828,7 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                         <label class="form-label">Year of Study</label>
                         <select name="year_of_study" class="form-select">
                             <?php $ys = (int)($_POST['year_of_study'] ?? 1);
-                            for ($i = 1; $i <= 6; $i++): ?>
+                            for ($i = 1; $i <= 4; $i++): ?>
                             <option value="<?php echo $i; ?>" <?php echo $ys === $i ? 'selected' : ''; ?>>Year <?php echo $i; ?></option>
                             <?php endfor; ?>
                         </select>
