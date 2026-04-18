@@ -423,6 +423,9 @@ function getInviteLinkEmailBody($name, $url, $expires_days, $campus, $program) {
                 <span class="badge bg-warning text-dark ms-1"><?= $pending_count ?></span>
                 <?php endif; ?>
             </a>
+            <a href="exam_clearance_invite_links.php" class="btn btn-outline-success">
+                <i class="bi bi-shield-check me-1"></i> Exam Clearance Invites
+            </a>
         </div>
 
         <!-- Filter tabs -->

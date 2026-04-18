@@ -96,15 +96,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
                     
                     if ($tuition_paid > 0) {
-                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?)");
+                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?, ?)");
                         $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
-                        $rev_stmt->bind_param("sdsss", $sid, $tuition_paid, $today, $desc, $cert_number);
+                        $recorded_by = $user['username'] ?? 'system';
+                        $rev_stmt->bind_param("sdssss", $sid, $tuition_paid, $today, $desc, $cert_number, $recorded_by);
                         $rev_stmt->execute();
                     }
                     if ($reg_fee > 0) {
-                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?)");
+                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?, ?)");
                         $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
-                        $rev_stmt2->bind_param("sdsss", $sid, $reg_fee, $today, $desc2, $cert_number);
+                        $recorded_by2 = $user['username'] ?? 'system';
+                        $rev_stmt2->bind_param("sdssss", $sid, $reg_fee, $today, $desc2, $cert_number, $recorded_by2);
                         $rev_stmt2->execute();
                     }
                     $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
@@ -145,15 +147,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
                     
                     if ($tuition_paid > 0) {
-                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?)");
+                        $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?, ?)");
                         $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
-                        $rev_stmt->bind_param("sdsss", $sid, $tuition_paid, $today, $desc, $cert_number);
+                        $recorded_by = $user['username'] ?? 'system';
+                        $rev_stmt->bind_param("sdssss", $sid, $tuition_paid, $today, $desc, $cert_number, $recorded_by);
                         $rev_stmt->execute();
                     }
                     if ($reg_fee > 0) {
-                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?)");
+                        $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?, ?)");
                         $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
-                        $rev_stmt2->bind_param("sdsss", $sid, $reg_fee, $today, $desc2, $cert_number);
+                        $recorded_by2 = $user['username'] ?? 'system';
+                        $rev_stmt2->bind_param("sdssss", $sid, $reg_fee, $today, $desc2, $cert_number, $recorded_by2);
                         $rev_stmt2->execute();
                     }
                     $conn->query("UPDATE exam_clearance_students SET revenue_recorded = 1 WHERE clearance_id = $clearance_id");
@@ -217,15 +221,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $ctype_label = ($clearance_type === 'midsemester') ? 'Mid-Semester' : 'End-Semester';
                 
                 if ($tuition_paid > 0) {
-                    $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?)");
+                    $rev_stmt = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_tuition', ?, ?, ?, ?, ?)");
                     $desc = "Exam Clearance Tuition ({$ctype_label}) - {$student['full_name']}";
-                    $rev_stmt->bind_param("sdsss", $sid, $tuition_paid, $today, $desc, $cert_number);
+                    $recorded_by = $user['username'] ?? 'system';
+                    $rev_stmt->bind_param("sdssss", $sid, $tuition_paid, $today, $desc, $cert_number, $recorded_by);
                     $rev_stmt->execute();
                 }
                 if ($reg_fee > 0) {
-                    $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, description, reference_number) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?)");
+                    $rev_stmt2 = $conn->prepare("INSERT INTO payment_transactions (student_id, payment_type, amount, payment_date, notes, reference_number, recorded_by) VALUES (?, 'exam_clearance_registration', ?, ?, ?, ?, ?)");
                     $desc2 = "Exam Clearance Registration Fee ({$ctype_label}) - {$student['full_name']}";
-                    $rev_stmt2->bind_param("sdsss", $sid, $reg_fee, $today, $desc2, $cert_number);
+                    $recorded_by2 = $user['username'] ?? 'system';
+                    $rev_stmt2->bind_param("sdssss", $sid, $reg_fee, $today, $desc2, $cert_number, $recorded_by2);
                     $rev_stmt2->execute();
                 }
                 

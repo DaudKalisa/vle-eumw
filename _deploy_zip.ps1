@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $ftpHost = "194.164.74.45"
 $ftpUser = "u615976264"
-$ftpPass = "Kalisa3284."
+$ftpPass = "Kalisa3283!"
 $remotePath = "/vle"
 
 $projectDir = "C:\xampp\htdocs\vle-eumw"

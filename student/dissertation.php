@@ -1175,6 +1175,17 @@ $breadcrumbs = [['title' => 'Dissertation']];
             </div>
             <?php endif; ?>
 
+            <!-- Exam Clearance -->
+            <div class="card shadow-sm mb-3" style="border-left: 3px solid #10b981;">
+                <div class="card-header bg-white py-2">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-shield-check me-1"></i>Exam Clearance</h6>
+                </div>
+                <div class="card-body py-2 text-center">
+                    <p class="text-muted small mb-2">Apply for examination clearance to sit for your exams.</p>
+                    <a href="exam_clearance.php" class="btn btn-sm btn-success w-100"><i class="bi bi-shield-check me-1"></i>Apply for Exam Clearance</a>
+                </div>
+            </div>
+
             <!-- Feedback -->
             <div class="card shadow-sm mb-3">
                 <div class="card-header bg-white py-2">

@@ -177,30 +177,28 @@ function buildCertificateHTML($student, $copy_label, $copy_suffix, $vars) {
             <div style="margin-top:6px;padding-top:5px;border-top:1px dashed #dee2e6;">
                 <table style="width:100%;" cellpadding="0" cellspacing="0">
                     <tr>
-                        <td style="width:48%;text-align:center;padding:0 4px;">
+                        <td style="width:24%;text-align:center;padding:0 3px;">
                             <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:8px;font-weight:bold;margin-top:1px;">Director of Corporate Services</div>
-                            <div style="font-size:7px;color:#666;">Finance Department</div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Director of Corporate Services</div>
+                            <div style="font-size:6px;color:#666;">Finance Department</div>
                         </td>
-                        <td style="width:4%;"></td>
-                        <td style="width:48%;text-align:center;padding:0 4px;">
+                        <td style="width:1%;"></td>
+                        <td style="width:24%;text-align:center;padding:0 3px;">
                             <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:8px;font-weight:bold;margin-top:1px;">Dean of Commerce</div>
-                            <div style="font-size:7px;color:#666;">Faculty of Commerce</div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Dean</div>
+                            <div style="font-size:6px;color:#666;">Faculty of Commerce</div>
                         </td>
-                    </tr>
-                    <tr><td colspan="3" style="height:5px;"></td></tr>
-                    <tr>
-                        <td style="width:48%;text-align:center;padding:0 4px;">
+                        <td style="width:1%;"></td>
+                        <td style="width:24%;text-align:center;padding:0 3px;">
                             <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:8px;font-weight:bold;margin-top:1px;">Head of Department</div>
-                            <div style="font-size:7px;color:#666;">Academic Department</div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Head of Department</div>
+                            <div style="font-size:6px;color:#666;">Academic Department</div>
                         </td>
-                        <td style="width:4%;"></td>
-                        <td style="width:48%;text-align:center;padding:0 4px;">
+                        <td style="width:1%;"></td>
+                        <td style="width:24%;text-align:center;padding:0 3px;">
                             <div style="border-bottom:1px solid #333;height:18px;"></div>
-                            <div style="font-size:8px;font-weight:bold;margin-top:1px;">Dean of Students</div>
-                            <div style="font-size:7px;color:#666;">Student Affairs</div>
+                            <div style="font-size:7px;font-weight:bold;margin-top:1px;">Dean of Students</div>
+                            <div style="font-size:6px;color:#666;">Student Affairs</div>
                         </td>
                     </tr>
                 </table>

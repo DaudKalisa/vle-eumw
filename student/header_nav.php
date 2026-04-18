@@ -55,6 +55,7 @@ $page_title = isset($page_title) ? $page_title : 'Student Portal';
                 <?php if ($_is_dissertation_only): ?>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='dissertation.php')echo' active'; ?>" href="<?= $_student_base ?>dissertation.php"><i class="bi bi-mortarboard me-1"></i>Dissertation</a></li>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='dissertation_guidelines.php')echo' active'; ?>" href="<?= $_student_base ?>dissertation_guidelines.php"><i class="bi bi-journal-text me-1"></i>Guidelines</a></li>
+                <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='exam_clearance.php')echo' active'; ?>" href="<?= $_student_base ?>exam_clearance.php"><i class="bi bi-shield-check me-1"></i>Exam Clearance</a></li>
                 <?php else: ?>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='dashboard.php' && $_nav_in_student_dir)echo' active'; ?>" href="<?= $_student_base ?>dashboard.php"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link<?php if(basename($_SERVER['PHP_SELF'])=='courses.php')echo' active'; ?>" href="<?= $_student_base ?>courses.php"><i class="bi bi-book me-1"></i>Course Access</a></li>

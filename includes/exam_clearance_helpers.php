@@ -50,8 +50,8 @@ function notifyStudentApplicationSubmitted($conn, $student_email, $student_name,
  * Notify finance: New application received
  */
 function notifyFinanceNewApplication($conn, $student_name, $student_id, $program_type) {
-    // Get finance users
-    $result = $conn->query("SELECT email, full_name FROM users WHERE role = 'finance' AND status = 'active'");
+    // Get finance users — join finance_users for full_name since users table doesn't have it
+    $result = $conn->query("SELECT u.email, COALESCE(f.full_name, u.username) as full_name FROM users u LEFT JOIN finance_users f ON u.related_finance_id = f.finance_id WHERE u.role = 'finance' AND u.is_active = 1");
     if (!$result) return;
     while ($finance = $result->fetch_assoc()) {
         if (empty($finance['email'])) continue;
@@ -93,7 +93,7 @@ function notifyStudentProofSubmitted($conn, $student_email, $student_name, $amou
  */
 function notifyFinanceProofSubmitted($conn, $student_name, $student_id, $amount) {
     $amount_fmt = number_format($amount, 2);
-    $result = $conn->query("SELECT email, full_name FROM users WHERE role = 'finance' AND status = 'active'");
+    $result = $conn->query("SELECT u.email, COALESCE(f.full_name, u.username) as full_name FROM users u LEFT JOIN finance_users f ON u.related_finance_id = f.finance_id WHERE u.role = 'finance' AND u.is_active = 1");
     if (!$result) return;
     while ($finance = $result->fetch_assoc()) {
         if (empty($finance['email'])) continue;
