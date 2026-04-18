@@ -98,6 +98,10 @@ $stats['deans'] = $result ? $result->fetch_assoc()['count'] : 0;
 $result = $conn->query("SELECT COUNT(*) as count FROM users WHERE additional_roles LIKE '%dissertation_student%'");
 $stats['dissertation_students'] = $result ? $result->fetch_assoc()['count'] : 0;
 
+// Count exam clearance student accounts
+$result = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'exam_clearance_student'");
+$stats['exam_clearance_students'] = $result ? $result->fetch_assoc()['count'] : 0;
+
 // Count graduation clearance applications
 $grad_check = $conn->query("SHOW TABLES LIKE 'graduation_applications'");
 if ($grad_check && $grad_check->num_rows > 0) {
@@ -803,6 +807,15 @@ if ($result) {
                     <span class="stat-label">Dissertation Students</span>
                 </div>
             </a>
+            <a href="exam_clearance_students.php" class="stat-card" style="--accent-color: #ef4444; text-decoration: none;">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626);">
+                    <i class="bi bi-clipboard-check"></i>
+                </div>
+                <div class="stat-content">
+                    <span class="stat-value"><?php echo number_format($stats['exam_clearance_students']); ?></span>
+                    <span class="stat-label">Exam Clearance Students</span>
+                </div>
+            </a>
             <a href="manage_lecturers.php" class="stat-card" style="--accent-color: #10b981; text-decoration: none;">
                 <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
                     <i class="bi bi-person-badge-fill"></i>
@@ -1030,6 +1043,11 @@ if ($result) {
                 <div class="card-icon" style="background: linear-gradient(135deg, #a855f7, #7c3aed);"><i class="bi bi-mortarboard-fill"></i></div>
                 <div class="card-title">Dissertation Students</div>
                 <div class="card-subtitle"><?php echo $stats['dissertation_students']; ?> students</div>
+            </a>
+            <a href="exam_clearance_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #ef4444, #dc2626);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626);"><i class="bi bi-clipboard-check"></i></div>
+                <div class="card-title">Exam Clearance Students</div>
+                <div class="card-subtitle"><?php echo $stats['exam_clearance_students']; ?> students</div>
             </a>
             <a href="graduation_students.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #059669, #047857); position:relative;">
                 <div class="card-icon" style="background: linear-gradient(135deg, #059669, #047857);"><i class="bi bi-mortarboard"></i></div>
