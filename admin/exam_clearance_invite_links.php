@@ -15,14 +15,11 @@ $error = '';
 // ── Actions ────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['create_invite'])) {
-        $program_type = trim($_POST['program_type'] ?? 'degree');
         $description  = trim($_POST['description'] ?? '');
         $max_uses     = (int)($_POST['max_uses'] ?? 0);
         $expires_days = (int)($_POST['expires_days'] ?? 60);
 
-        if (!in_array($program_type, ['degree', 'professional', 'masters', 'doctorate'])) {
-            $program_type = 'degree';
-        }
+        $program_type = 'general';
 
         $token      = bin2hex(random_bytes(32));
         $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
@@ -127,25 +124,16 @@ $page_title = 'Exam Clearance Invite Links';
         <div class="card-body">
             <form method="post">
                 <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label">Program Type <span class="text-danger">*</span></label>
-                        <select name="program_type" class="form-select" required>
-                            <option value="degree">Degree</option>
-                            <option value="professional">Professional</option>
-                            <option value="masters">Masters</option>
-                            <option value="doctorate">Doctorate</option>
-                        </select>
-                    </div>
-                    <div class="col-md-5">
+                    <div class="col-md-6">
                         <label class="form-label">Description</label>
                         <input type="text" name="description" class="form-control" placeholder="e.g. 2024/2025 Semester 1 Exam Clearance">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                         <label class="form-label">Max Uses</label>
                         <input type="number" name="max_uses" class="form-control" value="0" min="0">
                         <small class="text-muted">0 = unlimited</small>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                         <label class="form-label">Expires (days)</label>
                         <input type="number" name="expires_days" class="form-control" value="60" min="1">
                     </div>
@@ -173,7 +161,6 @@ $page_title = 'Exam Clearance Invite Links';
                     <div style="flex:1;min-width:200px;">
                         <div class="fw-bold mb-1">
                             <?= $lnk['description'] ? htmlspecialchars($lnk['description']) : '<em>Exam Clearance Link</em>' ?>
-                            <span class="badge bg-<?= $lnk['program_type'] === 'masters' ? 'info' : ($lnk['program_type'] === 'doctorate' ? 'dark' : 'primary') ?> ms-1"><?= ucfirst($lnk['program_type']) ?></span>
                             <?php if ($active): ?>
                                 <span class="badge bg-success ms-1">Active</span>
                             <?php else: ?>

@@ -77,7 +77,9 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
     
     if ($_POST['action'] === 'register') {
         $student_id = trim($_POST['student_id'] ?? '');
-        $full_name = trim($_POST['full_name'] ?? '');
+        $surname = trim($_POST['surname'] ?? '');
+        $other_names = trim($_POST['other_names'] ?? '');
+        $full_name = trim($surname . ' ' . $other_names);
         $email = trim($_POST['email'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $program_id = (int)($_POST['program_id'] ?? 0);
@@ -112,8 +114,8 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
             if ($d_row) $department = $d_row['department_name'];
         }
         
-        if (empty($student_id) || empty($full_name) || empty($email)) {
-            $error = 'Student ID, Full Name, and Email are required.';
+        if (empty($student_id) || empty($surname) || empty($other_names) || empty($email)) {
+            $error = 'Student ID, Surname, Other Name(s), and Email are required.';
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Please enter a valid email address.';
         } elseif (!in_array($gender, ['Male', 'Female', 'Other'])) {
@@ -593,9 +595,6 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                 <i class="bi bi-info-circle me-1"></i>
                 You are registering for <strong>Examination Clearance</strong>.
                 Your account will be created automatically and you will be invoiced based on your program type.
-                <?php if (!empty($invite['program_type'])): ?>
-                <div class="mt-1"><i class="bi bi-mortarboard me-1"></i>Invite program type: <strong><?php echo ucfirst(htmlspecialchars($invite['program_type'])); ?></strong></div>
-                <?php endif; ?>
             </div>
             <?php endif; ?>
 
@@ -615,10 +614,15 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                 <!-- Personal Information -->
                 <div class="section-title"><i class="bi bi-person-circle"></i> Personal Information</div>
                 <div class="row g-3 mb-4">
-                    <div class="col-md-12">
-                        <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                        <input type="text" name="full_name" class="form-control" required
-                               value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>" placeholder="e.g. John Banda">
+                    <div class="col-md-6">
+                        <label class="form-label">Surname <span class="text-danger">*</span></label>
+                        <input type="text" name="surname" class="form-control" required
+                               value="<?php echo htmlspecialchars($_POST['surname'] ?? ''); ?>" placeholder="e.g. Banda">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Other Name(s) <span class="text-danger">*</span></label>
+                        <input type="text" name="other_names" class="form-control" required
+                               value="<?php echo htmlspecialchars($_POST['other_names'] ?? ''); ?>" placeholder="e.g. John">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Email Address <span class="text-danger">*</span></label>
@@ -689,7 +693,7 @@ if ($invite && !$error && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST[
                         <label class="form-label">Program Type <span class="text-danger">*</span></label>
                         <select name="program_type" id="programType" class="form-select" required>
                             <?php
-                            $pt = $_POST['program_type'] ?? $invite['program_type'] ?? 'degree';
+                            $pt = $_POST['program_type'] ?? 'degree';
                             foreach (['degree' => 'Degree', 'diploma' => 'Diploma', 'certificate' => 'Certificate', 'professional' => 'Professional', 'masters' => 'Masters', 'doctorate' => 'Doctorate'] as $val => $label): ?>
                             <option value="<?php echo $val; ?>" <?php echo $pt === $val ? 'selected' : ''; ?>><?php echo $label; ?></option>
                             <?php endforeach; ?>
