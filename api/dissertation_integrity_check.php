@@ -81,12 +81,79 @@ if (!$sub) {
 $engine = new IntegrityCheckEngine($conn);
 $text = $engine->extractDissertationText($sub);
 
+// Log extraction details for debugging
+$extraction_info = [
+    'submission_id' => $submission_id,
+    'text_length' => strlen($text),
+    'source' => 'extraction_engine',
+    'has_file' => !empty($sub['file_path']),
+    'has_text_field' => !empty($sub['submission_text']),
+];
+
+error_log('[INTEGRITY_CHECK] Extraction: ' . json_encode($extraction_info));
+
+// ─── ADVANCED HANDLING FOR INSUFFICIENT TEXT ───────────────────────────────
 if (strlen($text) < 30) {
+    // Log the issue
+    error_log('[INTEGRITY_CHECK_WARNING] Insufficient text: ' . strlen($text) . ' chars for submission ' . $submission_id);
+    
+    // Create a LIMITED check record with special status
+    $limited_result = [
+        'plagiarism' => ['score' => 0, 'matches' => [], 'details' => ['method' => 'insufficient_text', 'reason' => 'File extraction yielded less than 30 characters']],
+        'ai' => ['score' => 0, 'indicators' => [], 'details' => ['method' => 'insufficient_text', 'reason' => 'Insufficient content for AI analysis']],
+    ];
+    
+    // Instead of failing, insert a LIMITED check record
+    $similarity_score = 0;
+    $ai_score = 0;
+    $word_count = 0;
+    $flagged = 0;
+    $sim_details = json_encode(['method' => 'limited', 'reason' => 'File extraction failed or empty', 'extracted_chars' => strlen($text)]);
+    $ai_details = json_encode(['confidence' => 'none', 'reason' => 'Insufficient text', 'extracted_chars' => strlen($text)]);
+    $cross_json = json_encode([]);
+    $phase = $sub['phase'] ?? '';
+    $diss_id = (int)$sub['dissertation_id'];
+
+    $ins = $conn->prepare("
+        INSERT INTO dissertation_similarity_checks
+            (dissertation_id, submission_id, phase, similarity_score, ai_detection_score,
+             similarity_details, ai_detection_details, cross_student_matches,
+             total_words_checked, flagged_words, status, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'limited_data', NOW())
+    ");
+    $ins->bind_param("iisddsssis",
+        $diss_id, $submission_id, $phase,
+        $similarity_score, $ai_score,
+        $sim_details, $ai_details, $cross_json,
+        $word_count, $flagged
+    );
+
+    if (!$ins->execute()) {
+        echo json_encode(['success' => false, 'error' => 'Failed to save limited check: ' . $conn->error]);
+        exit;
+    }
+
+    $check_id = $conn->insert_id;
+    $upd = $conn->prepare("UPDATE dissertation_submissions SET similarity_check_id = ? WHERE submission_id = ?");
+    $upd->bind_param("ii", $check_id, $submission_id);
+    $upd->execute();
+
+    ob_end_clean();
     echo json_encode([
-        'success' => false,
-        'error'   => 'The submission has insufficient readable text (minimum 30 characters). '
-                   . 'Only DOCX, ODT, TXT, RTF, DOC and PDF files are analysed.'
-    ]);
+        'success' => true,
+        'check_id' => $check_id,
+        'limited_check' => true,
+        'similarity_score' => 0,
+        'ai_score' => 0,
+        'word_count' => 0,
+        'flagged_words' => 0,
+        'message' => 'Limited check: File content could not be fully extracted. Please verify the document is readable.',
+        'checked_at' => date('M j, Y H:i'),
+        'sim_badge' => 'bg-secondary',
+        'ai_badge' => 'bg-secondary',
+        'sim_ring' => '#e5e7eb',
+        'ai_ring' => '#e5e7eb',
+    ], JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
