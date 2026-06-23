@@ -44,8 +44,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Admissions only sees applications approved/referred by Registrar
 $pending = [];
-$rs = $conn->query("SELECT ga.*, ggs.gpa, ggs.classification FROM graduation_applications ga LEFT JOIN graduation_grade_summary ggs ON ga.application_id = ggs.application_id WHERE ga.current_step = 'admissions' ORDER BY ga.submitted_at ASC");
+$rs = $conn->query("SELECT DISTINCT ga.*, ggs.gpa, ggs.classification FROM graduation_applications ga
+                    INNER JOIN graduation_clearance_steps gcs ON ga.application_id = gcs.application_id
+                    LEFT JOIN graduation_grade_summary ggs ON ga.application_id = ggs.application_id
+                    WHERE ga.current_step = 'admissions'
+                    AND gcs.step_name = 'registrar'
+                    AND gcs.status IN ('approved', 'referred')
+                    ORDER BY ga.submitted_at ASC");
 if ($rs) while ($r = $rs->fetch_assoc()) $pending[] = $r;
 ?>
 <!DOCTYPE html>

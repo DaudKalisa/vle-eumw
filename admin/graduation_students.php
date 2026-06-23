@@ -132,6 +132,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute();
         $success = 'Registration rejected.';
     }
+
+    // Admin override: reset clearance to any step
+    if ($action === 'override_clearance') {
+        $app_id      = (int)($_POST['app_id'] ?? 0);
+        $target_step = trim($_POST['target_step'] ?? '');
+        $admin_notes = trim($_POST['admin_notes'] ?? '');
+
+        $valid_steps_all = ['finance', 'ict', 'dean', 'rc', 'librarian', 'admin', 'registrar', 'admissions'];
+        $step_app_status = [
+            'finance'    => 'pending',
+            'ict'        => 'finance_approved',
+            'dean'       => 'ict_approved',
+            'rc'         => 'dean_approved',
+            'librarian'  => 'rc_approved',
+            'admin'      => 'librarian_approved',
+            'registrar'  => 'admin_generated',
+            'admissions' => 'registrar_approved',
+        ];
+
+        if ($app_id <= 0 || !in_array($target_step, $valid_steps_all, true)) {
+            $error = 'Invalid override parameters.';
+        } else {
+            $stmt = $conn->prepare("SELECT * FROM graduation_applications WHERE application_id = ?");
+            $stmt->bind_param("i", $app_id);
+            $stmt->execute();
+            $ovr_app = $stmt->get_result()->fetch_assoc();
+
+            if (!$ovr_app) {
+                $error = 'Application not found.';
+            } else {
+                $conn->begin_transaction();
+                try {
+                    $target_pos    = array_search($target_step, $valid_steps_all, true);
+                    $steps_to_reset = array_slice($valid_steps_all, $target_pos);
+
+                    // Reset target step and all following steps back to pending
+                    foreach ($steps_to_reset as $stp) {
+                        $stp_safe = $conn->real_escape_string($stp);
+                        $conn->query("UPDATE graduation_clearance_steps
+                            SET status='pending', officer_user_id=NULL, officer_name=NULL,
+                                officer_role=NULL, officer_title=NULL, signature_text=NULL,
+                                notes=NULL, step_data=NULL, actioned_at=NULL
+                            WHERE application_id=$app_id AND step_name='$stp_safe'");
+                    }
+
+                    // Update main application record
+                    $new_status   = $step_app_status[$target_step];
+                    $admin_id     = (int)$user['user_id'];
+                    $adm_name     = $conn->real_escape_string($user['display_name'] ?? $user['username']);
+                    $notes_saved  = $conn->real_escape_string(
+                        '[Admin Override by ' . $adm_name . ': reset to ' . $target_step .
+                        ($admin_notes ? ' — ' . $admin_notes : '') . ']'
+                    );
+                    $step_safe    = $conn->real_escape_string($target_step);
+                    $conn->query("UPDATE graduation_applications
+                        SET current_step='$step_safe', status='$new_status',
+                            rejection_reason='$notes_saved', updated_at=NOW()
+                        WHERE application_id=$app_id");
+
+                    $conn->commit();
+                    $ovr_name = htmlspecialchars($ovr_app['first_name'] . ' ' . $ovr_app['last_name']);
+                    $success  = "Override applied for <strong>$ovr_name</strong> — clearance reset to <strong>" . ucfirst($target_step) . "</strong> step.";
+                } catch (\Throwable $e) {
+                    $conn->rollback();
+                    $error = 'Override failed: ' . $e->getMessage();
+                }
+            }
+        }
+    }
 }
 
 // ── Fetch data ─────────────────────────────────────────────────────────────────
@@ -347,6 +416,85 @@ $page_title = 'Graduation Students';
             <div class="text-end small text-muted">
                 <div><?= date('M d, Y', strtotime($app['submitted_at'])) ?></div>
                 <div class="mt-1">Current: <strong class="text-primary"><?= ucfirst($app['current_step']) ?></strong></div>
+                <?php if ($app['status'] !== 'completed'): ?>
+                <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal"
+                        data-bs-target="#overrideModal<?= $app['application_id'] ?>">
+                        <i class="bi bi-arrow-repeat me-1"></i>Override Step
+                    </button>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php if ($app['status'] === 'rejected'): ?>
+        <div class="alert alert-danger py-1 px-2 mb-0 mt-2 small">
+            <i class="bi bi-x-circle-fill me-1"></i>
+            <strong>Declined</strong> at <strong><?= ucfirst($app['current_step']) ?></strong> step.
+            <?php if (!empty($app['rejection_reason'])): ?>
+             Reason: <?= htmlspecialchars($app['rejection_reason']) ?>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Override Modal for application <?= $app['application_id'] ?> -->
+    <?php
+    $app_steps = ($app['application_type'] === 'transcript')
+        ? ['finance', 'ict', 'dean', 'registrar']
+        : ['finance', 'ict', 'dean', 'rc', 'librarian', 'admin', 'registrar', 'admissions'];
+    ?>
+    <div class="modal fade" id="overrideModal<?= $app['application_id'] ?>" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning bg-opacity-10">
+                    <h5 class="modal-title">
+                        <i class="bi bi-arrow-repeat me-2 text-warning"></i>Admin Override — Clearance Step
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="override_clearance">
+                        <input type="hidden" name="app_id" value="<?= $app['application_id'] ?>">
+
+                        <div class="alert alert-warning small py-2">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                            Current status: <strong><?= ucfirst(str_replace('_',' ',$app['status'])) ?></strong>
+                            at <strong><?= ucfirst($app['current_step']) ?></strong> step.
+                            Resetting will clear the selected step and all steps after it.
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Reset to Step</label>
+                            <select name="target_step" class="form-select" required>
+                                <option value="">— Choose step —</option>
+                                <?php foreach ($app_steps as $stp):
+                                    $lbl = $step_labels[$stp][0] ?? ucfirst($stp);
+                                    $cur = $steps_map[$stp] ?? 'N/A';
+                                    $cur_badge = ['pending'=>'secondary','approved'=>'success','rejected'=>'danger','referred'=>'warning'][$cur] ?? 'secondary';
+                                    $sel = ($stp === $app['current_step']) ? 'selected' : '';
+                                ?>
+                                <option value="<?= $stp ?>" <?= $sel ?>>
+                                    <?= htmlspecialchars($lbl) ?> (currently: <?= $cur ?>)
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">The selected step and all subsequent steps will be reset to <em>pending</em>.</div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label fw-semibold">Admin Note <span class="text-muted">(optional)</span></label>
+                            <textarea name="admin_notes" class="form-control" rows="2"
+                                placeholder="e.g. Student re-submitted missing document"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning btn-sm">
+                            <i class="bi bi-arrow-repeat me-1"></i>Apply Override
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

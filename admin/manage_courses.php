@@ -17,40 +17,39 @@ if ($col_check2 && $col_check2->num_rows === 0) {
     $conn->query("ALTER TABLE vle_courses ADD COLUMN applicable_years VARCHAR(50) DEFAULT NULL AFTER year_of_study");
 }
 
-// Auto-ensure required programs exist in programs table
-$required_programs = [
-    ['LSM', 'Logistics and Supply Chain Management', 'degree', 4],
-    ['COD', 'Community Development', 'degree', 4],
-    ['HRM', 'Human Resource Management', 'degree', 4],
-    ['ICT', 'Information Technology', 'degree', 4],
-    ['BIT', 'Information Technology', 'degree', 4],
-    ['CS', 'Computer Science', 'degree', 4],
-    ['BUS', 'Business Administration', 'degree', 4],
-    ['ACC', 'Accounting and Finance', 'degree', 4],
-    ['ECO', 'Economics', 'degree', 4],
-    ['EDU', 'Education', 'degree', 4],
-    ['MKT', 'Marketing', 'degree', 4],
-    ['PAD', 'Public Administration', 'degree', 4],
-    ['HSM', 'Health Systems Management', 'degree', 4],
-];
-$prog_table_check = $conn->query("SHOW TABLES LIKE 'programs'");
-if ($prog_table_check && $prog_table_check->num_rows > 0) {
-    foreach ($required_programs as $rp) {
-        $check = $conn->prepare("SELECT program_id FROM programs WHERE program_code = ? OR program_name = ?");
-        $check->bind_param("ss", $rp[0], $rp[1]);
-        $check->execute();
-        if ($check->get_result()->num_rows === 0) {
-            $ins = $conn->prepare("INSERT IGNORE INTO programs (program_code, program_name, program_type, duration_years, is_active) VALUES (?, ?, ?, ?, 1)");
-            $ins->bind_param("sssi", $rp[0], $rp[1], $rp[2], $rp[3]);
-            $ins->execute();
-            $ins->close();
-        }
-        $check->close();
-    }
-}
+// Programs are managed via admin/manage_programs.php — no auto-creation here.
 
 $success_message = '';
 $error_message = '';
+
+function resolveProgramIdByNameOrCode($conn, $program_name_or_code) {
+    $name_or_code = trim((string)$program_name_or_code);
+    if ($name_or_code === '') {
+        return null;
+    }
+
+    $stmt = $conn->prepare(" 
+        SELECT program_id
+        FROM programs
+        WHERE is_active = 1
+          AND (program_name = ? OR program_code = ?)
+        LIMIT 1
+    ");
+    $stmt->bind_param("ss", $name_or_code, $name_or_code);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return $row['program_id'] ?? null;
+}
+
+function ensureCourseProgramShare($conn, $course_id, $program_id) {
+    if ((int)$course_id <= 0 || (int)$program_id <= 0) {
+        return;
+    }
+    $share_stmt = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
+    $share_stmt->bind_param("ii", $course_id, $program_id);
+    $share_stmt->execute();
+    $conn->query("UPDATE vle_courses SET is_shared = 1 WHERE course_id = " . (int)$course_id);
+}
 
 // AJAX: Inline update course program/year/semester
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['inline_update_course'])) {
@@ -212,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                     }
                     
                     // Check if course code already exists
-                    $check_stmt = $conn->prepare("SELECT course_id FROM vle_courses WHERE course_code = ?");
+                    $check_stmt = $conn->prepare("SELECT course_id, program_of_study FROM vle_courses WHERE course_code = ?");
                     $check_stmt->bind_param("s", $course_code);
                     $check_stmt->execute();
                     $check_result = $check_stmt->get_result();
@@ -233,40 +232,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['course_template'])) 
                     if ($existing_course) {
                         // UPDATE existing course details
                         $existing_id = (int)$existing_course['course_id'];
-                        $upd = $conn->prepare("UPDATE vle_courses SET course_name = ?, description = ?, program_of_study = ?, year_of_study = ?, semester = ?, total_weeks = ?, lecturer_id = ? WHERE course_id = ?");
-                        $upd->bind_param("sssisiii", $course_name, $description, $program, $year_of_study, $semester, $total_weeks, $lecturer_id, $existing_id);
+                        $existing_primary_program = (string)($existing_course['program_of_study'] ?? '');
+
+                        // Keep original primary program for existing courses; do not overwrite it from CSV.
+                        $upd = $conn->prepare("UPDATE vle_courses SET course_name = ?, description = ?, year_of_study = ?, semester = ?, total_weeks = ?, lecturer_id = ? WHERE course_id = ?");
+                        $upd->bind_param("ssisiii", $course_name, $description, $year_of_study, $semester, $total_weeks, $lecturer_id, $existing_id);
                         
                         if ($upd->execute()) {
                             $updated_count++;
-                            
-                            // Update associated programs — replace existing with what's in the CSV
-                            if (!empty($associated_programs_str)) {
-                                // Clear existing associations first, then insert from CSV
-                                $conn->query("DELETE FROM course_programs WHERE course_id = $existing_id");
-                                
-                                $assoc_names = array_map('trim', explode(';', $associated_programs_str));
-                                $assoc_insert = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
-                                foreach ($assoc_names as $assoc_name) {
-                                    if (empty($assoc_name)) continue;
-                                    $prog_lookup = $conn->prepare("SELECT program_id FROM programs WHERE program_name = ? AND is_active = 1");
-                                    $prog_lookup->bind_param("s", $assoc_name);
-                                    $prog_lookup->execute();
-                                    $prog_result = $prog_lookup->get_result();
-                                    if ($prog_row = $prog_result->fetch_assoc()) {
-                                        $assoc_insert->bind_param("ii", $existing_id, $prog_row['program_id']);
-                                        $assoc_insert->execute();
-                                    }
-                                    $prog_lookup->close();
-                                }
-                                $assoc_insert->close();
+
+                            // Ensure primary program remains associated.
+                            $existing_primary_program_id = resolveProgramIdByNameOrCode($conn, $existing_primary_program);
+                            if ($existing_primary_program_id) {
+                                ensureCourseProgramShare($conn, $existing_id, (int)$existing_primary_program_id);
                             }
-                            // If Associated Programs column is empty, existing associations are kept unchanged
+
+                            // Program in uploaded row is treated as shared target for existing course.
+                            $uploaded_program_id = resolveProgramIdByNameOrCode($conn, $program);
+                            if ($uploaded_program_id) {
+                                ensureCourseProgramShare($conn, $existing_id, (int)$uploaded_program_id);
+                            }
+
+                            // Add additional associated programs from CSV (append-only, do not clear existing).
+                            if (!empty($associated_programs_str)) {
+                                $assoc_names = array_map('trim', explode(';', $associated_programs_str));
+                                foreach ($assoc_names as $assoc_name) {
+                                    if ($assoc_name === '') {
+                                        continue;
+                                    }
+                                    $assoc_program_id = resolveProgramIdByNameOrCode($conn, $assoc_name);
+                                    if ($assoc_program_id) {
+                                        ensureCourseProgramShare($conn, $existing_id, (int)$assoc_program_id);
+                                    }
+                                }
+                            }
                         } else {
                             $error_rows[] = "Row $row_number: Error updating '$course_code' - " . $upd->error;
                         }
                         $upd->close();
                     } else {
                         // INSERT new course
+                        $same_name_stmt = $conn->prepare(" 
+                            SELECT course_id, program_of_study
+                            FROM vle_courses
+                            WHERE LOWER(TRIM(course_name)) = LOWER(TRIM(?))
+                            LIMIT 1
+                        ");
+                        $same_name_stmt->bind_param("s", $course_name);
+                        $same_name_stmt->execute();
+                        $same_name_course = $same_name_stmt->get_result()->fetch_assoc();
+                        $same_name_stmt->close();
+
+                        if ($same_name_course && strcasecmp((string)$same_name_course['program_of_study'], (string)$program) !== 0) {
+                            $existing_course_id = (int)$same_name_course['course_id'];
+                            $existing_program_id = resolveProgramIdByNameOrCode($conn, $same_name_course['program_of_study']);
+                            $new_program_id = resolveProgramIdByNameOrCode($conn, $program);
+
+                            if ($existing_program_id) {
+                                ensureCourseProgramShare($conn, $existing_course_id, (int)$existing_program_id);
+                            }
+                            if ($new_program_id) {
+                                ensureCourseProgramShare($conn, $existing_course_id, (int)$new_program_id);
+                            }
+
+                            $updated_count++;
+                            continue;
+                        }
+
                         $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                         $stmt->bind_param("sssiisis", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $semester);
                     
@@ -358,31 +390,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_course'])) {
         $lec_check->close();
     }
     
-    $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, applicable_years, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssiisiss", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $applicable_years, $semester);
-    
-    if ($stmt->execute()) {
-        $new_course_id = $conn->insert_id;
-        
-        // Handle additional program associations
-        $additional_programs = $_POST['additional_programs'] ?? [];
-        if (!empty($additional_programs)) {
-            $assoc_stmt = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
-            foreach ($additional_programs as $prog_id) {
-                $prog_id = (int)$prog_id;
-                if ($prog_id > 0) {
-                    $assoc_stmt->bind_param("ii", $new_course_id, $prog_id);
-                    $assoc_stmt->execute();
-                }
-            }
-            $assoc_stmt->close();
+    $same_name_stmt = $conn->prepare(" 
+        SELECT course_id, program_of_study
+        FROM vle_courses
+        WHERE LOWER(TRIM(course_name)) = LOWER(TRIM(?))
+        LIMIT 1
+    ");
+    $same_name_stmt->bind_param("s", $course_name);
+    $same_name_stmt->execute();
+    $same_name_course = $same_name_stmt->get_result()->fetch_assoc();
+    $same_name_stmt->close();
+
+    if ($same_name_course && strcasecmp((string)$same_name_course['program_of_study'], (string)$program) !== 0) {
+        $existing_course_id = (int)$same_name_course['course_id'];
+        $existing_program_id = resolveProgramIdByNameOrCode($conn, $same_name_course['program_of_study']);
+        $new_program_id = resolveProgramIdByNameOrCode($conn, $program);
+
+        if ($existing_program_id) {
+            ensureCourseProgramShare($conn, $existing_course_id, (int)$existing_program_id);
         }
-        
-        $success_message = "Course created successfully!";
+        if ($new_program_id) {
+            ensureCourseProgramShare($conn, $existing_course_id, (int)$new_program_id);
+        }
+
+        // Also keep manually selected additional programs.
+        $additional_programs = $_POST['additional_programs'] ?? [];
+        foreach ($additional_programs as $prog_id) {
+            $prog_id = (int)$prog_id;
+            if ($prog_id > 0) {
+                ensureCourseProgramShare($conn, $existing_course_id, $prog_id);
+            }
+        }
+
+        $success_message = "Course with same name already existed in another program. Program sharing was added automatically.";
     } else {
-        $error_message = "Error creating course: " . $conn->error;
+        $stmt = $conn->prepare("INSERT INTO vle_courses (course_code, course_name, description, lecturer_id, total_weeks, program_of_study, year_of_study, applicable_years, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssiisiss", $course_code, $course_name, $description, $lecturer_id, $total_weeks, $program, $year_of_study, $applicable_years, $semester);
+        
+        if ($stmt->execute()) {
+            $new_course_id = $conn->insert_id;
+            
+            // Handle additional program associations
+            $additional_programs = $_POST['additional_programs'] ?? [];
+            if (!empty($additional_programs)) {
+                $assoc_stmt = $conn->prepare("INSERT IGNORE INTO course_programs (course_id, program_id) VALUES (?, ?)");
+                foreach ($additional_programs as $prog_id) {
+                    $prog_id = (int)$prog_id;
+                    if ($prog_id > 0) {
+                        $assoc_stmt->bind_param("ii", $new_course_id, $prog_id);
+                        $assoc_stmt->execute();
+                    }
+                }
+                $assoc_stmt->close();
+            }
+            
+            $success_message = "Course created successfully!";
+        } else {
+            $error_message = "Error creating course: " . $conn->error;
+        }
+        $stmt->close();
     }
-    $stmt->close();
 }
 
 // Handle course deletion
@@ -698,6 +765,9 @@ while ($row = $result->fetch_assoc()) {
                 <p class="text-muted mb-0">Create courses, manage enrollments, and assign students by program</p>
             </div>
             <div class="btn-group" role="group">
+                <a href="manage_shared_courses.php" class="btn btn-primary" title="Manage and visualize course sharing across programs">
+                    <i class="bi bi-share2"></i> Shared Courses
+                </a>
                 <a href="?download_template" class="btn btn-success">
                     <i class="bi bi-download"></i> Blank Template
                 </a>

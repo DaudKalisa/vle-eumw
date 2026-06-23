@@ -20,6 +20,12 @@ if (!$table_exists) {
     exit;
 }
 
+// Ensure campus assignment column exists for access scoping
+$campus_col_exists = $conn->query("SHOW COLUMNS FROM finance_users LIKE 'campus'");
+if ($campus_col_exists && $campus_col_exists->num_rows === 0) {
+    @$conn->query("ALTER TABLE finance_users ADD COLUMN campus VARCHAR(100) DEFAULT NULL AFTER department");
+}
+
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_finance'])) {
@@ -32,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = trim($_POST['email']);
         $username = trim($_POST['username']);
         $position = trim($_POST['position'] ?? 'Finance Officer');
+        $campus = trim($_POST['campus'] ?? $_POST['office'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $raw_gender = trim($_POST['gender'] ?? '');
         // Validate gender - must match ENUM values or be NULL
@@ -57,8 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($username_result->num_rows > 0) {
                 $error = "This username already exists. Please choose a different username.";
             } else {
-                $stmt = $conn->prepare("INSERT INTO finance_users (finance_code, full_name, email, password, department, position, phone, gender, is_active) VALUES (?, ?, ?, ?, 'Finance Department', ?, ?, ?, TRUE)");
-                $stmt->bind_param("sssssss", $finance_code, $full_name, $email, $password, $position, $phone, $gender);
+                $stmt = $conn->prepare("INSERT INTO finance_users (finance_code, full_name, email, password, department, campus, position, phone, gender, is_active) VALUES (?, ?, ?, ?, 'Finance Department', ?, ?, ?, ?, TRUE)");
+                $stmt->bind_param("ssssssss", $finance_code, $full_name, $email, $password, $campus, $position, $phone, $gender);
                 
                 if ($stmt->execute()) {
                     $new_finance_id = $conn->insert_id;
@@ -262,6 +269,7 @@ while ($row = $result->fetch_assoc()) {
                                 <th>Email</th>
                                 <th>Username</th>
                                 <th>Position</th>
+                                <th>Campus</th>
                                 <th>Department</th>
                                 <th>Phone</th>
                                 <th>Status</th>
@@ -271,7 +279,7 @@ while ($row = $result->fetch_assoc()) {
                         <tbody>
                             <?php if (empty($finance_users)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted py-4">
+                                    <td colspan="10" class="text-center text-muted py-4">
                                         <i class="bi bi-inbox" style="font-size: 2rem;"></i>
                                         <p class="mb-0">No finance users found. Add your first finance user above.</p>
                                     </td>
@@ -284,6 +292,7 @@ while ($row = $result->fetch_assoc()) {
                                         <td><?php echo htmlspecialchars($finance['email']); ?></td>
                                         <td><strong><?php echo htmlspecialchars($finance['username'] ?? 'N/A'); ?></strong></td>
                                         <td><?php echo htmlspecialchars($finance['position'] ?? 'Finance Officer'); ?></td>
+                                        <td><?php echo htmlspecialchars($finance['campus'] ?? 'Not Assigned'); ?></td>
                                         <td><?php echo htmlspecialchars($finance['department'] ?? 'Finance Department'); ?></td>
                                         <td><?php echo htmlspecialchars($finance['phone'] ?? 'N/A'); ?></td>
                                         <td>
@@ -402,9 +411,9 @@ while ($row = $result->fetch_assoc()) {
                                 </select>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Office Location *</label>
-                                <select class="form-select" name="office" required>
-                                    <option value="">Select Office</option>
+                                <label class="form-label">Assigned Campus *</label>
+                                <select class="form-select" name="campus" required>
+                                    <option value="">Select Campus</option>
                                     <option value="Mzuzu Campus">Mzuzu Campus</option>
                                     <option value="Lilongwe Campus">Lilongwe Campus</option>
                                     <option value="Blantyre Campus">Blantyre Campus</option>

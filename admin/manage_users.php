@@ -7,6 +7,15 @@ requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
 
+// Ensure campus assignment column exists for finance access scoping
+$fu_exists = $conn->query("SHOW TABLES LIKE 'finance_users'");
+if ($fu_exists && $fu_exists->num_rows > 0) {
+    $fu_campus_col = $conn->query("SHOW COLUMNS FROM finance_users LIKE 'campus'");
+    if ($fu_campus_col && $fu_campus_col->num_rows === 0) {
+        @$conn->query("ALTER TABLE finance_users ADD COLUMN campus VARCHAR(100) DEFAULT NULL AFTER department");
+    }
+}
+
 $success = '';
 $error = '';
 
@@ -286,8 +295,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 } else {
                                     $fin_code = 'FIN-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
                                     $fin_pos = 'Finance Officer';
-                                    $ins = $conn->prepare("INSERT INTO finance_users (finance_code, full_name, email, phone, department, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())");
-                                    $ins->bind_param("ssssss", $fin_code, $resolved_name, $email, $resolved_phone, $resolved_department, $fin_pos);
+                                    $fin_campus = 'Head Office';
+                                    $dept_lc = strtolower((string)$resolved_department);
+                                    if (strpos($dept_lc, 'lilongwe') !== false) {
+                                        $fin_campus = 'Lilongwe Campus';
+                                    } elseif (strpos($dept_lc, 'blantyre') !== false) {
+                                        $fin_campus = 'Blantyre Campus';
+                                    } elseif (strpos($dept_lc, 'mzuzu') !== false) {
+                                        $fin_campus = 'Mzuzu Campus';
+                                    } elseif (strpos($dept_lc, 'odel') !== false) {
+                                        $fin_campus = 'ODel';
+                                    }
+
+                                    $ins = $conn->prepare("INSERT INTO finance_users (finance_code, full_name, email, phone, department, campus, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())");
+                                    $ins->bind_param("sssssss", $fin_code, $resolved_name, $email, $resolved_phone, $resolved_department, $fin_campus, $fin_pos);
                                     $ins->execute();
                                     $related_val = $conn->insert_id;
                                 }
@@ -591,8 +612,8 @@ $where_conditions = [];
 $params = [];
 $types = '';
 
-// Always exclude students from admin user list (students managed separately)
-$where_conditions[] = "u.role != 'student'";
+// Always exclude students and exam-clearance portal users from the main list (managed separately)
+$where_conditions[] = "u.role NOT IN ('student','exam_clearance_student','dissertation_student')";
 
 if ($filter_role !== 'all') {
     $where_conditions[] = "(u.role = ? OR FIND_IN_SET(?, COALESCE(u.additional_roles, '')))";
@@ -642,13 +663,50 @@ while ($row = $result->fetch_assoc()) {
     $users[] = $row;
 }
 
-// Get counts by role (excluding students)
+// Get counts by role (excluding students and EC-portal users)
 $role_counts = [];
-$count_result = $conn->query("SELECT role, COUNT(*) as count FROM users WHERE role != 'student' GROUP BY role");
+$count_result = $conn->query("SELECT role, COUNT(*) as count FROM users WHERE role NOT IN ('student','exam_clearance_student','dissertation_student') GROUP BY role");
 while ($row = $count_result->fetch_assoc()) {
     $role_counts[$row['role']] = $row['count'];
 }
 $total_users = array_sum($role_counts);
+
+// Exam Clearance Students tab — users with exam-clearance portal roles
+$ec_search = trim($_GET['ec_search'] ?? '');
+$ec_where = "WHERE u.role IN ('exam_clearance_student','dissertation_student')";
+$ec_params = [];
+$ec_types = '';
+if ($ec_search !== '') {
+    $ec_where .= " AND (u.username LIKE ? OR u.email LIKE ? OR ecs.student_id LIKE ?)";
+    $ec_sp = "%$ec_search%";
+    $ec_params = [$ec_sp, $ec_sp, $ec_sp];
+    $ec_types = 'sss';
+}
+$ec_query = "SELECT u.user_id, u.username, u.email, u.role, u.is_active, u.created_at, u.last_login,
+             u.failed_login_attempts, u.account_locked_until,
+             COALESCE(ecs.full_name, u.username) as display_name,
+             ecs.student_id as ecs_student_id,
+             ecs.clearance_id,
+             ecs.certificate_number,
+             ecs.status as ecs_status,
+             ecs.registered_at
+             FROM users u
+             LEFT JOIN exam_clearance_students ecs ON u.email = ecs.email
+             $ec_where
+             ORDER BY u.created_at DESC";
+if ($ec_types) {
+    $ec_stmt = $conn->prepare($ec_query);
+    $ec_stmt->bind_param($ec_types, ...$ec_params);
+    $ec_stmt->execute();
+    $ec_result = $ec_stmt->get_result();
+} else {
+    $ec_result = $conn->query($ec_query);
+}
+$ec_users = [];
+while ($row = $ec_result->fetch_assoc()) {
+    $ec_users[] = $row;
+}
+$ec_total = count($ec_users);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -791,9 +849,34 @@ $total_users = array_sum($role_counts);
                 </div>
             </div>
             
+            <!-- Tabs -->
+            <?php $active_tab = isset($_GET['tab']) && $_GET['tab'] === 'ec' ? 'ec' : 'users'; ?>
+            <ul class="nav nav-tabs mb-3" id="usersTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link <?php echo $active_tab === 'users' ? 'active' : ''; ?>"
+                       href="manage_users.php?<?php echo http_build_query(array_merge($_GET, ['tab'=>'users'])); ?>">
+                        <i class="bi bi-people-fill me-1"></i>System Users
+                        <span class="badge bg-primary ms-1"><?php echo $total_users; ?></span>
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link <?php echo $active_tab === 'ec' ? 'active' : ''; ?>"
+                       href="manage_users.php?<?php echo http_build_query(array_merge($_GET, ['tab'=>'ec'])); ?>">
+                        <i class="bi bi-person-badge me-1"></i>Exam Clearance Students
+                        <span class="badge bg-info ms-1"><?php echo $ec_total; ?></span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+
+            <!-- ===== TAB: System Users ===== -->
+            <div class="tab-pane <?php echo $active_tab === 'users' ? 'active show' : ''; ?>">
+
             <!-- Filters -->
             <div class="filter-card">
                 <form method="GET" class="row g-3 align-items-end">
+                    <input type="hidden" name="tab" value="users">
                     <div class="col-md-3">
                         <label class="form-label">Search</label>
                         <input type="text" class="form-control" name="search" placeholder="Username or email..." 
@@ -824,7 +907,7 @@ $total_users = array_sum($role_counts);
                     </div>
                     <div class="col-md-3">
                         <button type="submit" class="btn btn-primary me-2"><i class="bi bi-search me-1"></i>Filter</button>
-                        <a href="manage_users.php" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Clear</a>
+                        <a href="manage_users.php?tab=users" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Clear</a>
                     </div>
                 </form>
             </div>
@@ -1137,9 +1220,237 @@ $total_users = array_sum($role_counts);
             </div>
             
             <!-- Summary -->
-            <div class="mt-3 text-muted">
-                <small>Showing <?php echo count($users); ?> of <?php echo $total_users; ?> users</small>
+            <div class="mt-3 mb-4 text-muted">
+                <small>Showing <?php echo count($users); ?> of <?php echo $total_users; ?> system users</small>
             </div>
+
+            </div><!-- /tab-pane system users -->
+
+            <!-- ===== TAB: Exam Clearance Students ===== -->
+            <div class="tab-pane <?php echo $active_tab === 'ec' ? 'active show' : ''; ?>">
+
+                <!-- EC Search -->
+                <div class="filter-card">
+                    <form method="GET" class="row g-3 align-items-end">
+                        <input type="hidden" name="tab" value="ec">
+                        <div class="col-md-4">
+                            <label class="form-label">Search</label>
+                            <input type="text" class="form-control" name="ec_search" placeholder="Username, email or student ID..."
+                                   value="<?php echo htmlspecialchars($ec_search); ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary me-2"><i class="bi bi-search me-1"></i>Search</button>
+                            <a href="manage_users.php?tab=ec" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Clear</a>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Username</th>
+                                        <th>Email</th>
+                                        <th>Full Name</th>
+                                        <th>Student ID</th>
+                                        <th>Clearance #</th>
+                                        <th>EC Status</th>
+                                        <th>Portal Role</th>
+                                        <th>Status</th>
+                                        <th>Registered</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                <?php if (empty($ec_users)): ?>
+                                    <tr>
+                                        <td colspan="11" class="text-center py-4 text-muted">
+                                            <i class="bi bi-inbox" style="font-size:2rem;"></i>
+                                            <p class="mb-0 mt-2">No exam clearance student accounts found</p>
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php
+                                    $ec_status_colors = [
+                                        'pending'          => 'secondary',
+                                        'registered'       => 'primary',
+                                        'proof_submitted'  => 'info',
+                                        'invoiced'         => 'warning',
+                                        'cleared'          => 'success',
+                                        'rejected'         => 'danger',
+                                    ];
+                                    foreach ($ec_users as $eu):
+                                        $eu_locked = !empty($eu['account_locked_until']) && strtotime($eu['account_locked_until']) > time();
+                                        $eu_failed = !empty($eu['failed_login_attempts']) && $eu['failed_login_attempts'] >= 5;
+                                    ?>
+                                    <tr>
+                                        <td><strong>#<?php echo $eu['user_id']; ?></strong></td>
+                                        <td><?php echo htmlspecialchars($eu['username']); ?></td>
+                                        <td><?php echo htmlspecialchars($eu['email']); ?></td>
+                                        <td><?php echo htmlspecialchars($eu['display_name']); ?></td>
+                                        <td><?php echo htmlspecialchars($eu['ecs_student_id'] ?? '—'); ?></td>
+                                        <td>
+                                            <?php if (!empty($eu['certificate_number'])): ?>
+                                                <code><?php echo htmlspecialchars($eu['certificate_number']); ?></code>
+                                            <?php elseif (!empty($eu['clearance_id'])): ?>
+                                                <code>#<?php echo (int) $eu['clearance_id']; ?></code>
+                                            <?php else: ?>—<?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php
+                                            $ecs = $eu['ecs_status'] ?? '';
+                                            $ec_color = $ec_status_colors[$ecs] ?? 'secondary';
+                                            ?>
+                                            <?php if ($ecs): ?>
+                                                <span class="badge bg-<?php echo $ec_color; ?>">
+                                                    <?php echo ucfirst(str_replace('_', ' ', $ecs)); ?>
+                                                </span>
+                                            <?php else: ?>—<?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <span class="badge <?php echo $eu['role'] === 'dissertation_student' ? 'bg-purple' : 'bg-teal'; ?> role-badge"
+                                                  style="background:<?php echo $eu['role'] === 'dissertation_student' ? '#7c3aed' : '#0d9488'; ?>!important">
+                                                <?php echo $eu['role'] === 'dissertation_student' ? 'Dissertation' : 'Exam Clearance'; ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <?php if ($eu['is_active']): ?>
+                                                <span class="status-active"><i class="bi bi-check-circle-fill me-1"></i>Active</span>
+                                            <?php else: ?>
+                                                <span class="status-inactive"><i class="bi bi-x-circle-fill me-1"></i>Inactive</span>
+                                            <?php endif; ?>
+                                            <?php if ($eu_locked): ?>
+                                                <br><span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+                                            <?php elseif ($eu_failed): ?>
+                                                <br><span class="badge bg-warning text-dark"><?php echo (int)$eu['failed_login_attempts']; ?> Failed</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo $eu['registered_at'] ? date('M j, Y', strtotime($eu['registered_at'])) : ($eu['created_at'] ? date('M j, Y', strtotime($eu['created_at'])) : 'N/A'); ?></td>
+                                        <td class="text-center">
+                                            <div class="btn-group">
+                                                <!-- Toggle Status -->
+                                                <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="user_id" value="<?php echo $eu['user_id']; ?>">
+                                                    <input type="hidden" name="new_status" value="<?php echo $eu['is_active'] ? 0 : 1; ?>">
+                                                    <button type="submit" name="toggle_status"
+                                                            class="btn btn-sm btn-outline-<?php echo $eu['is_active'] ? 'secondary' : 'success'; ?> action-btn"
+                                                            title="<?php echo $eu['is_active'] ? 'Deactivate' : 'Activate'; ?>">
+                                                        <i class="bi bi-<?php echo $eu['is_active'] ? 'pause' : 'play'; ?>-fill"></i>
+                                                    </button>
+                                                </form>
+                                                <!-- Unlock -->
+                                                <?php if ($eu_locked || $eu_failed): ?>
+                                                <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="user_id" value="<?php echo $eu['user_id']; ?>">
+                                                    <button type="submit" name="unlock_account"
+                                                            class="btn btn-sm btn-outline-warning action-btn"
+                                                            onclick="return confirm('Unlock this account?')"
+                                                            title="Unlock Account">
+                                                        <i class="bi bi-unlock-fill"></i>
+                                                    </button>
+                                                </form>
+                                                <?php endif; ?>
+                                                <!-- Reset Password -->
+                                                <button type="button" class="btn btn-sm btn-outline-warning action-btn"
+                                                        data-bs-toggle="modal" data-bs-target="#resetModal<?php echo $eu['user_id']; ?>"
+                                                        title="Reset Password">
+                                                    <i class="bi bi-key"></i>
+                                                </button>
+                                                <!-- Delete -->
+                                                <?php if ($eu['user_id'] != $_SESSION['vle_user_id']): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-danger action-btn"
+                                                        data-bs-toggle="modal" data-bs-target="#deleteModal<?php echo $eu['user_id']; ?>"
+                                                        title="Delete User">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                                <?php endif; ?>
+                                                <!-- View Clearance -->
+                                                <?php if (!empty($eu['clearance_id'])): ?>
+                                                <a href="../finance/exam_clearance_certificate.php?id=<?php echo (int) $eu['clearance_id']; ?>"
+                                                   class="btn btn-sm btn-outline-info action-btn" target="_blank" title="View Certificate">
+                                                    <i class="bi bi-file-earmark-text"></i>
+                                                </a>
+                                                <?php endif; ?>
+                                            </div>
+                                            <!-- Reset Password Modal for EC user -->
+                                            <div class="modal fade" id="resetModal<?php echo $eu['user_id']; ?>" tabindex="-1">
+                                                <div class="modal-dialog">
+                                                    <div class="modal-content">
+                                                        <form method="POST">
+                                                            <div class="modal-header bg-warning">
+                                                                <h5 class="modal-title"><i class="bi bi-key me-2"></i>Reset Password</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <input type="hidden" name="user_id" value="<?php echo $eu['user_id']; ?>">
+                                                                <p class="text-muted">Reset password for <strong><?php echo htmlspecialchars($eu['username']); ?></strong></p>
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">New Password</label>
+                                                                    <input type="password" class="form-control" name="new_password" minlength="6" required placeholder="Minimum 6 characters">
+                                                                </div>
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">Confirm Password</label>
+                                                                    <input type="password" class="form-control" name="confirm_password" minlength="6" required placeholder="Confirm password">
+                                                                </div>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <button type="submit" name="reset_password" class="btn btn-warning"><i class="bi bi-key me-1"></i>Reset Password</button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Delete Modal for EC user -->
+                                            <?php if ($eu['user_id'] != $_SESSION['vle_user_id']): ?>
+                                            <div class="modal fade" id="deleteModal<?php echo $eu['user_id']; ?>" tabindex="-1">
+                                                <div class="modal-dialog">
+                                                    <div class="modal-content">
+                                                        <form method="POST">
+                                                            <div class="modal-header bg-danger text-white">
+                                                                <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete User</h5>
+                                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <input type="hidden" name="user_id" value="<?php echo $eu['user_id']; ?>">
+                                                                <div class="text-center mb-3"><i class="bi bi-exclamation-triangle text-danger" style="font-size:3rem;"></i></div>
+                                                                <p class="text-center">Delete exam clearance account for:</p>
+                                                                <div class="alert alert-light">
+                                                                    <strong>Username:</strong> <?php echo htmlspecialchars($eu['username']); ?><br>
+                                                                    <strong>Email:</strong> <?php echo htmlspecialchars($eu['email']); ?><br>
+                                                                    <strong>Student ID:</strong> <?php echo htmlspecialchars($eu['ecs_student_id'] ?? '—'); ?>
+                                                                </div>
+                                                                <p class="text-danger text-center"><small>This action cannot be undone!</small></p>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <button type="submit" name="delete_user" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Delete</button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 mb-4 text-muted">
+                    <small>Showing <?php echo $ec_total; ?> exam clearance portal account(s)</small>
+                </div>
+
+            </div><!-- /tab-pane ec students -->
+
+            </div><!-- /tab-content -->
+
         </div>
     </div>
     

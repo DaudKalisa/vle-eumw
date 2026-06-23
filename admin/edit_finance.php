@@ -7,6 +7,14 @@ requireRole(['staff', 'admin']);
 $conn = getDbConnection();
 $finance_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
+$campus_col_exists = $conn->query("SHOW TABLES LIKE 'finance_users'");
+if ($campus_col_exists && $campus_col_exists->num_rows > 0) {
+    $campus_field = $conn->query("SHOW COLUMNS FROM finance_users LIKE 'campus'");
+    if ($campus_field && $campus_field->num_rows === 0) {
+        @$conn->query("ALTER TABLE finance_users ADD COLUMN campus VARCHAR(100) DEFAULT NULL AFTER department");
+    }
+}
+
 // Check if finance_users table exists
 $table_exists = $conn->query("SHOW TABLES LIKE 'finance_users'")->num_rows > 0;
 if (!$table_exists) {
@@ -33,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_finance'])) {
     $email = trim($_POST['email']);
     $username = trim($_POST['username'] ?? '');
     $position = trim($_POST['position']);
+    $campus = trim($_POST['campus'] ?? '');
     $gender = trim($_POST['gender'] ?? '');
     $gender = in_array($gender, ['Male', 'Female', 'Other']) ? $gender : null;
     $phone = trim($_POST['phone'] ?? '');
@@ -64,8 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_finance'])) {
     }
     
     // Update finance user details
-    $stmt = $conn->prepare("UPDATE finance_users SET full_name = ?, email = ?, position = ?, gender = ?, phone = ?, profile_picture = ? WHERE finance_id = ?");
-    $stmt->bind_param("ssssssi", $full_name, $email, $position, $gender, $phone, $profile_picture, $finance_id);
+    $stmt = $conn->prepare("UPDATE finance_users SET full_name = ?, email = ?, position = ?, campus = ?, gender = ?, phone = ?, profile_picture = ? WHERE finance_id = ?");
+    $stmt->bind_param("sssssssi", $full_name, $email, $position, $campus, $gender, $phone, $profile_picture, $finance_id);
     
     if ($stmt->execute()) {
         // Update user email and username if exists
@@ -205,9 +214,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_finance'])) {
                                     </select>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">Department</label>
-                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($finance['department'] ?? 'Finance Department'); ?>" disabled>
-                                    <small class="text-muted">Finance users are assigned to the Finance Department</small>
+                                    <label for="campus" class="form-label">Assigned Campus *</label>
+                                    <select class="form-select" id="campus" name="campus" required>
+                                        <option value="">Select Campus</option>
+                                        <option value="Mzuzu Campus" <?php echo ($finance['campus'] ?? '') === 'Mzuzu Campus' ? 'selected' : ''; ?>>Mzuzu Campus</option>
+                                        <option value="Lilongwe Campus" <?php echo ($finance['campus'] ?? '') === 'Lilongwe Campus' ? 'selected' : ''; ?>>Lilongwe Campus</option>
+                                        <option value="Blantyre Campus" <?php echo ($finance['campus'] ?? '') === 'Blantyre Campus' ? 'selected' : ''; ?>>Blantyre Campus</option>
+                                        <option value="ODel" <?php echo ($finance['campus'] ?? '') === 'ODel' ? 'selected' : ''; ?>>ODel</option>
+                                        <option value="Head Office" <?php echo ($finance['campus'] ?? '') === 'Head Office' ? 'selected' : ''; ?>>Head Office</option>
+                                    </select>
+                                    <small class="text-muted">This campus controls what records the finance user can access.</small>
                                 </div>
                             </div>
 

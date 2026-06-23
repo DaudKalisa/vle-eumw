@@ -1,11 +1,14 @@
 <?php
 // edit_student.php - Admin edit student details
 require_once '../includes/auth.php';
+require_once '../includes/semester_statement_helper.php';
 requireLogin();
 requireRole(['staff', 'admin']);
 
 $conn = getDbConnection();
+$current_user = getCurrentUser();
 $student_id = isset($_GET['id']) ? trim($_GET['id']) : '';
+$original_student_id = $student_id;
 
 // Get student details with username
 $stmt = $conn->prepare("SELECT s.*, u.username FROM students s LEFT JOIN users u ON s.student_id = u.related_student_id WHERE s.student_id = ?");
@@ -20,6 +23,17 @@ if ($result->num_rows === 0) {
 
 $student = $result->fetch_assoc();
 
+// Fetch exam clearance type for this student
+$ec_clearance_type = 'endsemester';
+$ec_ct_stmt = $conn->prepare("SELECT clearance_type FROM exam_clearance_students WHERE student_id = ? OR email = ? ORDER BY clearance_id DESC LIMIT 1");
+$ec_ct_stmt->bind_param("ss", $student['student_id'], $student['email']);
+$ec_ct_stmt->execute();
+$ec_ct_result = $ec_ct_stmt->get_result();
+if ($ec_ct_row = $ec_ct_result->fetch_assoc()) {
+    $ec_clearance_type = $ec_ct_row['clearance_type'] ?? 'endsemester';
+}
+$ec_ct_stmt->close();
+
 // Get all departments/programs for dropdown
 $departments = [];
 $dept_query = "SELECT department_id, department_code, department_name FROM departments ORDER BY department_name";
@@ -30,8 +44,23 @@ if ($dept_result) {
     }
 }
 
+// Load all active programs with their department link
+$programs_list = [];
+$prog_query = "SELECT p.program_id, p.program_name, p.program_code, p.program_type, p.department_id, d.department_name
+               FROM programs p
+               LEFT JOIN departments d ON d.department_id = p.department_id
+               WHERE p.is_active = 1
+               ORDER BY p.program_type, p.program_name";
+$prog_result = $conn->query($prog_query);
+if ($prog_result) {
+    while ($prog = $prog_result->fetch_assoc()) {
+        $programs_list[] = $prog;
+    }
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
+    $new_student_id = trim($_POST['student_id'] ?? $student_id);
     $full_name = trim($_POST['full_name']);
     $email = trim($_POST['email']);
     $username = trim($_POST['username'] ?? '');
@@ -55,8 +84,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
     $national_id = strtoupper(trim($_POST['national_id'] ?? '')); // Auto-capitalize
     
     // Validate National ID - max 8 characters
-    if (!empty($national_id) && strlen($national_id) > 8) {
+    if ($new_student_id === '') {
+        $error = "Student ID is required.";
+    } elseif (!empty($national_id) && strlen($national_id) > 8) {
         $error = "National ID must be 8 characters or less.";
+    }
+
+    if (!isset($error) && $new_student_id !== $student_id) {
+        $student_id_check = $conn->prepare("SELECT student_id FROM students WHERE student_id = ? LIMIT 1");
+        $student_id_check->bind_param("s", $new_student_id);
+        $student_id_check->execute();
+        if ($student_id_check->get_result()->num_rows > 0) {
+            $error = "The student ID '" . htmlspecialchars($new_student_id) . "' is already in use.";
+        }
+        $student_id_check->close();
+    }
+
+    // Check for duplicate email (exclude current student)
+    if (!isset($error) && !empty($email)) {
+        $email_check = $conn->prepare("SELECT student_id FROM students WHERE email = ? AND student_id != ? LIMIT 1");
+        $email_check->bind_param("ss", $email, $student_id);
+        $email_check->execute();
+        if ($email_check->get_result()->num_rows > 0) {
+            $error = "This email address '" . htmlspecialchars($email) . "' is already registered to another student.";
+        }
+        $email_check->close();
     }
     
     // Check for duplicate National ID (if provided, exclude current student)
@@ -72,10 +124,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
     
     $phone = trim($_POST['phone'] ?? '');
     $address = trim($_POST['address'] ?? '');
+
+    // Validate exam clearance type
+    $ec_clearance_type = trim($_POST['ec_clearance_type'] ?? 'endsemester');
+    if (!in_array($ec_clearance_type, ['midsemester', 'endsemester'], true)) {
+        $ec_clearance_type = 'endsemester';
+    }
     
     // Validate program_type - must match ENUM values
     $program_type = trim($_POST['program_type'] ?? 'degree');
-    $program_type = in_array($program_type, ['degree', 'professional', 'masters', 'doctorate']) ? $program_type : 'degree';
+    $program_type = in_array($program_type, ['degree', 'diploma', 'professional', 'masters', 'doctorate']) ? $program_type : 'degree';
     
     // Validate student_type - must match ENUM values
     $student_type = trim($_POST['student_type'] ?? 'new_student');
@@ -100,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
         $allowed_exts = ['jpg', 'jpeg', 'png', 'gif'];
         
         if (in_array($file_ext, $allowed_exts)) {
-            $new_filename = 'student_' . $student_id . '_' . time() . '.' . $file_ext;
+            $new_filename = 'student_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $new_student_id) . '_' . time() . '.' . $file_ext;
             $target_path = $upload_dir . $new_filename;
             
             if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
@@ -113,11 +171,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
         }
     }
     
-    // Update student details
-    $stmt = $conn->prepare("UPDATE students SET full_name = ?, email = ?, department = ?, program = ?, year_of_study = ?, campus = ?, year_of_registration = ?, semester = ?, gender = ?, national_id = ?, phone = ?, address = ?, profile_picture = ?, program_type = ?, student_type = ?, student_status = ?, academic_level = ? WHERE student_id = ?");
-    $stmt->bind_param("ssssisssssssssssss", $full_name, $email, $department, $program, $year_of_study, $campus, $year_of_registration, $semester, $gender, $national_id, $phone, $address, $profile_picture, $program_type, $student_type, $student_status, $academic_level, $student_id);
-    
-    if ($stmt->execute()) {
+    if (!isset($error)) {
+        $conn->begin_transaction();
+        try {
+            if ($new_student_id !== $student_id) {
+                // Foreign keys referencing students.student_id do not use ON UPDATE CASCADE.
+                // Create the new parent row first, move child references, then remove the old row.
+                // Use temporary values for unique fields that are unchanged to avoid self-collision.
+                $insert_email = $email;
+                $insert_national_id = $national_id;
+                $needs_final_student_update = false;
+
+                if (!empty($student['email']) && strcasecmp($email, (string)$student['email']) === 0) {
+                    $insert_email = '__tmp_' . uniqid('student_email_', true) . '@vle.local';
+                    $needs_final_student_update = true;
+                }
+
+                if (!empty($national_id) && !empty($student['national_id']) && $national_id === (string)$student['national_id']) {
+                    $insert_national_id = null;
+                    $needs_final_student_update = true;
+                }
+
+                $insert_stmt = $conn->prepare("INSERT INTO students (student_id, full_name, email, department, program, year_of_study, campus, year_of_registration, semester, gender, national_id, phone, address, profile_picture, program_type, student_type, student_status, academic_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $insert_stmt->bind_param("sssssissssssssssss", $new_student_id, $full_name, $insert_email, $department, $program, $year_of_study, $campus, $year_of_registration, $semester, $gender, $insert_national_id, $phone, $address, $profile_picture, $program_type, $student_type, $student_status, $academic_level);
+                $insert_stmt->execute();
+                $insert_stmt->close();
+
+                $ref_stmt = $conn->prepare("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND column_name IN ('student_id', 'related_student_id') AND table_name <> 'students' ORDER BY CASE WHEN table_name = 'users' THEN 0 ELSE 1 END, table_name ASC, column_name ASC");
+                $ref_stmt->execute();
+                $reference_columns = $ref_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                $ref_stmt->close();
+
+                foreach ($reference_columns as $reference_column) {
+                    $table_name = $reference_column['table_name'];
+                    $column_name = $reference_column['column_name'];
+                    $update_reference = $conn->prepare("UPDATE `{$table_name}` SET `{$column_name}` = ? WHERE `{$column_name}` = ?");
+                    $update_reference->bind_param("ss", $new_student_id, $student_id);
+                    $update_reference->execute();
+                    $update_reference->close();
+                }
+
+                $delete_old_stmt = $conn->prepare("DELETE FROM students WHERE student_id = ?");
+                $delete_old_stmt->bind_param("s", $student_id);
+                $delete_old_stmt->execute();
+                $delete_old_stmt->close();
+
+                if ($needs_final_student_update) {
+                    $final_student_stmt = $conn->prepare("UPDATE students SET email = ?, national_id = ? WHERE student_id = ?");
+                    $final_student_stmt->bind_param("sss", $email, $national_id, $new_student_id);
+                    $final_student_stmt->execute();
+                    $final_student_stmt->close();
+                }
+            } else {
+                $stmt = $conn->prepare("UPDATE students SET full_name = ?, email = ?, department = ?, program = ?, year_of_study = ?, campus = ?, year_of_registration = ?, semester = ?, gender = ?, national_id = ?, phone = ?, address = ?, profile_picture = ?, program_type = ?, student_type = ?, student_status = ?, academic_level = ? WHERE student_id = ?");
+                $stmt->bind_param("ssssisssssssssssss", $full_name, $email, $department, $program, $year_of_study, $campus, $year_of_registration, $semester, $gender, $national_id, $phone, $address, $profile_picture, $program_type, $student_type, $student_status, $academic_level, $student_id);
+                $stmt->execute();
+                $stmt->close();
+            }
+
         // Check if program_type or student_type changed - if so, update financial account
         if ($student['program_type'] !== $program_type || ($student['student_type'] ?? 'new_student') !== $student_type) {
             // Get fee settings
@@ -160,7 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
             
             // Check if student_finances record exists
             $check_finance = $conn->prepare("SELECT student_id, total_paid FROM student_finances WHERE student_id = ?");
-            $check_finance->bind_param("s", $student_id);
+            $check_finance->bind_param("s", $new_student_id);
             $check_finance->execute();
             $finance_result = $check_finance->get_result();
             
@@ -179,26 +290,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                 elseif ($new_percentage >= 25) $content_weeks = 4;
                 
                 $update_finance = $conn->prepare("UPDATE student_finances SET expected_total = ?, balance = ?, payment_percentage = ?, content_access_weeks = ? WHERE student_id = ?");
-                $update_finance->bind_param("ddiis", $new_expected_total, $new_balance, $new_percentage, $content_weeks, $student_id);
+                $update_finance->bind_param("ddiis", $new_expected_total, $new_balance, $new_percentage, $content_weeks, $new_student_id);
                 $update_finance->execute();
             } else {
                 // Create new finance record
                 $create_finance = $conn->prepare("INSERT INTO student_finances (student_id, expected_total, total_paid, balance, payment_percentage, content_access_weeks) VALUES (?, ?, 0, ?, 0, 0)");
-                $create_finance->bind_param("sdd", $student_id, $new_expected_total, $new_expected_total);
+                $create_finance->bind_param("sdd", $new_student_id, $new_expected_total, $new_expected_total);
                 $create_finance->execute();
             }
+        }
+
+        // Keep semester invoice statements complete from 1/1 up to current level.
+        ensureSemesterStatementsTable($conn);
+        $statement_actor = $current_user['username'] ?? 'system';
+        backfillSemesterInvoiceStatementsUpToLevel(
+            $conn,
+            $new_student_id,
+            $academic_level,
+            'continuing_semester',
+            $statement_actor,
+            'Backfilled from student profile update'
+        );
+
+        if (($student['academic_level'] ?? '') !== $academic_level) {
+            $program_for_amount = $program_type;
+            $registration_fee_for_level = semesterStatementContinuingRegistrationFee($conn, $program_for_amount);
+            $tuition_for_level = semesterStatementTuitionByProgramType($program_for_amount);
+            $invoice_amount_for_level = $registration_fee_for_level + $tuition_for_level;
+
+            upsertSemesterInvoiceStatement(
+                $conn,
+                $new_student_id,
+                $academic_level,
+                'continuing_semester',
+                $invoice_amount_for_level,
+                $statement_actor,
+                'Auto-invoiced after admin changed semester/year'
+            );
         }
         
         // Update user email and username if exists
         $user_stmt = $conn->prepare("UPDATE users SET email = ?, username = ? WHERE related_student_id = ?");
-        $user_stmt->bind_param("sss", $email, $username, $student_id);
+        $user_stmt->bind_param("sss", $email, $username, $new_student_id);
         $user_stmt->execute();
+        $user_stmt->close();
+
+        // Keep exam clearance profile campus and clearance_type in sync with main student profile edits
+        $ec_sync_stmt = $conn->prepare("UPDATE exam_clearance_students SET campus = ?, clearance_type = ? WHERE student_id IN (?, ?) OR email IN (?, ?)");
+        if ($ec_sync_stmt) {
+            $ec_sync_stmt->bind_param("ssssss", $campus, $ec_clearance_type, $student_id, $new_student_id, $student['email'], $email);
+            $ec_sync_stmt->execute();
+            $ec_sync_stmt->close();
+        }
+        
+            $conn->commit();
         
         // Redirect back to manage students page
         header("Location: manage_students.php?success=" . urlencode("Student details updated successfully!"));
         exit();
-    } else {
-        $error = "Failed to update student details.";
+        } catch (Throwable $e) {
+            $conn->rollback();
+            if ($conn->errno === 1062 && stripos($conn->error, 'email') !== false) {
+                $error = "Failed to update student details: the email address is already in use.";
+            } else {
+                $error = "Failed to update student details: " . $e->getMessage();
+            }
+        }
     }
 }
 
@@ -219,11 +376,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
 </head>
 
 <body>
-    <?php 
+    <?php
+    // Build department id -> name lookup for display
+    $dept_name_lookup = [];
+    foreach ($departments as $d) {
+        $dept_name_lookup[(string)$d['department_id']] = $d['department_name'];
+    }
+    $student_dept_name = $dept_name_lookup[(string)($student['department'] ?? '')] ?? $student['department'] ?? '';
     $currentPage = 'edit_student';
     $pageTitle = 'Edit Student';
     $breadcrumbs = [['title' => 'Students', 'url' => 'manage_students.php'], ['title' => 'Edit Student']];
-    include 'header_nav.php'; 
+    include 'header_nav.php';
     ?>
 
     <div class="vle-content">
@@ -372,8 +535,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                             <div class="collapse show" id="academicInfoCollapse">
                                 <div class="card-body py-2 px-3">
                                     <ul class="list-unstyled mb-0">
-                                        <li><strong>Program of Study:</strong> <?php echo htmlspecialchars($student['department_name'] ?? $student['department'] ?? ''); ?></li>
-                                        <li><strong>Department:</strong> <?php echo htmlspecialchars($student['program'] ?? ''); ?></li>
+                                        <li><strong>Department:</strong> <?php echo htmlspecialchars($student_dept_name); ?></li>
+                                        <li><strong>Program:</strong> <?php echo htmlspecialchars($student['program'] ?? ''); ?></li>
                                         <li><strong>Program Type:</strong> <?php echo htmlspecialchars(ucfirst($student['program_type'] ?? '')); ?></li>
                                         <li><strong>Campus:</strong> <?php echo htmlspecialchars($student['campus'] ?? ''); ?></li>
                                         <li><strong>Year of Study:</strong> <?php echo htmlspecialchars($student['year_of_study'] ?? ''); ?></li>
@@ -431,27 +594,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                             <h6 class="text-primary border-bottom pb-1 mb-3 mt-4">Academic Information</h6>
                             <div class="row g-3 mb-3">
                                 <div class="col-md-6">
-                                    <label for="department" class="form-label">Department *</label>
-                                    <select class="form-select" id="department" name="department" required onchange="updateDepartmentField()">
-                                        <option value="">Select Department</option>
-                                        <?php foreach ($departments as $dept): ?>
-                                            <option value="<?php echo htmlspecialchars($dept['department_id']); ?>" data-name="<?php echo htmlspecialchars($dept['department_name']); ?>" <?php echo $student['department'] == $dept['department_id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($dept['department_name']); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                    <label for="student_id" class="form-label">Student ID *</label>
+                                    <input type="text" class="form-control" id="student_id" name="student_id" value="<?php echo htmlspecialchars($student['student_id']); ?>" required>
+                                    <small class="text-muted">Changing this updates the linked student account and related academic, finance, and dissertation records.</small>
                                 </div>
                                 <div class="col-md-6">
                                     <label for="program" class="form-label">Program *</label>
-                                    <select class="form-select bg-light" id="program" name="program" required>
-                                        <option value="<?php echo htmlspecialchars($student['program'] ?? ''); ?>" selected><?php echo htmlspecialchars($student['program'] ?? 'Select Department First'); ?></option>
+                                    <select class="form-select" id="program" name="program" required onchange="onProgramChange()">
+                                        <option value="">-- Select Program --</option>
+                                        <?php
+                                        $pt_labels = ['degree'=>'Degree','diploma'=>'Diploma','professional'=>'Professional','masters'=>'Masters','doctorate'=>'Doctorate'];
+                                        $grouped = [];
+                                        foreach ($programs_list as $prog) { $grouped[$prog['program_type']][] = $prog; }
+                                        foreach ($pt_labels as $pt => $pt_label):
+                                            if (empty($grouped[$pt])) continue;
+                                        ?>
+                                        <optgroup label="<?php echo $pt_label; ?>">
+                                            <?php foreach ($grouped[$pt] as $prog): ?>
+                                            <option value="<?php echo htmlspecialchars($prog['program_name']); ?>"
+                                                data-dept-id="<?php echo htmlspecialchars($prog['department_id']); ?>"
+                                                data-dept-name="<?php echo htmlspecialchars($prog['department_name']); ?>"
+                                                data-program-type="<?php echo htmlspecialchars($prog['program_type']); ?>"
+                                                <?php echo ($student['program'] ?? '') === $prog['program_name'] ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($prog['program_name']); ?>
+                                            </option>
+                                            <?php endforeach; ?>
+                                        </optgroup>
+                                        <?php endforeach; ?>
+                                        <?php
+                                        // If current program isn't in the list, keep it selectable
+                                        $inList = false;
+                                        foreach ($programs_list as $prog) { if ($prog['program_name'] === ($student['program'] ?? '')) { $inList = true; break; } }
+                                        if (!$inList && !empty($student['program'])):
+                                        ?>
+                                        <option value="<?php echo htmlspecialchars($student['program']); ?>" selected>
+                                            <?php echo htmlspecialchars($student['program']); ?> (current)
+                                        </option>
+                                        <?php endif; ?>
                                     </select>
-                                    <small class="text-muted">e.g. Bachelor of Business Administration</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="department" class="form-label">Department</label>
+                                    <select class="form-select bg-light" id="department" name="department">
+                                        <option value="">-- auto-filled from Program --</option>
+                                        <?php foreach ($departments as $dept): ?>
+                                            <option value="<?php echo htmlspecialchars($dept['department_id']); ?>" <?php echo $student['department'] == $dept['department_id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($dept['department_name']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted"><i class="bi bi-arrow-up-short"></i> Auto-filled when you select a Program above</small>
                                 </div>
                             </div>
                             <div class="row g-3 mb-3">
                                 <div class="col-md-6">
                                     <label for="program_type" class="form-label">Program Type *</label>
-                                    <select class="form-select" id="program_type" name="program_type" required onchange="updateDepartmentField(); updateFeeDisplay();">
+                                    <select class="form-select" id="program_type" name="program_type" required onchange="updateFeeDisplay();">
                                         <option value="degree" <?php echo ($student['program_type'] ?? 'degree') == 'degree' ? 'selected' : ''; ?>>Degree (K500,000)</option>
+                                        <option value="diploma" <?php echo ($student['program_type'] ?? '') == 'diploma' ? 'selected' : ''; ?>>Diploma (K500,000)</option>
                                         <option value="professional" <?php echo ($student['program_type'] ?? '') == 'professional' ? 'selected' : ''; ?>>Professional (K200,000)</option>
                                         <option value="masters" <?php echo ($student['program_type'] ?? '') == 'masters' ? 'selected' : ''; ?>>Masters (K1,100,000)</option>
                                         <option value="doctorate" <?php echo ($student['program_type'] ?? '') == 'doctorate' ? 'selected' : ''; ?>>Doctorate (K2,200,000)</option>
@@ -510,13 +708,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                                 </div>
                             </div>
                             <div class="row g-3 mb-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label for="academic_level" class="form-label">Academic Level</label>
                                     <input type="text" class="form-control bg-light" id="academic_level" name="academic_level" 
                                            value="<?php echo htmlspecialchars($student['academic_level'] ?? ($student['year_of_study'] . '/' . ($student['semester'] === 'Two' ? '2' : '1'))); ?>" readonly>
                                     <small class="text-muted">Format: Year/Semester (e.g., 1/1, 2/2)</small>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label for="student_status" class="form-label">Student Status</label>
                                     <select class="form-select" id="student_status" name="student_status">
                                         <option value="active" <?php echo ($student['student_status'] ?? 'active') == 'active' ? 'selected' : ''; ?>>Active</option>
@@ -524,6 +722,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                                         <option value="suspended" <?php echo ($student['student_status'] ?? '') == 'suspended' ? 'selected' : ''; ?>>Suspended</option>
                                         <option value="withdrawn" <?php echo ($student['student_status'] ?? '') == 'withdrawn' ? 'selected' : ''; ?>>Withdrawn</option>
                                     </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="ec_clearance_type" class="form-label">Exam Clearance Type</label>
+                                    <select class="form-select" id="ec_clearance_type" name="ec_clearance_type">
+                                        <option value="endsemester" <?php echo $ec_clearance_type === 'endsemester' ? 'selected' : ''; ?>>End-Semester</option>
+                                        <option value="midsemester" <?php echo $ec_clearance_type === 'midsemester' ? 'selected' : ''; ?>>Mid-Semester</option>
+                                    </select>
+                                    <small class="text-muted">Updates exam clearance record</small>
                                 </div>
                             </div>
                             <!-- Account Info -->
@@ -586,52 +792,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
                 
                 // Update tuition based on program type
                 switch(programType.value) {
+                    case 'diploma':      tuition = '500,000'; break;
                     case 'professional': tuition = '200,000'; break;
-                    case 'masters': tuition = '1,100,000'; break;
-                    case 'doctorate': tuition = '2,200,000'; break;
-                    default: tuition = '500,000';
+                    case 'masters':      tuition = '1,100,000'; break;
+                    case 'doctorate':    tuition = '2,200,000'; break;
+                    default:             tuition = '500,000';
                 }
                 
                 feeInfo.textContent = 'Registration: K' + regFee + ' | App Fee: K' + appFee + ' | Tuition: K' + tuition;
             }
         }
         
-        function updateDepartmentField() {
-            const departmentSelect = document.getElementById('department');
+        function onProgramChange() {
             const programSelect = document.getElementById('program');
-            const programType = document.getElementById('program_type');
-            
-            if (!departmentSelect.value) {
-                programSelect.innerHTML = '<option value="">Select Department First</option>';
-                return;
+            const deptSelect = document.getElementById('department');
+            const programTypeSelect = document.getElementById('program_type');
+
+            const selected = programSelect.options[programSelect.selectedIndex];
+            const deptId = selected.getAttribute('data-dept-id');
+            const progType = selected.getAttribute('data-program-type');
+
+            // Auto-fill Department
+            if (deptId) {
+                for (let i = 0; i < deptSelect.options.length; i++) {
+                    if (deptSelect.options[i].value == deptId) {
+                        deptSelect.selectedIndex = i;
+                        break;
+                    }
+                }
             }
-            
-            // Get the department name
-            const selectedOption = departmentSelect.options[departmentSelect.selectedIndex];
-            const deptName = selectedOption.getAttribute('data-name');
-            const type = programType.value;
-            
-            // Generate proper program name based on program type
-            let programPrefix = 'Bachelor of';
-            switch(type) {
-                case 'professional':
-                    programPrefix = 'Professional Certificate in';
-                    break;
-                case 'masters':
-                    programPrefix = 'Master of';
-                    break;
-                case 'doctorate':
-                    programPrefix = 'Doctor of Philosophy in';
-                    break;
-                default:
-                    programPrefix = 'Bachelor of';
+
+            // Auto-fill Program Type
+            if (progType) {
+                for (let i = 0; i < programTypeSelect.options.length; i++) {
+                    if (programTypeSelect.options[i].value === progType) {
+                        programTypeSelect.selectedIndex = i;
+                        break;
+                    }
+                }
+                updateFeeDisplay();
             }
-            
-            const fullProgramName = programPrefix + ' ' + deptName;
-            
-            // Update program dropdown
-            programSelect.innerHTML = '<option value="' + fullProgramName + '" selected>' + fullProgramName + '</option>';
         }
+
+        // Run on page load to sync Department & Program Type from saved program
+        document.addEventListener('DOMContentLoaded', function() {
+            const programSelect = document.getElementById('program');
+            if (programSelect && programSelect.value) {
+                onProgramChange();
+            }
+        });
     </script>
 </body>
 </html>

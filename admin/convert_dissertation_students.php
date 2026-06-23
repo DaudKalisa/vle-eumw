@@ -111,9 +111,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Load dissertation student users
+// Load dissertation student users (with optional search)
+$search = trim($_GET['q'] ?? '');
 $rows = [];
-$result = $conn->query("SELECT u.user_id, u.username, u.email, u.related_student_id, u.additional_roles, s.full_name, s.campus FROM users u LEFT JOIN students s ON u.related_student_id = s.student_id WHERE u.additional_roles LIKE '%dissertation_student%' ORDER BY u.user_id DESC");
+$base_sql = "SELECT u.user_id, u.username, u.email, u.related_student_id, u.additional_roles, s.full_name, s.campus
+             FROM users u
+             LEFT JOIN students s ON u.related_student_id = s.student_id
+             WHERE u.additional_roles LIKE '%dissertation_student%'";
+if ($search !== '') {
+    $like = '%' . $conn->real_escape_string($search) . '%';
+    $base_sql .= " AND (u.username LIKE '$like' OR u.email LIKE '$like' OR u.related_student_id LIKE '$like' OR s.full_name LIKE '$like')";
+}
+$base_sql .= " ORDER BY u.user_id DESC";
+$result = $conn->query($base_sql);
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $rows[] = $row;
@@ -136,12 +146,26 @@ $page_title = 'Convert Dissertation Students';
 <?php include 'header_nav.php'; ?>
 
 <div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h3 class="fw-bold mb-0"><i class="bi bi-person-badge me-2"></i><?= htmlspecialchars($page_title) ?></h3>
             <small class="text-muted">Convert dissertation-only accounts into full student accounts (enables full student portal / finance access).</small>
         </div>
     </div>
+
+    <form method="GET" class="mb-3">
+        <div class="input-group" style="max-width:420px;">
+            <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" name="q" class="form-control" placeholder="Search by name, email, student ID or username&hellip;" value="<?= htmlspecialchars($search) ?>" autofocus>
+            <?php if ($search !== ''): ?>
+            <a href="convert_dissertation_students.php" class="btn btn-outline-secondary" title="Clear search"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+        <?php if ($search !== ''): ?>
+        <small class="text-muted mt-1 d-block"><?= count($rows) ?> result<?= count($rows) !== 1 ? 's' : '' ?> for &ldquo;<?= htmlspecialchars($search) ?>&rdquo;</small>
+        <?php endif; ?>
+    </form>
 
     <?php if ($message): ?>
         <div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle me-2"></i><?= $message ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>

@@ -437,6 +437,10 @@ if ($student) {
                                 <?php endif; endforeach; ?>
                             </select>
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Search Courses</label>
+                            <input type="text" id="searchCourses" class="form-control form-control-sm" placeholder="Search available courses..." onkeyup="filterCourses()">
+                        </div>
                         <div class="col-md-2">
                             <label class="form-label">Filter by Year</label>
                             <select class="form-select form-select-sm" id="filterYear" onchange="filterCourses()">
@@ -572,17 +576,20 @@ if ($student) {
             const year = document.getElementById('filterYear').value;
             const semester = document.getElementById('filterSemester').value;
             const associated = document.getElementById('filterAssociated').value;
+            const search = document.getElementById('searchCourses')?.value.toLowerCase() || '';
             
             document.querySelectorAll('.course-row').forEach(row => {
                 const rowProgram = row.dataset.program.toLowerCase();
                 const rowYear = row.dataset.year;
                 const rowSemester = row.dataset.semester;
-                const rowAssociated = row.dataset.associated;
+                const rowAssociated = row.dataset.associated; // currently unused but kept for clarity
+                const text = row.textContent.toLowerCase();
                 const isHighlighted = row.classList.contains('table-warning');
                 
                 const matchProgram = !program || rowProgram.includes(program);
                 const matchYear = !year || rowYear === year;
                 const matchSemester = !semester || rowSemester === semester;
+                const matchSearch = !search || text.includes(search);
                 
                 let matchAssociated = true;
                 if (associated === 'linked') {
@@ -591,7 +598,7 @@ if ($student) {
                     matchAssociated = !isHighlighted; // Show only non-highlighted
                 }
                 
-                row.style.display = (matchProgram && matchYear && matchSemester && matchAssociated) ? '' : 'none';
+                row.style.display = (matchProgram && matchYear && matchSemester && matchAssociated && matchSearch) ? '' : 'none';
             });
         }
         

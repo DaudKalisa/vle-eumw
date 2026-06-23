@@ -36,6 +36,7 @@ $nav_items = [
     ['url' => 'semester_shift.php', 'icon' => 'bi-arrow-repeat', 'title' => 'Semester Shift', 'short' => 'SS'],
     ['url' => 'manage_finance.php', 'icon' => 'bi-cash-coin', 'title' => 'Finance', 'short' => 'FN'],
     ['url' => 'student_reports.php', 'icon' => 'bi-file-earmark-bar-graph', 'title' => 'Reports', 'short' => 'RP'],
+    ['url' => 'student_list_report.php', 'icon' => 'bi-people-fill', 'title' => 'Student List', 'short' => 'SL'],
     ['url' => 'messages.php', 'icon' => 'bi-chat-dots', 'title' => 'Messages', 'short' => 'MS'],
     ['url' => 'manage_research_coordinators.php', 'icon' => 'bi-mortarboard', 'title' => 'Coordinators', 'short' => 'RC'],
 ];
@@ -95,6 +96,8 @@ $page_title = $page_title ?? 'Admin Portal';
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="exam_clearance_invite_links.php"><i class="bi bi-link-45deg me-2"></i>Exam Clearance Invites</a></li>
                         <li><a class="dropdown-item" href="exam_clearance_students.php"><i class="bi bi-person-badge me-2"></i>Exam Clearance Students</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="manage_registration_links.php"><i class="bi bi-link-45deg me-2" style="color:#6366f1"></i>Registration Links</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="fee_settings.php"><i class="bi bi-currency-dollar me-2"></i>Fee Settings</a></li>
                         <li><a class="dropdown-item" href="smtp_settings.php"><i class="bi bi-envelope-gear me-2"></i>SMTP Settings</a></li>

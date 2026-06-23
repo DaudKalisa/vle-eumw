@@ -376,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $student_info = $check_result->fetch_assoc();
                 $new_password = 'password123';
                 $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
-                $stmt = $conn->prepare("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE related_student_id = ? AND role = 'student'");
+                $stmt = $conn->prepare("UPDATE users SET password_hash = ?, must_change_password = 1, password_changed_at = NOW() WHERE related_student_id = ? AND role = 'student'");
                 $stmt->bind_param("ss", $password_hash, $student_id);
                 if ($stmt->execute() && $stmt->affected_rows > 0) {
                     // Send password reset notification email
@@ -384,6 +384,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         sendPasswordResetEmail($student_info['email'], $student_info['full_name'], $new_password, true);
                     }
                     $success = "Password reset to default for " . htmlspecialchars($student_info['full_name']) . " (ID: " . htmlspecialchars($student_id) . ")";
+                    // Log the admin action
+                    try {
+                        $log_uid  = (int)($_SESSION['vle_user_id'] ?? 0);
+                        $log_desc = "Admin reset password for student: " . $student_info['full_name'] . " (ID: " . $student_id . ")";
+                        $log_ip   = $_SERVER['REMOTE_ADDR'] ?? '';
+                        $log_stmt = $conn->prepare("INSERT INTO activity_log (user_id, action, description, ip_address, created_at) VALUES (?, 'password_reset', ?, ?, NOW())");
+                        if ($log_stmt) {
+                            $log_stmt->bind_param("iss", $log_uid, $log_desc, $log_ip);
+                            $log_stmt->execute();
+                            $log_stmt->close();
+                        }
+                    } catch (Throwable $e) { /* non-fatal */ }
+                } else {
+                    $error = "Failed to reset password. No changes were made.";
+                }
+                $stmt->close();
+            }
+            $check_stmt->close();
+        }
+    } elseif (isset($_POST['reset_password_custom'])) {
+        // Handle custom password reset with admin-provided password
+        $student_id = trim($_POST['student_id']);
+        $new_password = trim($_POST['newPassword'] ?? '');
+        
+        if (empty($student_id)) {
+            $error = "Student ID is required!";
+        } elseif (empty($new_password) || strlen($new_password) < 6) {
+            $error = "Password must be at least 6 characters long!";
+        } else {
+            // Check if student exists
+            $check_stmt = $conn->prepare("SELECT u.user_id, u.email, s.full_name FROM users u JOIN students s ON u.related_student_id = s.student_id WHERE u.related_student_id = ? AND u.role = 'student'");
+            $check_stmt->bind_param("s", $student_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            if ($check_result->num_rows === 0) {
+                $error = "No user account found for student ID: " . htmlspecialchars($student_id);
+            } else {
+                $student_info = $check_result->fetch_assoc();
+                $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("UPDATE users SET password_hash = ?, must_change_password = 1, password_changed_at = NOW() WHERE related_student_id = ? AND role = 'student'");
+                $stmt->bind_param("ss", $password_hash, $student_id);
+                if ($stmt->execute() && $stmt->affected_rows > 0) {
+                    // Send password reset notification email with custom password
+                    if (isEmailEnabled()) {
+                        sendPasswordResetEmail($student_info['email'], $student_info['full_name'], $new_password, true);
+                    }
+                    $success = "Custom password set for " . htmlspecialchars($student_info['full_name']) . " (ID: " . htmlspecialchars($student_id) . "). Student must change on first login.";
+                    // Log the admin action
+                    try {
+                        $log_uid  = (int)($_SESSION['vle_user_id'] ?? 0);
+                        $log_desc = "Admin set custom password for student: " . $student_info['full_name'] . " (ID: " . $student_id . ")";
+                        $log_ip   = $_SERVER['REMOTE_ADDR'] ?? '';
+                        $log_stmt = $conn->prepare("INSERT INTO activity_log (user_id, action, description, ip_address, created_at) VALUES (?, 'password_custom_reset', ?, ?, NOW())");
+                        if ($log_stmt) {
+                            $log_stmt->bind_param("iss", $log_uid, $log_desc, $log_ip);
+                            $log_stmt->execute();
+                            $log_stmt->close();
+                        }
+                    } catch (Throwable $e) { /* non-fatal */ }
                 } else {
                     $error = "Failed to reset password. No changes were made.";
                 }
@@ -819,9 +878,14 @@ if ($dept_result) {
         <!-- Page Header -->
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2 class="vle-page-title"><i class="bi bi-people me-2"></i>Manage Students</h2>
-            <button class="btn btn-vle-primary" data-bs-toggle="modal" data-bs-target="#addStudentModal">
-                <i class="bi bi-plus-circle me-1"></i> Add New Student
-            </button>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="manage_student_list_report.php" class="btn btn-warning btn-sm">
+                    <i class="bi bi-tools me-1"></i>Fix Missing Campus / Gender / Program
+                </a>
+                <button class="btn btn-vle-primary" data-bs-toggle="modal" data-bs-target="#addStudentModal">
+                    <i class="bi bi-plus-circle me-1"></i> Add New Student
+                </button>
+            </div>
         </div>
 
         <!-- Bulk Upload Section -->
@@ -919,29 +983,82 @@ if ($dept_result) {
                                         <td><?php echo htmlspecialchars($student['department_code'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($student['year_of_study']) . ' / ' . htmlspecialchars($student['semester']); ?></td>
                                         <td>
-                                            <a href="edit_student.php?id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-sm btn-primary" title="Edit Student">
-                                                <i class="bi bi-pencil-square"></i>
-                                            </a>
-                                            <a href="register_student_courses.php?student_id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-sm btn-success" title="Register Courses">
-                                                <i class="bi bi-journal-plus"></i>
-                                            </a>
-                                            <?php 
-                                            $is_locked = !empty($student['account_locked_until']) && strtotime($student['account_locked_until']) > time();
-                                            $has_failed_attempts = !empty($student['failed_login_attempts']) && $student['failed_login_attempts'] >= 5;
-                                            if ($is_locked || $has_failed_attempts): ?>
-                                            <form method="POST" class="d-inline">
-                                                <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
-                                                <button type="submit" name="unlock_account" class="btn btn-sm btn-warning" onclick="return confirm('Unlock this student account and reset failed login attempts?')" title="<?php echo $is_locked ? 'Unlock Account' : 'Reset Failed Attempts'; ?>">
-                                                    <i class="bi bi-unlock"></i>
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <a href="edit_student.php?id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-primary" title="Edit Student">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </a>
+                                                <a href="register_student_courses.php?student_id=<?php echo urlencode($student['student_id']); ?>" class="btn btn-success" title="Register Courses">
+                                                    <i class="bi bi-journal-plus"></i>
+                                                </a>
+                                                <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#resetPasswordModal<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" title="Reset Password">
+                                                    <i class="bi bi-key-fill"></i>
                                                 </button>
-                                            </form>
-                                            <?php endif; ?>
-                                            <form method="POST" class="d-inline">
-                                                <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
-                                                <button type="submit" name="delete_student" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')" title="Delete Student">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
+                                                <?php 
+                                                $is_locked = !empty($student['account_locked_until']) && strtotime($student['account_locked_until']) > time();
+                                                $has_failed_attempts = !empty($student['failed_login_attempts']) && $student['failed_login_attempts'] >= 5;
+                                                if ($is_locked || $has_failed_attempts): ?>
+                                                <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
+                                                    <button type="submit" name="unlock_account" class="btn btn-warning" onclick="return confirm('Unlock this student account and reset failed login attempts?')" title="<?php echo $is_locked ? 'Unlock Account' : 'Reset Failed Attempts'; ?>">
+                                                        <i class="bi bi-unlock"></i>
+                                                    </button>
+                                                </form>
+                                                <?php endif; ?>
+                                                <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
+                                                    <button type="submit" name="delete_student" class="btn btn-danger" onclick="return confirm('Are you sure?')" title="Delete Student">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
+
+                                            <!-- Reset Password Modal -->
+                                            <div class="modal fade" id="resetPasswordModal<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" tabindex="-1">
+                                                <div class="modal-dialog">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header bg-info text-white">
+                                                            <h5 class="modal-title"><i class="bi bi-key-fill"></i> Reset Password for <?php echo htmlspecialchars($student['full_name']); ?></h5>
+                                                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                        </div>
+                                                        <form method="POST">
+                                                            <div class="modal-body">
+                                                                <div class="alert alert-info">
+                                                                    <strong>Student ID:</strong> <?php echo htmlspecialchars($student['student_id']); ?><br>
+                                                                    <strong>Email:</strong> <?php echo htmlspecialchars($student['email']); ?>
+                                                                </div>
+                                                                
+                                                                <div class="mb-3">
+                                                                    <label for="newPassword<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" class="form-label">New Password *</label>
+                                                                    <input type="password" class="form-control" id="newPassword<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" placeholder="Enter new password" required minlength="6">
+                                                                    <small class="form-text text-muted">Minimum 6 characters</small>
+                                                                    <div class="progress mt-2" style="height: 5px;">
+                                                                        <div class="progress-bar bg-danger" id="passwordStrength<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" style="width: 0%"></div>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div class="mb-3">
+                                                                    <label for="confirmPassword<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" class="form-label">Confirm Password *</label>
+                                                                    <input type="password" class="form-control" id="confirmPassword<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" placeholder="Confirm password" required>
+                                                                    <div class="invalid-feedback" id="passwordMismatch<?php echo preg_replace('/[^a-zA-Z0-9]/', '', $student['student_id']); ?>" style="display: none;">
+                                                                        Passwords do not match!
+                                                                    </div>
+                                                                </div>
+
+                                                                <div class="alert alert-warning">
+                                                                    <small><strong>Note:</strong> Student must change this password on first login. An email notification will be sent.</small>
+                                                                </div>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <input type="hidden" name="student_id" value="<?php echo $student['student_id']; ?>">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <button type="submit" name="reset_password_custom" class="btn btn-info">
+                                                                    <i class="bi bi-key-fill"></i> Reset Password
+                                                                </button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

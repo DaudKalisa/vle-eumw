@@ -19,21 +19,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $max_uses     = (int)($_POST['max_uses'] ?? 0);
         $expires_days = (int)($_POST['expires_days'] ?? 60);
 
-        $program_type = 'degree';
+        $program_type = trim($_POST['program_type'] ?? 'degree');
+        $valid_types = ['degree', 'diploma', 'masters', 'doctorate', 'all'];
+        if (!in_array($program_type, $valid_types)) $program_type = 'degree';
 
-        $token      = bin2hex(random_bytes(32));
-        $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
-        $created_by = (int)$user['user_id'];
-        $bind_desc  = $description ?: null;
+        // If 'all' selected, create one invite for each program type
+        $types_to_create = ($program_type === 'all') ? ['degree', 'diploma', 'masters', 'doctorate'] : [$program_type];
+        $created_urls = [];
+        $all_ok = true;
 
-        $stmt = $conn->prepare("INSERT INTO exam_clearance_invites (invite_token, program_type, description, max_uses, expires_at, created_by) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssisi", $token, $program_type, $bind_desc, $max_uses, $expires_at, $created_by);
+        foreach ($types_to_create as $ptype) {
+            $token      = bin2hex(random_bytes(32));
+            $expires_at = $expires_days > 0 ? date('Y-m-d H:i:s', strtotime("+{$expires_days} days")) : null;
+            $created_by = (int)$user['user_id'];
+            $bind_desc  = $description ? ($description . ($program_type === 'all' ? ' (' . ucfirst($ptype) . ')' : '')) : null;
 
-        if ($stmt->execute()) {
-            $invite_url = getExamClearanceInviteUrl($token);
-            $success = "Exam clearance invite link created!<br><code class='text-break'>$invite_url</code>";
-        } else {
-            $error = 'Failed to create invite: ' . $conn->error;
+            $stmt = $conn->prepare("INSERT INTO exam_clearance_invites (invite_token, program_type, description, max_uses, expires_at, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("sssisi", $token, $ptype, $bind_desc, $max_uses, $expires_at, $created_by);
+
+            if ($stmt->execute()) {
+                $invite_url = getExamClearanceInviteUrl($token);
+                $created_urls[] = '<strong>' . ucfirst($ptype) . ':</strong><br><code class="text-break">' . $invite_url . '</code>';
+            } else {
+                $error = 'Failed to create invite for ' . ucfirst($ptype) . ': ' . $conn->error;
+                $all_ok = false;
+                break;
+            }
+        }
+
+        if ($all_ok && !empty($created_urls)) {
+            if (count($created_urls) === 1) {
+                $success = "Exam clearance invite link created!<br>" . $created_urls[0];
+            } else {
+                $success = "Created " . count($created_urls) . " exam clearance invite links (All Programmes):<br><br>" . implode('<br><br>', $created_urls);
+            }
         }
     }
 
@@ -124,11 +143,22 @@ $page_title = 'Exam Clearance Invite Links';
         <div class="card-body">
             <form method="post">
                 <div class="row g-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label">Description</label>
                         <input type="text" name="description" class="form-control" placeholder="e.g. 2024/2025 Semester 1 Exam Clearance">
                     </div>
                     <div class="col-md-3">
+                        <label class="form-label">Program Type <span class="text-danger">*</span></label>
+                        <select name="program_type" class="form-select" required>
+                            <option value="degree">Degree (Undergraduate)</option>
+                            <option value="diploma">Diploma</option>
+                            <option value="masters">Masters</option>
+                            <option value="doctorate">Doctorate</option>
+                            <option value="all">All Programmes</option>
+                        </select>
+                        <small class="text-muted">"All" creates one link per programme</small>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label">Max Uses</label>
                         <input type="number" name="max_uses" class="form-control" value="0" min="0">
                         <small class="text-muted">0 = unlimited</small>
@@ -161,6 +191,7 @@ $page_title = 'Exam Clearance Invite Links';
                     <div style="flex:1;min-width:200px;">
                         <div class="fw-bold mb-1">
                             <?= $lnk['description'] ? htmlspecialchars($lnk['description']) : '<em>Exam Clearance Link</em>' ?>
+                            <span class="badge bg-<?= ($lnk['program_type'] ?? 'degree') === 'masters' ? 'info' : (($lnk['program_type'] ?? 'degree') === 'doctorate' ? 'danger' : 'primary') ?> ms-1"><?= ucfirst($lnk['program_type'] ?? 'degree') ?></span>
                             <?php if ($active): ?>
                                 <span class="badge bg-success ms-1">Active</span>
                             <?php else: ?>

@@ -778,6 +778,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 
+    // Schema update from stored backup - adds new tables and columns without touching data
+    if ($_POST['action'] === 'schema_update' && isset($_POST['filename'])) {
+        $filename = basename($_POST['filename']);
+        $filepath = $backup_dir . $filename;
+
+        if (!file_exists($filepath)) {
+            $error = 'Backup file not found.';
+        } elseif (!isset($_POST['confirm_schema_update'])) {
+            $error = 'Please confirm the schema update operation.';
+        } else {
+            try {
+                $sqlContent = file_get_contents($filepath);
+                $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+                mysqli_report(MYSQLI_REPORT_OFF);
+
+                // Extract CREATE TABLE statements
+                preg_match_all('/CREATE TABLE[^;]+;/is', $sqlContent, $createMatches);
+
+                $tablesCreated = 0;
+                $columnsAdded = 0;
+
+                foreach ($createMatches[0] as $createStmt) {
+                    if (preg_match('/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?`?(\w+)`?/i', $createStmt, $tableMatch)) {
+                        $tableName = $tableMatch[1];
+                        $checkTable = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($tableName) . "'");
+                        $tableExists = $checkTable && $checkTable->num_rows > 0;
+
+                        if (!$tableExists) {
+                            $safeCreate = preg_replace('/^CREATE TABLE(?!\s+IF NOT EXISTS)/i', 'CREATE TABLE IF NOT EXISTS', $createStmt);
+                            $safeCreate = preg_replace('/DROP TABLE[^;]*;/i', '', $safeCreate);
+                            @$conn->query($safeCreate);
+                            $tablesCreated++;
+                        } else {
+                            // Table exists - check for new columns
+                            $existingColumns = [];
+                            $colsResult = $conn->query("DESCRIBE `{$tableName}`");
+                            if ($colsResult) {
+                                while ($col = $colsResult->fetch_assoc()) {
+                                    $existingColumns[] = $col['Field'];
+                                }
+                            }
+
+                            // Parse columns from CREATE statement
+                            if (preg_match('/\((.*)\)/s', $createStmt, $colMatch)) {
+                                $columnDefs = preg_split('/,(?![^()]*\))/', $colMatch[1]);
+                                foreach ($columnDefs as $colDef) {
+                                    $colDef = trim($colDef);
+                                    if (preg_match('/^(PRIMARY|UNIQUE|KEY|INDEX|FOREIGN|CONSTRAINT|CHECK)/i', $colDef)) {
+                                        continue;
+                                    }
+                                    if (preg_match('/^`?(\w+)`?\s+(.+)$/i', $colDef, $colNameMatch)) {
+                                        $colName = $colNameMatch[1];
+                                        $colDefinition = rtrim($colNameMatch[2], ',');
+                                        if (!in_array($colName, $existingColumns)) {
+                                            @$conn->query("ALTER TABLE `{$tableName}` ADD COLUMN `{$colName}` {$colDefinition}");
+                                            $columnsAdded++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+                $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                $message = "Schema updated successfully from: <strong>" . htmlspecialchars($filename) . "</strong><br><small class='text-success'><i class='bi bi-table me-1'></i>{$tablesCreated} new tables created, <i class='bi bi-columns-gap me-1'></i>{$columnsAdded} new columns added</small>";
+            } catch (Exception $e) {
+                @$conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                $error = 'Schema update failed: ' . $e->getMessage();
+            }
+        }
+    }
+
+    // Schema update from uploaded file
+    if ($_POST['action'] === 'upload_schema_update' && isset($_FILES['schema_file'])) {
+        if (!isset($_POST['confirm_schema_upload'])) {
+            $error = 'Please confirm the schema update operation.';
+        } elseif ($_FILES['schema_file']['error'] !== UPLOAD_ERR_OK) {
+            $error = 'Please select a valid SQL file to upload.';
+        } else {
+            $ext = strtolower(pathinfo($_FILES['schema_file']['name'], PATHINFO_EXTENSION));
+            if ($ext !== 'sql') {
+                $error = 'Only .sql files are allowed for schema update.';
+            } else {
+                try {
+                    $sqlContent = file_get_contents($_FILES['schema_file']['tmp_name']);
+                    if (empty(trim($sqlContent))) {
+                        $error = 'The uploaded SQL file is empty.';
+                    } else {
+                        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+                        mysqli_report(MYSQLI_REPORT_OFF);
+
+                        preg_match_all('/CREATE TABLE[^;]+;/is', $sqlContent, $createMatches);
+
+                        $tablesCreated = 0;
+                        $columnsAdded = 0;
+
+                        foreach ($createMatches[0] as $createStmt) {
+                            if (preg_match('/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?`?(\w+)`?/i', $createStmt, $tableMatch)) {
+                                $tableName = $tableMatch[1];
+                                $checkTable = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($tableName) . "'");
+                                $tableExists = $checkTable && $checkTable->num_rows > 0;
+
+                                if (!$tableExists) {
+                                    $safeCreate = preg_replace('/^CREATE TABLE(?!\s+IF NOT EXISTS)/i', 'CREATE TABLE IF NOT EXISTS', $createStmt);
+                                    $safeCreate = preg_replace('/DROP TABLE[^;]*;/i', '', $safeCreate);
+                                    @$conn->query($safeCreate);
+                                    $tablesCreated++;
+                                } else {
+                                    $existingColumns = [];
+                                    $colsResult = $conn->query("DESCRIBE `{$tableName}`");
+                                    if ($colsResult) {
+                                        while ($col = $colsResult->fetch_assoc()) {
+                                            $existingColumns[] = $col['Field'];
+                                        }
+                                    }
+
+                                    if (preg_match('/\((.*)\)/s', $createStmt, $colMatch)) {
+                                        $columnDefs = preg_split('/,(?![^()]*\))/', $colMatch[1]);
+                                        foreach ($columnDefs as $colDef) {
+                                            $colDef = trim($colDef);
+                                            if (preg_match('/^(PRIMARY|UNIQUE|KEY|INDEX|FOREIGN|CONSTRAINT|CHECK)/i', $colDef)) {
+                                                continue;
+                                            }
+                                            if (preg_match('/^`?(\w+)`?\s+(.+)$/i', $colDef, $colNameMatch)) {
+                                                $colName = $colNameMatch[1];
+                                                $colDefinition = rtrim($colNameMatch[2], ',');
+                                                if (!in_array($colName, $existingColumns)) {
+                                                    @$conn->query("ALTER TABLE `{$tableName}` ADD COLUMN `{$colName}` {$colDefinition}");
+                                                    $columnsAdded++;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+                        $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                        $uploadName = htmlspecialchars(basename($_FILES['schema_file']['name']));
+                        $message = "Schema updated successfully from uploaded file: <strong>{$uploadName}</strong><br><small class='text-success'><i class='bi bi-table me-1'></i>{$tablesCreated} new tables created, <i class='bi bi-columns-gap me-1'></i>{$columnsAdded} new columns added</small>";
+                    }
+                } catch (Exception $e) {
+                    @$conn->query("SET FOREIGN_KEY_CHECKS = 1");
+                    $error = 'Schema update failed: ' . $e->getMessage();
+                }
+            }
+        }
+    }
+
     // Merge/Update data from uploaded file
     if ($_POST['action'] === 'upload_merge_data' && isset($_FILES['merge_file'])) {
         $uploadedFile = $_FILES['merge_file'];
@@ -1146,6 +1298,121 @@ $truncate_categories = [
                                 <p class="text-muted mt-2">No stored backups available. Create a backup first or upload a file.</p>
                             </div>
                         <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schema Update -->
+        <div class="card mb-4" id="schemaUpdateSection">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg, #7c3aed, #a855f7);">
+                <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Schema Update</h5>
+                <span class="badge bg-light text-dark">Structure Only</span>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info mb-4" style="border-radius:10px;">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Schema Update</strong> will only modify the database structure &mdash; it will <strong>not</strong> change, delete, or overwrite any existing data.
+                    <ul class="mt-2 mb-0" style="font-size:0.85rem;">
+                        <li><i class="bi bi-check-circle text-success me-1"></i>Creates new tables that don't exist yet</li>
+                        <li><i class="bi bi-check-circle text-success me-1"></i>Adds new columns to existing tables</li>
+                        <li><i class="bi bi-x-circle text-danger me-1"></i>Does NOT modify or delete existing columns</li>
+                        <li><i class="bi bi-x-circle text-danger me-1"></i>Does NOT modify or delete existing data</li>
+                    </ul>
+                </div>
+
+                <div class="row g-4">
+                    <!-- Schema update from stored backup -->
+                    <div class="col-lg-6">
+                        <div class="card h-100" style="border:1px solid #e2e8f0;border-radius:12px;">
+                            <div class="card-body">
+                                <h6 class="fw-bold mb-3"><i class="bi bi-archive me-2 text-primary"></i>Update from Stored Backup</h6>
+                                <form method="POST" id="schemaUpdateForm">
+                                    <input type="hidden" name="action" value="schema_update">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold"><i class="bi bi-file-earmark-code me-1"></i>Select Backup File</label>
+                                        <select name="filename" class="form-select" required style="border-radius:10px;">
+                                            <option value="">-- Choose a backup file --</option>
+                                            <?php foreach ($backups as $b): ?>
+                                                <option value="<?= htmlspecialchars($b['filename']) ?>">
+                                                    <?= htmlspecialchars($b['filename']) ?> (<?= number_format($b['size'] / 1024, 1) ?> KB)
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input type="checkbox" class="form-check-input" name="confirm_schema_update" id="confirmSchemaUpdate" value="1">
+                                        <label class="form-check-label" for="confirmSchemaUpdate" style="font-size:0.85rem;">
+                                            I understand this will only add new tables and columns without affecting existing data
+                                        </label>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100" id="schemaUpdateBtn" disabled style="border-radius:10px;padding:10px;">
+                                        <i class="bi bi-diagram-3 me-2"></i>Update Schema
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Schema update from uploaded file -->
+                    <div class="col-lg-6">
+                        <div class="card h-100" style="border:1px solid #e2e8f0;border-radius:12px;">
+                            <div class="card-body">
+                                <h6 class="fw-bold mb-3"><i class="bi bi-cloud-arrow-up me-2 text-success"></i>Upload Schema File</h6>
+                                <form method="POST" enctype="multipart/form-data" id="schemaUploadForm">
+                                    <input type="hidden" name="action" value="upload_schema_update">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold"><i class="bi bi-file-earmark-arrow-up me-1"></i>Upload .sql File</label>
+                                        <input type="file" name="schema_file" class="form-control" id="schemaFileInput" accept=".sql" required style="border-radius:10px;">
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input type="checkbox" class="form-check-input" name="confirm_schema_upload" id="confirmSchemaUpload" value="1">
+                                        <label class="form-check-label" for="confirmSchemaUpload" style="font-size:0.85rem;">
+                                            I understand this will only add new tables and columns without affecting existing data
+                                        </label>
+                                    </div>
+                                    <button type="submit" class="btn btn-success w-100" id="schemaUploadBtn" disabled style="border-radius:10px;padding:10px;">
+                                        <i class="bi bi-cloud-arrow-up me-2"></i>Upload & Update Schema
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Schema Overview -->
+                <div class="mt-4">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-table me-2"></i>Current Database Schema</h6>
+                    <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+                        <table class="table table-sm table-hover" style="font-size:0.8rem;">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Table Name</th>
+                                    <th>Columns</th>
+                                    <th>Rows</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $schemaIdx = 0;
+                                $tablesResult = $conn->query("SHOW TABLES");
+                                if ($tablesResult) {
+                                    while ($tRow = $tablesResult->fetch_row()) {
+                                        $schemaIdx++;
+                                        $tName = $tRow[0];
+                                        $colCount = 0;
+                                        $rowCount = 0;
+                                        $colsRes = $conn->query("DESCRIBE `{$tName}`");
+                                        if ($colsRes) $colCount = $colsRes->num_rows;
+                                        $rowRes = $conn->query("SELECT COUNT(*) as cnt FROM `{$tName}`");
+                                        if ($rowRes) { $r = $rowRes->fetch_assoc(); $rowCount = $r['cnt']; }
+                                        echo "<tr><td>{$schemaIdx}</td><td><code>{$tName}</code></td><td>{$colCount}</td><td>" . number_format($rowCount) . "</td></tr>";
+                                    }
+                                }
+                                ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1742,6 +2009,24 @@ $truncate_categories = [
                 runNowBtn.disabled = true;
             });
         }
+
+        // Schema Update - enable buttons when checkbox is checked
+        document.getElementById('confirmSchemaUpdate').addEventListener('change', function() {
+            document.getElementById('schemaUpdateBtn').disabled = !this.checked;
+        });
+        document.getElementById('confirmSchemaUpload').addEventListener('change', function() {
+            document.getElementById('schemaUploadBtn').disabled = !this.checked;
+        });
+        document.getElementById('schemaUpdateForm').addEventListener('submit', function() {
+            var btn = document.getElementById('schemaUpdateBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating Schema...';
+            btn.disabled = true;
+        });
+        document.getElementById('schemaUploadForm').addEventListener('submit', function() {
+            var btn = document.getElementById('schemaUploadBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading & Updating...';
+            btn.disabled = true;
+        });
 
 
     </script>

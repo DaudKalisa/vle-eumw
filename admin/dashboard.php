@@ -98,9 +98,17 @@ $stats['deans'] = $result ? $result->fetch_assoc()['count'] : 0;
 $result = $conn->query("SELECT COUNT(*) as count FROM users WHERE additional_roles LIKE '%dissertation_student%'");
 $stats['dissertation_students'] = $result ? $result->fetch_assoc()['count'] : 0;
 
-// Count exam clearance student accounts
-$result = $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'exam_clearance_student'");
-$stats['exam_clearance_students'] = $result ? $result->fetch_assoc()['count'] : 0;
+// Count exam clearance students from the exam_clearance_students table
+$ec_tbl = $conn->query("SHOW TABLES LIKE 'exam_clearance_students'");
+if ($ec_tbl && $ec_tbl->num_rows > 0) {
+    $result = $conn->query("SELECT COUNT(*) as count FROM exam_clearance_students");
+    $stats['exam_clearance_students'] = $result ? $result->fetch_assoc()['count'] : 0;
+    $result = $conn->query("SELECT COUNT(*) as count FROM exam_clearance_students WHERE status IN ('proof_submitted','registered','invoiced')");
+    $stats['ec_pending_review'] = $result ? $result->fetch_assoc()['count'] : 0;
+} else {
+    $stats['exam_clearance_students'] = 0;
+    $stats['ec_pending_review'] = 0;
+}
 
 // Count graduation clearance applications
 $grad_check = $conn->query("SHOW TABLES LIKE 'graduation_applications'");
@@ -133,6 +141,28 @@ if ($prr_check && $prr_check->num_rows > 0) {
 } else {
     $stats['pending_pwd_resets'] = 0;
 }
+
+// ── Student Groups by program_type ─────────────────────────────────────────
+$student_groups = [];
+$sg_r = $conn->query("SELECT program_type, COUNT(*) as cnt FROM students WHERE is_active = 1 GROUP BY program_type");
+if ($sg_r) while ($row = $sg_r->fetch_assoc()) $student_groups[strtolower($row['program_type'] ?? 'unknown')] = (int)$row['cnt'];
+// MBA / Masters: students table masters + dissertation-only masters
+$student_groups['mba']         = (int)($conn->query("SELECT COUNT(*) AS cnt FROM (SELECT student_id FROM students WHERE program_type='masters' UNION SELECT student_id FROM dissertations WHERE program_type='masters') AS _mba")->fetch_assoc()['cnt'] ?? 0);
+$student_groups['degree']      = $student_groups['degree'] ?? 0;
+$student_groups['professional']= $student_groups['professional'] ?? 0;
+// Doctorate: students table doctorate + dissertation-only doctorate
+$student_groups['doctorate']   = (int)($conn->query("SELECT COUNT(*) AS cnt FROM (SELECT student_id FROM students WHERE program_type='doctorate' UNION SELECT student_id FROM dissertations WHERE program_type='doctorate') AS _doc")->fetch_assoc()['cnt'] ?? 0);
+$student_groups['diploma']     = $student_groups['diploma'] ?? 0;
+// EC students that may include diploma not in students table
+$ec_tbl2 = $conn->query("SHOW TABLES LIKE 'exam_clearance_students'");
+$student_groups['ec_total']    = ($ec_tbl2 && $ec_tbl2->num_rows > 0) ? (int)($conn->query("SELECT COUNT(DISTINCT student_id) c FROM exam_clearance_students")->fetch_assoc()['c'] ?? 0) : 0;
+$student_groups['vle_total']   = (int)($conn->query("SELECT COUNT(DISTINCT student_id) c FROM vle_enrollments")->fetch_assoc()['c'] ?? 0);
+$diss_tbl = $conn->query("SHOW TABLES LIKE 'dissertations'");
+// Dissertation: masters/doctorate in students table + all dissertation-only postgrads
+$student_groups['dissertation']= (int)($conn->query("SELECT COUNT(*) AS cnt FROM (SELECT student_id FROM students WHERE program_type IN ('masters','doctorate') UNION SELECT student_id FROM dissertations) AS _diss")->fetch_assoc()['cnt'] ?? 0);
+// Unique total: students + exam_clearance + dissertation-only postgrads
+$_r = $conn->query("SELECT COUNT(*) AS cnt FROM (SELECT student_id FROM students UNION SELECT student_id FROM exam_clearance_students UNION SELECT student_id FROM dissertations) AS _u");
+$student_groups['all_unique'] = (int)(($_r && ($_row = $_r->fetch_assoc())) ? $_row['cnt'] : 0);
 
 // Recent student registrations
 $recent_students = [];
@@ -807,7 +837,7 @@ if ($result) {
                     <span class="stat-label">Dissertation Students</span>
                 </div>
             </a>
-            <a href="exam_clearance_students.php" class="stat-card" style="--accent-color: #ef4444; text-decoration: none;">
+            <a href="exam_clearance_students.php" class="stat-card" style="--accent-color: #ef4444; text-decoration: none; position:relative;">
                 <div class="stat-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626);">
                     <i class="bi bi-clipboard-check"></i>
                 </div>
@@ -815,6 +845,9 @@ if ($result) {
                     <span class="stat-value"><?php echo number_format($stats['exam_clearance_students']); ?></span>
                     <span class="stat-label">Exam Clearance Students</span>
                 </div>
+                <?php if ($stats['ec_pending_review'] > 0): ?>
+                <span style="position:absolute;top:8px;right:8px;background:#fbbf24;color:#000;font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:12px;"><?= $stats['ec_pending_review'] ?> pending</span>
+                <?php endif; ?>
             </a>
             <a href="manage_lecturers.php" class="stat-card" style="--accent-color: #10b981; text-decoration: none;">
                 <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
@@ -937,7 +970,89 @@ if ($result) {
                 </div>
                 <span>Coordinators</span>
             </a>
+            <a href="student_list_report.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #0f766e, #0d9488);">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <span>Student Report</span>
+            </a>
+            <a href="manage_student_list_report.php" class="action-btn">
+                <div class="action-icon" style="background: linear-gradient(135deg, #d97706, #f59e0b);">
+                    <i class="bi bi-tools"></i>
+                </div>
+                <span>Fix Student Data</span>
+            </a>
 
+        </div>
+
+        <!-- Student Groups Card -->
+        <div class="section-header">
+            <h5 class="section-title"><i class="bi bi-people-fill me-2"></i>Student Groups</h5>
+        </div>
+        <div class="card mb-4" style="border-radius:16px;border:none;box-shadow:0 4px 20px rgba(0,0,0,.08);">
+            <div class="card-body p-3">
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#eff6ff;min-width:130px;">
+                        <i class="bi bi-mortarboard-fill" style="color:#3b82f6;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#1e3a8a;"><?= number_format($student_groups['all_unique']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">All Students</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#f0fdf4;min-width:130px;">
+                        <i class="bi bi-patch-check-fill" style="color:#10b981;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#065f46;"><?= number_format($student_groups['degree']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">Degree</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#fdf4ff;min-width:130px;">
+                        <i class="bi bi-award-fill" style="color:#a21caf;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#701a75;"><?= number_format($student_groups['mba']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">MBA / Masters</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#fff7ed;min-width:130px;">
+                        <i class="bi bi-briefcase-fill" style="color:#f59e0b;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#92400e;"><?= number_format($student_groups['professional']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">Professional</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#f8fafc;min-width:130px;">
+                        <i class="bi bi-person-lines-fill" style="color:#64748b;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#334155;"><?= number_format($student_groups['doctorate']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">Doctorate</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#fef3c7;min-width:130px;">
+                        <i class="bi bi-journal-text" style="color:#d97706;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#92400e;"><?= number_format($student_groups['vle_total']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">VLE Enrolled</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#fef2f2;min-width:130px;">
+                        <i class="bi bi-journal-bookmark-fill" style="color:#ef4444;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#991b1b;"><?= number_format($student_groups['dissertation']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">Dissertation</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-3" style="background:#f0fdfa;min-width:130px;">
+                        <i class="bi bi-clipboard2-check-fill" style="color:#0d9488;font-size:1.25rem;"></i>
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700;color:#134e4a;"><?= number_format($student_groups['ec_total']) ?></div>
+                            <div style="font-size:.72rem;color:#64748b;">Exam Clearance</div>
+                        </div>
+                    </div>
+                </div>
+                <a href="student_list_report.php" class="btn btn-sm" style="background:linear-gradient(135deg,#0f766e,#0d9488);color:#fff;border-radius:8px;font-weight:600;">
+                    <i class="bi bi-table me-1"></i>View Full Student List Report
+                </a>
+            </div>
         </div>
         
         <!-- Core Management Section -->
@@ -1061,6 +1176,11 @@ if ($result) {
                 <div class="card-icon" style="background: linear-gradient(135deg, #14b8a6, #0d9488);"><i class="bi bi-file-earmark-bar-graph-fill"></i></div>
                 <div class="card-title">Graduation Report</div>
                 <div class="card-subtitle"><?php echo $stats['graduation_completed']; ?> graduated</div>
+            </a>
+            <a href="../finance/exam_number_report.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                <div class="card-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);"><i class="bi bi-hash"></i></div>
+                <div class="card-title">Exam Numbers</div>
+                <div class="card-subtitle">Download examination number report</div>
             </a>
             <a href="graduation_invite_links.php" class="management-card" style="--card-gradient: linear-gradient(135deg, #0ea5e9, #0369a1);">
                 <div class="card-icon" style="background: linear-gradient(135deg, #0ea5e9, #0369a1);"><i class="bi bi-link-45deg"></i></div>

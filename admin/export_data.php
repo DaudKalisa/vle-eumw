@@ -321,6 +321,26 @@ $export_categories = [
         ],
         'default_columns' => ['university_name','address_po_box','address_area','address_city','address_country','phone','email','website'],
     ],
+    'exam_numbers' => [
+        'label' => 'Examination Numbers',
+        'icon' => 'bi-hash',
+        'color' => '#8b5cf6',
+        'description' => 'Cleared students with assigned examination numbers and clearance certificates',
+        'table' => 'exam_clearance_students',
+        'columns' => [
+            'student_id' => 'Student ID',
+            'full_name' => 'Student Name',
+            'certificate_number' => 'Clearance Certificate Number',
+            'exam_number' => 'Examination Number',
+            'clearance_type' => 'Clearance Type',
+            'campus' => 'Campus',
+            'program_type' => 'Program Type',
+            'cleared_at' => 'Cleared At',
+            'finance_notes' => 'Finance Notes',
+        ],
+        'default_columns' => ['student_id','full_name','certificate_number','exam_number','clearance_type','campus','cleared_at'],
+        'auto_where' => "`status` = 'cleared' AND `exam_number` IS NOT NULL",
+    ],
 ];
 
 // Handle export request
@@ -365,6 +385,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     
                     // Apply filters if provided
                     $where_clauses = [];
+                    // Apply any mandatory pre-filter defined on the category
+                    if (!empty($cat['auto_where'])) {
+                        $where_clauses[] = $cat['auto_where'];
+                    }
                     if (!empty($_POST['filter_active']) && in_array('is_active', $actual_columns)) {
                         $where_clauses[] = "`is_active` = 1";
                     }

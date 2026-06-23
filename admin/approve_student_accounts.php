@@ -49,6 +49,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS student_invite_registrations (
     last_name VARCHAR(100) NOT NULL,
     preferred_username VARCHAR(100) DEFAULT NULL,
     email VARCHAR(150) NOT NULL,
+    password_hash VARCHAR(255) DEFAULT NULL,
     phone VARCHAR(30) DEFAULT NULL,
     gender VARCHAR(10) DEFAULT NULL,
     national_id VARCHAR(20) DEFAULT NULL,
@@ -76,6 +77,7 @@ try {
     $upgrade_cols = [
         'student_id_number' => "VARCHAR(50) DEFAULT NULL AFTER student_id",
         'preferred_username' => "VARCHAR(100) DEFAULT NULL AFTER last_name",
+        'password_hash' => "VARCHAR(255) DEFAULT NULL AFTER email",
         'year_of_registration' => "INT DEFAULT NULL AFTER campus",
         'selected_modules' => "TEXT DEFAULT NULL AFTER student_type"
     ];
@@ -155,6 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
         $gender = $reg['gender'] ?? '';
         $national_id = $reg['national_id'] ?? '';
         $address = $reg['address'] ?? '';
+        $registration_password_hash = $reg['password_hash'] ?? null;
+        $use_registration_password = !empty($registration_password_hash);
         $department_id = (int)$reg['department_id'];
         $program = $reg['program'] ?? '';
         $program_type = $reg['program_type'] ?? 'degree';
@@ -225,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
                 } else {
                     $dept_code = $dept_data['department_code'];
                     
-                    // Generate Student ID
+                    // Generate Student ID — loop until unique to avoid duplicate PRIMARY key
                     $campus_code = 'MZ';
                     if (strpos($campus, 'Lilongwe') !== false) $campus_code = 'LL';
                     elseif (strpos($campus, 'Blantyre') !== false) $campus_code = 'BT';
@@ -235,8 +239,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
                     $prefix = $dept_code . '/' . $year_short . '/' . $campus_code . '/' . $entry_type . '/';
                     $count_query = $conn->query("SELECT COUNT(*) as count FROM students WHERE student_id LIKE '" . $conn->real_escape_string($prefix) . "%'");
                     $next_num = ($count_query ? ($count_query->fetch_assoc()['count'] ?? 0) : 0) + 1;
-                    $sequential = str_pad($next_num, 4, '0', STR_PAD_LEFT);
-                    $student_id = $prefix . $sequential;
+
+                    // Keep incrementing until we find an ID not already in the table
+                    $max_attempts = 100;
+                    $attempt = 0;
+                    do {
+                        $sequential = str_pad($next_num, 4, '0', STR_PAD_LEFT);
+                        $candidate_id = $prefix . $sequential;
+                        $dup_check = $conn->prepare("SELECT student_id FROM students WHERE student_id = ?");
+                        $dup_check->bind_param("s", $candidate_id);
+                        $dup_check->execute();
+                        $dup_exists = $dup_check->get_result()->num_rows > 0;
+                        $dup_check->close();
+                        if (!$dup_exists) break;
+                        $next_num++;
+                        $attempt++;
+                    } while ($attempt < $max_attempts);
+
+                    if ($attempt >= $max_attempts) {
+                        $error = "Could not generate a unique student ID after $max_attempts attempts. Please check existing IDs.";
+                    } else {
+                        $student_id = $candidate_id;
+                    }
                 }
             }
             
@@ -249,15 +273,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
                     $stmt->bind_param("sssisisssssssssss", $student_id, $full_name, $email, $department_id, $program, $year_of_study, $campus, $year_of_registration, $semester, $gender, $national_id, $phone, $address, $program_type, $entry_type, $student_type_for_students, $academic_level);
                     $stmt->execute();
 
-                    // 2. Create user account 
-                    $temp_password = substr(str_shuffle('abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$'), 0, 10);
-                    $password_hash = password_hash($temp_password, PASSWORD_DEFAULT);
-                    if ($is_dissertation_only) {
-                        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_student_id, additional_roles, must_change_password) VALUES (?, ?, ?, 'student', ?, 'dissertation_student', 1)");
-                        $stmt->bind_param("ssss", $username, $email, $password_hash, $student_id);
+                    // 2. Create user account
+                    if ($use_registration_password) {
+                        $password_hash = $registration_password_hash;
+                        $temp_password = null;
                     } else {
-                        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_student_id, must_change_password) VALUES (?, ?, ?, 'student', ?, 1)");
-                        $stmt->bind_param("ssss", $username, $email, $password_hash, $student_id);
+                        $temp_password = substr(str_shuffle('abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$'), 0, 10);
+                        $password_hash = password_hash($temp_password, PASSWORD_DEFAULT);
+                    }
+                    if ($is_dissertation_only) {
+                        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_student_id, additional_roles, must_change_password) VALUES (?, ?, ?, 'student', ?, 'dissertation_student', ?)");
+                        $must_change_password = $use_registration_password ? 0 : 1;
+                        $stmt->bind_param("sssis", $username, $email, $password_hash, $student_id, $must_change_password);
+                    } else {
+                        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash, role, related_student_id, must_change_password) VALUES (?, ?, ?, 'student', ?, ?)");
+                        $must_change_password = $use_registration_password ? 0 : 1;
+                        $stmt->bind_param("sssii", $username, $email, $password_hash, $student_id, $must_change_password);
                     }
                     $stmt->execute();
                     $new_user_id = $conn->insert_id;
@@ -334,7 +365,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_registration'
                     // 6. Send welcome email
                     $email_status = '';
                     if (isEmailEnabled()) {
-                        $email_sent = sendStudentWelcomeEmail($email, $full_name, $student_id, $username, $temp_password, $program, $campus);
+                        if (function_exists('sendStudentApprovalCredentialsEmail')) {
+                            $email_sent = sendStudentApprovalCredentialsEmail($email, $full_name, $student_id, $username, $temp_password, $program, $campus, !$use_registration_password);
+                        } else {
+                            $email_sent = sendStudentWelcomeEmail($email, $full_name, $student_id, $username, $temp_password, $program, $campus);
+                        }
                         $email_status = $email_sent ? ' | Welcome email sent.' : ' | Email sending failed.';
                     }
 
@@ -598,7 +633,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
                 // Send welcome email (non-blocking)
                 try {
                     if (isEmailEnabled()) {
-                        sendStudentWelcomeEmail($b_email, $full_name, $student_id, $username, $temp_password, $program, $campus);
+                        if (function_exists('sendStudentApprovalCredentialsEmail')) {
+                            sendStudentApprovalCredentialsEmail($b_email, $full_name, $student_id, $username, $temp_password, $program, $campus, true);
+                        } else {
+                            sendStudentWelcomeEmail($b_email, $full_name, $student_id, $username, $temp_password, $program, $campus);
+                        }
                     }
                 } catch (Throwable $emailEx) {
                     error_log("Bulk approve email failed for {$b_email}: " . $emailEx->getMessage());
@@ -619,6 +658,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
             $err_detail = !empty($bulk_errors) ? '<br><small>' . implode('<br>', $bulk_errors) . '</small>' : '';
             $error = "{$failed_count} student(s) failed to approve." . $err_detail;
         }
+    }
+}
+
+// Handle bulk rejection
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_reject'])) {
+    $reg_ids = $_POST['bulk_ids'] ?? [];
+    $bulk_reason = trim($_POST['bulk_rejection_reason'] ?? 'Your registration has been reviewed and could not be approved at this time.');
+    if (empty($bulk_reason)) {
+        $bulk_reason = 'Your registration has been reviewed and could not be approved at this time.';
+    }
+    if (!is_array($reg_ids) || empty($reg_ids)) {
+        $error = 'No students selected for bulk rejection.';
+    } else {
+        $rejected_count = 0;
+        $failed_count = 0;
+        $bulk_errors = [];
+        foreach ($reg_ids as $raw_id) {
+            $reg_id = (int)$raw_id;
+            if ($reg_id <= 0) continue;
+            $stmt = $conn->prepare("SELECT registration_id, first_name, last_name, email FROM student_invite_registrations WHERE registration_id = ? AND status = 'pending'");
+            if (!$stmt) { $failed_count++; continue; }
+            $stmt->bind_param('i', $reg_id);
+            $stmt->execute();
+            $reg = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$reg) { $failed_count++; continue; }
+
+            $upd = $conn->prepare("UPDATE student_invite_registrations SET status = 'rejected', reviewed_by = ?, reviewed_at = NOW(), admin_notes = ? WHERE registration_id = ?");
+            if (!$upd) { $failed_count++; continue; }
+            $reviewer_id = $user['user_id'];
+            $bulk_notes = 'Bulk rejected';
+            $upd->bind_param('isi', $reviewer_id, $bulk_notes, $reg_id);
+            if ($upd->execute()) {
+                $rejected_count++;
+                $upd->close();
+                try {
+                    if (isEmailEnabled() && !empty($reg['email'])) {
+                        $name = trim($reg['first_name'] . ' ' . $reg['last_name']);
+                        $contact_url = defined('SYSTEM_URL') ? SYSTEM_URL : '/vle-eumw';
+                        $body = "
+                        <div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+                            <div style='background:linear-gradient(135deg,#dc2626,#b91c1c);padding:30px;text-align:center;color:#fff;border-radius:12px 12px 0 0;'>
+                                <h2 style='margin:0;'>Registration Update</h2>
+                            </div>
+                            <div style='background:#fff;padding:30px;border:1px solid #e2e8f0;'>
+                                <p>Dear <strong>" . htmlspecialchars($name) . "</strong>,</p>
+                                <p>Thank you for your interest in Exploits University of Malawi.</p>
+                                <p>After reviewing your registration, we are unable to approve your application at this time.</p>
+                                <div style='background:#fef2f2;border:1px solid #fecaca;padding:12px;border-radius:8px;margin:12px 0;'><strong>Reason:</strong> " . htmlspecialchars($bulk_reason) . "</div>
+                                <p>If you believe this is an error, please contact the admissions office.</p>
+                                <div style='text-align:center;margin:20px 0;'>
+                                    <a href='" . htmlspecialchars($contact_url) . "' style='display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;'>Visit University Portal</a>
+                                </div>
+                                <p>Best regards,<br>EUMW Administration</p>
+                            </div>
+                        </div>";
+                        sendEmail($reg['email'], $name, 'Registration Update - EUMW VLE', $body);
+                    }
+                } catch (Throwable $emailEx) {
+                    error_log('Bulk reject email failed for ' . ($reg['email'] ?? '') . ': ' . $emailEx->getMessage());
+                }
+            } else {
+                $upd->close();
+                $bulk_errors[] = htmlspecialchars(trim($reg['first_name'] . ' ' . $reg['last_name'])) . ': update failed';
+                $failed_count++;
+            }
+        }
+        if ($rejected_count > 0) {
+            $success = "<strong>{$rejected_count}</strong> student(s) rejected successfully.";
+        }
+        if ($failed_count > 0) {
+            $err_detail = !empty($bulk_errors) ? '<br><small>' . implode('<br>', $bulk_errors) . '</small>' : '';
+            $error = "{$failed_count} student(s) failed to reject." . $err_detail;
+        }
+    }
+}
+
+// Handle delete single rejected registration
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_rejected'])) {
+    $reg_id = (int)($_POST['registration_id'] ?? 0);
+    if ($reg_id <= 0) {
+        $error = 'Invalid registration.';
+    } else {
+        $del = $conn->prepare("DELETE FROM student_invite_registrations WHERE registration_id = ? AND status = 'rejected'");
+        if ($del) {
+            $del->bind_param('i', $reg_id);
+            if ($del->execute() && $del->affected_rows > 0) {
+                $success = "Rejected registration #$reg_id has been permanently deleted.";
+            } else {
+                $error = 'Could not delete — record not found or not in rejected status.';
+            }
+            $del->close();
+        } else {
+            $error = 'Database error: ' . $conn->error;
+        }
+    }
+}
+
+// Handle purge ALL rejected registrations
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purge_all_rejected'])) {
+    $del_all = $conn->query("DELETE FROM student_invite_registrations WHERE status = 'rejected'");
+    if ($del_all) {
+        $purged = $conn->affected_rows;
+        $success = "<strong>$purged</strong> rejected registration(s) permanently deleted.";
+    } else {
+        $error = 'Purge failed: ' . $conn->error;
     }
 }
 
@@ -675,6 +820,14 @@ elseif ($filter === 'rejected') $where = "r.status = 'rejected'";
 $counts = ['pending' => 0, 'approved' => 0, 'rejected' => 0, 'all' => 0];
 $cnt_q = $conn->query("SELECT status, COUNT(*) as cnt FROM student_invite_registrations GROUP BY status");
 if ($cnt_q) { while ($c = $cnt_q->fetch_assoc()) { $counts[$c['status']] = (int)$c['cnt']; $counts['all'] += (int)$c['cnt']; } }
+
+// Count pending exam clearance reviews
+$ec_pending_count = 0;
+$ec_check = $conn->query("SHOW TABLES LIKE 'exam_clearance_students'");
+if ($ec_check && $ec_check->num_rows > 0) {
+    $ec_pq = $conn->query("SELECT COUNT(*) as cnt FROM exam_clearance_students WHERE status IN ('proof_submitted','registered','invoiced')");
+    $ec_pending_count = $ec_pq ? (int)$ec_pq->fetch_assoc()['cnt'] : 0;
+}
 
 // Pagination
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -805,24 +958,43 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
         </div>
         <?php endif; ?>
 
+        <?php if ($ec_pending_count > 0): ?>
+        <div class="alert alert-warning d-flex align-items-center justify-content-between" style="border-radius:10px;border-left:4px solid #ef4444;">
+            <div>
+                <i class="bi bi-clipboard-check me-2"></i>
+                <strong><?= $ec_pending_count ?></strong> exam clearance student<?= $ec_pending_count > 1 ? 's' : '' ?> pending review
+            </div>
+            <a href="exam_clearance_students.php" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-arrow-right me-1"></i>Review Now
+            </a>
+        </div>
+        <?php endif; ?>
+
         <!-- Filter pills -->
-        <div class="stat-pills">
-            <a href="?filter=pending" class="stat-pill <?= $filter === 'pending' ? 'active pending' : '' ?>">
-                <i class="bi bi-clock-history"></i> Pending
-                <span class="pill-count"><?= $counts['pending'] ?></span>
-            </a>
-            <a href="?filter=approved" class="stat-pill <?= $filter === 'approved' ? 'active' : '' ?>">
-                <i class="bi bi-check-circle"></i> Approved
-                <span class="pill-count"><?= $counts['approved'] ?></span>
-            </a>
-            <a href="?filter=rejected" class="stat-pill <?= $filter === 'rejected' ? 'active' : '' ?>">
-                <i class="bi bi-x-circle"></i> Rejected
-                <span class="pill-count"><?= $counts['rejected'] ?></span>
-            </a>
-            <a href="?filter=all" class="stat-pill <?= $filter === 'all' ? 'active' : '' ?>">
-                <i class="bi bi-list"></i> All
-                <span class="pill-count"><?= $counts['all'] ?></span>
-            </a>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="stat-pills mb-0">
+                <a href="?filter=pending" class="stat-pill <?= $filter === 'pending' ? 'active pending' : '' ?>">
+                    <i class="bi bi-clock-history"></i> Pending
+                    <span class="pill-count"><?= $counts['pending'] ?></span>
+                </a>
+                <a href="?filter=approved" class="stat-pill <?= $filter === 'approved' ? 'active' : '' ?>">
+                    <i class="bi bi-check-circle"></i> Approved
+                    <span class="pill-count"><?= $counts['approved'] ?></span>
+                </a>
+                <a href="?filter=rejected" class="stat-pill <?= $filter === 'rejected' ? 'active' : '' ?>">
+                    <i class="bi bi-x-circle"></i> Rejected
+                    <span class="pill-count"><?= $counts['rejected'] ?></span>
+                </a>
+                <a href="?filter=all" class="stat-pill <?= $filter === 'all' ? 'active' : '' ?>">
+                    <i class="bi bi-list"></i> All
+                    <span class="pill-count"><?= $counts['all'] ?></span>
+                </a>
+            </div>
+            <?php if ($filter === 'rejected' && $counts['rejected'] > 0): ?>
+            <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#purgeAllRejectedModal">
+                <i class="bi bi-trash3 me-1"></i> Purge All Rejected (<?= $counts['rejected'] ?>)
+            </button>
+            <?php endif; ?>
         </div>
 
         <!-- Bulk action bar -->
@@ -834,6 +1006,7 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-light btn-sm" onclick="deselectAll()"><i class="bi bi-x-lg me-1"></i>Deselect All</button>
                 <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#bulkApproveModal"><i class="bi bi-check-all me-1"></i>Bulk Approve</button>
+                <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#bulkRejectModal"><i class="bi bi-x-circle me-1"></i>Bulk Reject</button>
             </div>
         </div>
 
@@ -1013,6 +1186,41 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
                     <br><em>Notes: <?= htmlspecialchars($reg['admin_notes']) ?></em>
                     <?php endif; ?>
                 </div>
+                <?php if ($reg['status'] === 'rejected'): ?>
+                <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteRejectedModal<?= $reg['registration_id'] ?>">
+                        <i class="bi bi-trash3 me-1"></i> Delete Record
+                    </button>
+                </div>
+                <!-- Delete Rejected Modal -->
+                <div class="modal fade" id="deleteRejectedModal<?= $reg['registration_id'] ?>" tabindex="-1">
+                    <div class="modal-dialog modal-sm">
+                        <div class="modal-content" style="border-radius:16px;border:none;">
+                            <div class="modal-header" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border-radius:16px 16px 0 0;">
+                                <h5 class="modal-title"><i class="bi bi-trash3 me-2"></i>Delete Record</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="mb-1">Permanently delete the rejected registration for:</p>
+                                <p class="fw-bold mb-1"><?= htmlspecialchars($reg['first_name'] . ' ' . $reg['last_name']) ?></p>
+                                <p class="text-muted small mb-0"><?= htmlspecialchars($reg['email']) ?></p>
+                                <div class="alert alert-danger mt-3 mb-0" style="font-size:0.8rem;border-radius:8px;">
+                                    <i class="bi bi-exclamation-triangle me-1"></i> This action cannot be undone.
+                                </div>
+                            </div>
+                            <form method="POST">
+                                <input type="hidden" name="registration_id" value="<?= $reg['registration_id'] ?>">
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" name="delete_rejected" class="btn btn-danger btn-sm">
+                                        <i class="bi bi-trash3 me-1"></i> Delete Permanently
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
 
                 <?php if ($reg['status'] === 'pending'): ?>
@@ -1162,6 +1370,65 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
         </div>
     </div>
 
+    <!-- Bulk Reject Confirmation Modal -->
+    <div class="modal fade" id="bulkRejectModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="border-radius:16px;border:none;">
+                <div class="modal-header" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border-radius:16px 16px 0 0;">
+                    <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>Bulk Reject Students</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" id="bulkRejectForm">
+                    <div class="modal-body">
+                        <div class="alert alert-danger" style="border-radius:10px;font-size:0.85rem;">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            You are about to reject <strong><span id="bulkRejectModalCount">0</span></strong> student(s). Each student will receive a rejection notification email.
+                        </div>
+                        <div id="bulkRejectStudentList" style="max-height:200px;overflow-y:auto;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:12px;"></div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Rejection Reason <small class="text-muted">(sent to all selected students)</small></label>
+                            <textarea name="bulk_rejection_reason" class="form-control" rows="3" placeholder="Please explain why these registrations cannot be approved..."></textarea>
+                        </div>
+                        <div id="bulkRejectHiddenInputs"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="bulk_reject" class="btn btn-danger">
+                            <i class="bi bi-x-circle me-1"></i> Confirm Bulk Rejection
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purge All Rejected Modal -->
+    <div class="modal fade" id="purgeAllRejectedModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="border-radius:16px;border:none;">
+                <div class="modal-header" style="background:linear-gradient(135deg,#7f1d1d,#b91c1c);color:#fff;border-radius:16px 16px 0 0;">
+                    <h5 class="modal-title"><i class="bi bi-trash3 me-2"></i>Purge All Rejected Registrations</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <div class="alert alert-danger" style="border-radius:10px;font-size:0.9rem;">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <strong>Warning:</strong> This will permanently delete <strong>all <?= $counts['rejected'] ?> rejected</strong> registration record(s) from the database. This action <strong>cannot be undone</strong>.
+                        </div>
+                        <p class="mb-0 text-muted small">Only records with status <em>rejected</em> will be removed. No student accounts, student records, or finance data will be affected (rejected applicants never had accounts created).</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="purge_all_rejected" class="btn btn-danger">
+                            <i class="bi bi-trash3 me-1"></i> Purge All Rejected
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     function getCheckedBoxes() {
@@ -1205,6 +1472,23 @@ if ($q) { while ($row = $q->fetch_assoc()) $registrations[] = $row; }
             document.getElementById('bulkModalCount').textContent = checked.length;
             var listEl = document.getElementById('bulkStudentList');
             var inputsEl = document.getElementById('bulkHiddenInputs');
+            var listHtml = '';
+            var inputsHtml = '';
+            checked.forEach(function(cb, i) {
+                listHtml += '<div>' + (i+1) + '. ' + cb.getAttribute('data-name') + '</div>';
+                inputsHtml += '<input type="hidden" name="bulk_ids[]" value="' + cb.value + '">';
+            });
+            listEl.innerHTML = listHtml || '<em class="text-muted">No students selected</em>';
+            inputsEl.innerHTML = inputsHtml;
+        });
+    }
+    var bulkRejectModal = document.getElementById('bulkRejectModal');
+    if (bulkRejectModal) {
+        bulkRejectModal.addEventListener('show.bs.modal', function() {
+            var checked = getCheckedBoxes();
+            document.getElementById('bulkRejectModalCount').textContent = checked.length;
+            var listEl = document.getElementById('bulkRejectStudentList');
+            var inputsEl = document.getElementById('bulkRejectHiddenInputs');
             var listHtml = '';
             var inputsHtml = '';
             checked.forEach(function(cb, i) {

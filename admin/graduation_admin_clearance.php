@@ -44,8 +44,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Admin only sees applications approved/referred by Finance
 $pending = [];
-$rs = $conn->query("SELECT ga.*, ggs.gpa, ggs.classification, ggs.total_credits FROM graduation_applications ga LEFT JOIN graduation_grade_summary ggs ON ga.application_id = ggs.application_id WHERE ga.current_step = 'admin' ORDER BY ga.submitted_at ASC");
+$rs = $conn->query("SELECT DISTINCT ga.*, ggs.gpa, ggs.classification, ggs.total_credits FROM graduation_applications ga
+                    INNER JOIN graduation_clearance_steps gcs ON ga.application_id = gcs.application_id
+                    LEFT JOIN graduation_grade_summary ggs ON ga.application_id = ggs.application_id
+                    WHERE ga.current_step = 'admin'
+                    AND gcs.step_name = 'finance'
+                    AND gcs.status IN ('approved', 'referred')
+                    ORDER BY ga.submitted_at ASC");
 if ($rs) while ($r = $rs->fetch_assoc()) $pending[] = $r;
 ?>
 <!DOCTYPE html>

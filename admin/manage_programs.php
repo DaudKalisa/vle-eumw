@@ -100,7 +100,7 @@ if (!$prog_table_check || $prog_table_check->num_rows === 0) {
         program_code VARCHAR(10) UNIQUE NOT NULL,
         program_name VARCHAR(255) NOT NULL,
         department_id INT NULL,
-        program_type ENUM('degree','professional','masters','doctorate') DEFAULT 'degree',
+        program_type ENUM('degree','diploma','professional','masters','doctorate') DEFAULT 'degree',
         duration_years INT DEFAULT 4,
         description TEXT,
         is_active TINYINT(1) DEFAULT 1,
@@ -110,6 +110,16 @@ if (!$prog_table_check || $prog_table_check->num_rows === 0) {
         INDEX idx_is_active (is_active)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
+
+// Upgrade ENUM to add diploma if missing
+try {
+    $enum_check = $conn->query("SHOW COLUMNS FROM programs LIKE 'program_type'");
+    if ($enum_check && ($enum_row = $enum_check->fetch_assoc())) {
+        if (strpos($enum_row['Type'], 'diploma') === false) {
+            $conn->query("ALTER TABLE programs MODIFY COLUMN program_type ENUM('degree','diploma','professional','masters','doctorate') DEFAULT 'degree'");
+        }
+    }
+} catch (Throwable $e) { /* ignore */ }
 
 // Check if programs has department_id column
 $has_dept_col = $conn->query("SHOW COLUMNS FROM programs LIKE 'department_id'");
@@ -360,6 +370,7 @@ while ($row = $result->fetch_assoc()) {
                                                             <label class="form-label">Program Type</label>
                                                             <select name="program_type" class="form-select" required>
                                                                 <option value="degree" <?php echo $program['program_type'] == 'degree' ? 'selected' : ''; ?>>Degree</option>
+                                                                <option value="diploma" <?php echo $program['program_type'] == 'diploma' ? 'selected' : ''; ?>>Diploma</option>
                                                                 <option value="professional" <?php echo $program['program_type'] == 'professional' ? 'selected' : ''; ?>>Professional</option>
                                                                 <option value="masters" <?php echo $program['program_type'] == 'masters' ? 'selected' : ''; ?>>Masters</option>
                                                                 <option value="doctorate" <?php echo $program['program_type'] == 'doctorate' ? 'selected' : ''; ?>>Doctorate</option>
@@ -434,6 +445,7 @@ while ($row = $result->fetch_assoc()) {
                             <label class="form-label">Program Type</label>
                             <select name="program_type" class="form-select" required>
                                 <option value="degree">Degree</option>
+                                <option value="diploma">Diploma</option>
                                 <option value="professional">Professional</option>
                                 <option value="masters">Masters</option>
                                 <option value="doctorate">Doctorate</option>

@@ -184,9 +184,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch pending
+// Fetch pending - ICT only sees applications approved/referred by Finance
 $pending = [];
-$rs = $conn->query("SELECT ga.* FROM graduation_applications ga WHERE ga.current_step = 'ict' ORDER BY ga.submitted_at ASC");
+$rs = $conn->query("SELECT DISTINCT ga.* FROM graduation_applications ga
+                    INNER JOIN graduation_clearance_steps gcs ON ga.application_id = gcs.application_id
+                    WHERE ga.current_step = 'ict'
+                    AND gcs.step_name = 'finance'
+                    AND gcs.status IN ('approved', 'referred')
+                    ORDER BY ga.submitted_at ASC");
 if ($rs) while ($r = $rs->fetch_assoc()) $pending[] = $r;
 
 // For selected app, load existing modules
